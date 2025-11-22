@@ -10,7 +10,7 @@ class UserSeeder extends Seeder
     public function run()
     {
         $itSupport = User::create([
-            'nama'     => 'IT Support',
+            'name'     => 'IT Support',
             'email'    => 'it@coffeshop.com',
             'password' => Hash::make('password'),
             'role'     => 'it_support',
@@ -18,7 +18,7 @@ class UserSeeder extends Seeder
         ]);
 
         $manager1 = User::create([
-            'nama'     => 'Manager 1',
+            'name'     => 'Manager 1',
             'email'    => 'manager1@coffeshop.com',
             'password' => Hash::make('password'),
             'role'     => 'manager',
@@ -26,7 +26,7 @@ class UserSeeder extends Seeder
         ]);
 
         $manager2 = User::create([
-            'nama'     => 'Manager 2',
+            'name'     => 'Manager 2',
             'email'    => 'manager2@coffeshop.com',
             'password' => Hash::make('password'),
             'role'     => 'manager',
@@ -34,7 +34,7 @@ class UserSeeder extends Seeder
         ]);
 
         $spv1 = User::create([
-            'nama'     => 'Supervisor 1.1',
+            'name'     => 'Supervisor 1.1',
             'email'    => 'spv1.1@coffeshop.com',
             'password' => Hash::make('password'),
             'role'     => 'supervisor',
@@ -42,7 +42,7 @@ class UserSeeder extends Seeder
         ]);
 
         $spv2 = User::create([
-            'nama'     => 'Supervisor 2.1',
+            'name'     => 'Supervisor 2.1',
             'email'    => 'spv2.1@coffeshop.com',
             'password' => Hash::make('password'),
             'role'     => 'supervisor',
@@ -50,7 +50,7 @@ class UserSeeder extends Seeder
         ]);
 
         $kasir1 = User::create([
-            'nama'     => 'Kasir 1.1',
+            'name'     => 'Kasir 1.1',
             'email'    => 'kasir1.1@coffeshop.com',
             'password' => Hash::make('password'),
             'role'     => 'kasir',
@@ -58,7 +58,7 @@ class UserSeeder extends Seeder
         ]);
 
         $kasir2 = User::create([
-            'nama'     => 'Kasir 2.1',
+            'name'     => 'Kasir 2.1',
             'email'    => 'kasir2.1@coffeshop.com',
             'password' => Hash::make('password'),
             'role'     => 'kasir',
