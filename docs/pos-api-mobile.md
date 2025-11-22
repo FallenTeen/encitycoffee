@@ -184,9 +184,3 @@ Behavior penting:
 - Content-Type: application/json
 
 ---
-
-Jika Anda mau, saya bisa:
-- Membuat contoh payload lengkap untuk setiap endpoint (POST/PUT) yang bisa langsung dipakai di Postman.
-- Mengekspor dokumentasi ini ke format OpenAPI / Swagger.
-- Menambahkan autentikasi aplikasinya (Sanctum) agar mobile app bisa memakai token lebih mudah.
-
