@@ -12,6 +12,31 @@ use Carbon\Carbon;
 
 class ShiftController extends Controller
 {
+    public function dapatkanAktif(Request $request)
+    {
+        return $this->ambilShiftAktif($request);
+    }
+
+    public function buka(Request $request)
+    {
+        return $this->bukaShift($request);
+    }
+
+    public function tutup(Request $request, Shift $shift)
+    {
+        return $this->tutupShift($request, $shift);
+    }
+
+    public function tampilkan(Shift $shift)
+    {
+        return $this->tampilkanShift($shift);
+    }
+
+    public function daftar(Request $request)
+    {
+        return $this->daftarShift($request);
+    }
+
     public function ambilShiftAktif(Request $request)
     {
         $user = $request->user();
@@ -70,7 +95,7 @@ class ShiftController extends Controller
         }
 
         $user = $request->user() ?? auth()->user();
-        // debug: log shift owner and authenticated user id and request context
+
         Log::info('tutupShift debug', [
             'shift_user_id' => $shift->user_id,
             'auth_user_id' => $user?->id,
@@ -79,7 +104,7 @@ class ShiftController extends Controller
             'running_tests' => app()->runningUnitTests(),
         ]);
 
-        // also log raw attributes for deeper inspection
+
         try {
             Log::info('tutupShift raw', [
                 'shift_class' => get_class($shift),
@@ -94,7 +119,7 @@ class ShiftController extends Controller
             return response()->json(['error' => 'Tidak memiliki akses'], 403);
         }
 
-        // Allow if user is the owner of the shift or a supervisor (explicit cast to avoid type issues)
+
         $isOwner = ((int) $shift->user_id === (int) $user->id);
         $isSupervisor = method_exists($user, 'isSupervisor') && $user->isSupervisor();
         if (! $isOwner && ! $isSupervisor) {
@@ -103,7 +128,7 @@ class ShiftController extends Controller
 
         DB::beginTransaction();
         try {
-            // compute totals from transaksi accessor
+
             $total_tunai = $shift->transaksi()->where('status','selesai')->get()->sum('total_tunai');
             $total_qris = $shift->transaksi()->where('status','selesai')->get()->sum('total_qris');
 

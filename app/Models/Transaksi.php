@@ -68,6 +68,11 @@ class Transaksi extends Model
         return $query->where('status', 'pending');
     }
 
+    public function scopeBatal($query)
+    {
+        return $query->where('status', 'batal');
+    }
+
     public function getTotalTunaiAttribute()
     {
         return $this->pembayaran()->where('metode_pembayaran', 'tunai')->sum('jumlah');

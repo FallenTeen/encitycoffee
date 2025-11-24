@@ -4,64 +4,94 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Route as RouteFacade;
+use Inertia\Inertia;
 
 class AuthController extends Controller
 {
+    public function showLogin()
+    {
+        if (Auth::check()) {
+            $user = Auth::user();
+            if ($user->role === 'it_support') {
+                return redirect()->route('admin.dashboard');
+            } elseif ($user->role === 'manager') {
+                return redirect()->route('manager.dashboard');
+            } elseif ($user->role === 'supervisor') {
+                return redirect()->route('supervisor.dashboard');
+            } else {
+                return redirect()->route('dashboard');
+            }
+        }
+
+        return Inertia::render('auth/login', [
+            'status' => session('status'),
+            'canResetPassword' => true,
+            'canRegister' => true,
+        ]);
+    }
+
     public function login(Request $request)
     {
-        $v = Validator::make($request->all(), [
+        $request->validate([
             'email' => 'required|email',
-            'password' => 'required|string',
-            'nama_perangkat' => 'required|string',
+            'password' => 'required',
         ]);
 
-        if ($v->fails()) {
-            return response()->json(['error' => $v->errors()], 422);
+        $credentials = $request->only('email', 'password');
+
+        if (Auth::attempt($credentials, $request->filled('remember'))) {
+            $request->session()->regenerate();
+
+            $user = Auth::user();
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'user' => $user,
+                    'token' => $user->createToken('pos-token')->plainTextToken,
+                ]);
+            }
+
+            if ($user->role === 'it_support') {
+                return redirect()->route('admin.dashboard');
+            } elseif ($user->role === 'manager') {
+                return redirect()->route('manager.dashboard');
+            } elseif ($user->role === 'supervisor') {
+                return redirect()->route('supervisor.dashboard');
+            } else {
+                return redirect()->route('dashboard');
+            }
         }
 
-        $user = User::where('email', $request->email)->first();
+        $errorResponse = ['email' => 'Kredensial salah'];
 
-        if (! $user || ! Hash::check($request->password, $user->password)) {
-            return response()->json(['error' => 'Kredensial salah'], 401);
+        if ($request->expectsJson()) {
+            return response()->json(['errors' => $errorResponse], 422);
         }
 
-        if (! $user->aktif) {
-            return response()->json(['error' => 'Akun tidak aktif'], 403);
-        }
-
-        // create token (using personal access tokens if available)
-        if (method_exists($user, 'createToken')) {
-            $token = $user->createToken($request->nama_perangkat)->plainTextToken;
-        } else {
-            // fallback: return a simple session-based auth
-            Auth::login($user);
-            $token = null;
-        }
-
-        $user->load('cabang');
-
-        return response()->json(['user' => $user, 'token' => $token]);
+        return back()->withErrors($errorResponse)->onlyInput('email');
     }
 
     public function logout(Request $request)
     {
-        $user = $request->user();
-        if ($user && method_exists($user, 'currentAccessToken')) {
-            $token = $user->currentAccessToken();
-            if ($token) $token->delete();
-        } else {
-            Auth::logout();
+        Auth::logout();
+
+        $request->session()->invalidate();
+
+        $request->session()->regenerateToken();
+
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Berhasil logout']);
         }
 
-        return response()->json(['message' => 'Logout berhasil']);
+        return redirect()->route('login')->with('success', 'Berhasil logout');
     }
 
     public function me(Request $request)
     {
-        $user = $request->user();
-        if ($user) $user->load('cabang');
-        return response()->json(['user' => $user]);
+        return response()->json([
+            'user' => $request->user(),
+        ]);
     }
 }

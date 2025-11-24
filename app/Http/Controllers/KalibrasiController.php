@@ -12,6 +12,21 @@ use Illuminate\Support\Facades\DB;
 
 class KalibrasiController extends Controller
 {
+    public function simpan(Request $request)
+    {
+        return $this->simpanKalibrasi($request);
+    }
+
+    public function pilih(Kalibrasi $kalibrasi)
+    {
+        return $this->pilihKalibrasi($kalibrasi);
+    }
+
+    public function dapatkanBerdasarkanShift(Shift $shift)
+    {
+        return $this->ambilKalibrasiPerShift($shift);
+    }
+
     public function simpanKalibrasi(Request $request)
     {
         $v = Validator::make($request->all(), [

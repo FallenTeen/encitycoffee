@@ -1,200 +1,207 @@
-**Dokumentasi API POS Mobile (Fokus: Alur & Simulasi)**
+**Dokumentasi API POS Mobile — Akurat & Komprehensif**
 
-Dokumentasi ringkas ini memfokuskan kepada skenario penggunaan API dari aplikasi POS mobile: transaksi penjualan (membeli minuman), manajemen shift (login, ganti/tutup shift), serta pencatatan pendukung (kalibrasi, stok, sinkronisasi). Format: endpoint → urutan panggilan (simulasi) → request/response yang diharapkan.
+Dokumen ini merangkum seluruh endpoint POS Mobile di bawah prefix ` /api/pos/... ` beserta autentikasi, payload, response, dan alur penggunaan yang direkomendasikan untuk aplikasi mobile (kasir). Seluruh spesifikasi telah diselaraskan dengan routes dan controller aktual pada kode.
 
-**Catatan Umum**
-- **Base URL**: `https://<server>/api` atau `http://localhost:8000/api` saat development.
-- **Autentikasi**: bisa berbasis session (login form) atau token (mis. Sanctum). Semua request POS diasumsikan sudah ter-autentikasi.
-- **Header Umum**: `Content-Type: application/json`, `Accept: application/json`.
-
-**Ringkasan Endpoint Utama**
-- Auth: `POST /pos/auth/login`, `POST /pos/auth/logout`, `GET /pos/auth/me`.
-- Shift: `GET /pos/shift/aktif`, `POST /pos/shift` (buka), `POST /pos/shift/{shift}/tutup`, `GET /pos/shift` (riwayat).
-- Produk: `GET /pos/produk` , `GET /pos/produk/{id}`.
-- Transaksi: `POST /pos/transaksi`, `GET /pos/transaksi/{id}`, `POST /pos/transaksi/{id}/batal`.
-- Kalibrasi: `POST /pos/kalibrasi`, `GET /pos/kalibrasi/{shift}`, `GET /pos/kalibrasi/last`.
-- Stok/Riwayat: `GET /pos/stok`, `GET /pos/stok/low`, `GET /pos/mutasi`.
-- Sinkronisasi: `POST /pos/sinkronisasi` (jadwalkan / kirim antrian).
-
-**Skenario 1 — Membeli Minuman (Kasir di Mobile)**
-Urutan panggilan (ideal):
-1. (Opsional) Pastikan shift terbuka: `GET /pos/shift/aktif`.
-   - Jika response `shift: null`, maka buka shift terlebih dahulu (langkah 2).
-2. (Jika perlu) Buka shift: `POST /pos/shift`
-   - Body: `{ "cabang_id": 1, "kas_awal": 500000 }`
-   - Expect: 201 Created, body memuat `shift.id`.
-3. Buat transaksi penjualan: `POST /pos/transaksi`
-   - Body contoh:
-     {
-       "shift_id": 11,
-       "user_id": 3,
-       "items": [
-         { "produk_id": 21, "qty": 1, "harga": 18000, "satuan_id": 1 },
-         { "produk_id": 34, "qty": 2, "harga": 15000, "satuan_id": 1 }
-       ],
-       "pembayaran": { "method": "tunai", "jumlah": 48000 }
-     }
-   - Expect: 201 Created, response `{ "transaksi": { "id": 123, "invoice": "POS-...", "total": 48000 } }`.
-4. (Opsional) Jika perlu tampilkan/print struk: `GET /pos/transaksi/{id}` → 200 OK dengan detail lengkap.
-**Dokumentasi API POS Mobile (Fokus: Alur & Simulasi)**
-
-Dokumen ini menambahkan pemfokusan dan simulasi step-by-step untuk kasus POS mobile: transaksi minuman (kasir), login & buka/ganti shift, dan pencatatan pendukung (kalibrasi, stok, sinkronisasi). Tujuan: memberikan alur panggilan API, contoh payload/response, serta efek samping yang diharapkan (mutasi stok, laporan shift).
-
-**Catatan ringkas**
-- Base URL: `https://<server>/api` atau `http://localhost:8000/api` pada development.
-- Autentikasi: session or token (mis. Sanctum). Semua contoh diasumsikan user sudah ter-autentikasi.
-- Header umum: `Content-Type: application/json`, `Accept: application/json`, `Authorization: Bearer <token>` bila token digunakan.
-
-**Prinsip penting untuk mobile POS**
-- Selalu cek shift aktif (`GET /pos/shift/aktif`) saat app dibuka.
-- Gunakan `client_request_id` unik pada transaksi untuk idempotency dan deteksi duplikat saat sinkronisasi.
-- Server harus merekam `MutasiStok` untuk setiap perubahan stok.
+**Ikhtisar**
+- Base URL: `https://<server>/api` atau `http://localhost:8000/api` (development).
+- Autentikasi: `POST /pos/auth/login` menghasilkan token Sanctum; semua endpoint di bawah `/pos` (kecuali login) memerlukan header `Authorization: Bearer <token>`.
+- Header umum: `Content-Type: application/json`, `Accept: application/json`.
+- Peran & akses: `kasir`, `supervisor`, `manager`, `it_support` dengan pembatasan akses. Kasir hanya boleh mengakses shift miliknya sendiri.
+- Pagination: endpoint daftar mengembalikan objek paginator Laravel (memiliki `data`, `links`, `meta`).
+- Error umum:
+  - 401/403: `{"error": "Tidak memiliki akses"}`.
+  - 404: `{"error": "Tidak ada shift aktif"}` atau resource tidak ditemukan.
+  - 422: `{"error": {...}}` atau `{"errors": {...}}` untuk validasi.
+  - 400/500: `{"error": "Pesan error"}` untuk kondisi bisnis/gagal server.
 
 ---
 
-**Simulasi Lengkap: Membeli Minuman (Kasir Mobile)**
-Tujuan: contoh alur end-to-end saat kasir menjual minuman single order.
+**Autentikasi**
+- `POST /pos/auth/login`
+  - Body: `{ "email": "string", "password": "string" }`
+  - Response (JSON, 200): `{ "user": { ... }, "token": "<sanctum_token>" }`
+  - Validation error (422): `{ "errors": { "email": ["Kredensial salah"] } }`
 
-Langkah & panggilan API:
-1) Pastikan user login
-   - POST `/pos/auth/login` (Body: `{ "email": "kasir@cabang.local", "password": "secret" }`)
-   - Expect 200 + token/user
+- `POST /pos/auth/logout` (auth)
+  - Response (200): `{ "message": "Berhasil logout" }`
 
-2) Cek shift aktif
-   - GET `/pos/shift/aktif`
-   - Response 200: `{ "shift": { "id": 11, "user_id": 3, "status": "open", ... } }` atau `{ "shift": null }`
-   - Jika `null`: buka shift lanjut ke langkah 3
-
-3) (Jika perlu) Buka shift baru
-   - POST `/pos/shift`
-   - Body contoh:
-     {
-       "cabang_id": 1,
-       "user_id": 3,
-       "saldo_awal": 500000,
-       "client_request_id": "shift-open-20251122-3"
-     }
-   - Expect 201: `{ "shift": { "id": 11, "waktu_buka": "2025-11-22T06:30:00Z" } }`
-
-4) Pilih produk & kalibrasi (jika produk berupa minuman yang perlu kalibrasi)
-   - GET `/pos/produk?q=espresso` → pilih `produk_id` dan cek apakah `perlu_kalibrasi: true`
-   - Jika perlu, ambil kalibrasi terakhir: `GET /pos/kalibrasi/last` untuk mendapatkan konversi gram → ml/shot
-
-5) Buat transaksi penjualan
-   - POST `/pos/transaksi`
-   - Body contoh (curl):
-     ```json
-     {
-       "client_request_id": "txn-20251122-0001",
-       "shift_id": 11,
-       "user_id": 3,
-       "items": [
-         { "produk_id": 101, "qty": 1, "harga": 18000, "satuan_id": 1, "kalibrasi_id": 55 },
-         { "produk_id": 202, "qty": 2, "harga": 15000, "satuan_id": 1 }
-       ],
-       "pembayaran": [ { "metode": "tunai", "jumlah": 48000 } ],
-       "catatan": "No sugar"
-     }
-     ```
-   - Expect: 201 Created
-     ```json
-     {
-       "transaksi": { "id": 12345, "nomor_invoice": "POS-20251122-12345", "total": 48000, "status": "selesai" }
-     }
-     ```
-
-Efek samping yang diharapkan di server:
-- Buat entri `Transaksi` & `TransaksiItem`.
-- Kurangi stok: catat `MutasiStok` untuk tiap `produk_id` (menggunakan konversi kalibrasi bila diperlukan).
-- Buat entri pembayaran dan laporkan metode pada `laporan_shift`.
-
-6) Ambil detail transaksi untuk struk
-   - GET `/pos/transaksi/{id}` → 200 OK dengan rincian untuk print
-
-Penanganan error & idempotency:
-- Jika server menerima `client_request_id` yang sama, kembalikan entri yang sudah dibuat (201/200) — jangan buat duplikat.
-- 422 Validation → tampilkan pesan ke kasir.
+- `GET /pos/auth/me` (auth)
+  - Response (200): `{ "user": { ... } }`
 
 ---
 
-**Simulasi Lengkap: Login, Buka Shift, Ganti/Tutup Shift**
-Alur umum saat pergantian karyawan/shift.
+**Shift**
+- `GET /pos/shift/aktif` (auth)
+  - Mengambil shift yang sedang `buka` milik user login.
+  - Response (200): `{ "shift": { id, user, cabang, kalibrasi: [...], ... } }`
+  - Response (404): `{ "error": "Tidak ada shift aktif" }`
 
-1) Login user
-   - POST `/pos/auth/login` (Body: `{ email, password }`) → 200 + token
+- `POST /pos/shift/buka` (auth)
+  - Body: `{ "cabang_id": number, "saldo_awal": number }`
+  - Response (201): `{ "shift": { id, cabang, waktu_buka, status: "buka" } }`
+  - Error (400): user sudah punya shift yang masih buka.
 
-2) Periksa shift aktif
-   - GET `/pos/shift/aktif`
-   - Jika shift milik user lain, tampilkan opsi `Request Handover` atau `Buka Shift Baru` (tergantung kebijakan).
+- `POST /pos/shift/{shift}/tutup` (auth; owner/supervisor)
+  - Body: `{ "saldo_akhir": number, "catatan": "string|null" }`
+  - Response (200): `{ "shift": { id, saldo_akhir, saldo_diharapkan, selisih, total_tunai, total_qris, waktu_tutup, status: "tutup" } }`
 
-3) Buka shift (kasir baru/mulai tugas)
-   - POST `/pos/shift` dengan body:
-     ```json
-     {
-       "cabang_id": 1,
-       "user_id": 3,
-       "saldo_awal": 300000,
-       "notes": "Pagi",
-       "client_request_id": "open-shift-20251122-3"
-     }
-     ```
-   - Expect 201 + `shift.id`
+- `GET /pos/shift/{shift}` (auth)
+  - Detail lengkap: user, cabang, transaksi (item & pembayaran), kalibrasi, mutasi stok.
+  - Response (200): `{ "shift": { ... } }`
 
-4) Tutup/serah terima shift
-   - POST `/pos/shift/{shift}/tutup`
-   - Body contoh:
-     ```json
-     {
-       "saldo_akhir": 450000,
-       "catatan": "Serah terima ke kasir siang",
-       "kasir_penutup_id": 4
-     }
-     ```
-   - Expect 200, response menyertakan `laporan_shift`:
-     - total penjualan
-     - ringkasan per metode pembayaran
-     - jumlah transaksi
-     - perbedaan kas (jika ada)
-
-Efek samping server pada penutupan:
-- Status shift diubah menjadi `closed`.
-- `laporan_shift` disimpan dan dapat diekspor.
-- Jika ada selisih kas yang tidak dijelaskan, tandai untuk supervisor review.
+- `GET /pos/shift` (auth)
+  - Query opsional: `status`, `tanggal`, `per_page`.
+  - Return: paginator (dibatasi sesuai peran; kasir hanya shift miliknya).
 
 ---
 
-**Ringkasan Endpoint yang Sering Digunakan pada POS Mobile (untuk transaksi & shift)**
-- `POST /pos/auth/login`, `POST /pos/auth/logout`, `GET /pos/auth/me`
-- `GET /pos/shift/aktif`, `POST /pos/shift`, `POST /pos/shift/{shift}/tutup`, `GET /pos/shift/{shift}`
-- `GET /pos/produk`, `GET /pos/produk/{id}`
-- `POST /pos/transaksi`, `GET /pos/transaksi/{id}`, `POST /pos/transaksi/{id}/batal`
-- `POST /pos/kalibrasi`, `GET /pos/kalibrasi/last`
-- `POST /pos/sinkronisasi` (batch upload dari client offline)
+**Kalibrasi**
+- `POST /pos/kalibrasi` (auth; owner shift)
+  - Body: `{ "shift_id": number, "produk_id": number, "nomor_percobaan": number, "berat_beans_gram": number, "terpilih": boolean?, "catatan": string? }`
+  - Efek: mengurangi stok `produksi_minuman` sesuai berat (kg), mencatat `MutasiStok` tipe `kalibrasi`.
+  - Response (201/200): `{ "kalibrasi": { id, shift_id, produk_id, nomor_percobaan, berat_beans_gram, terpilih, catatan, produk: {...} } }`
+
+- `PUT /pos/kalibrasi/{kalibrasi}/pilih` (auth; owner/supervisor)
+  - Menandai kalibrasi terpilih untuk produk di shift tersebut (mendiset lainnya ke `false`).
+  - Response (200): `{ "kalibrasi": { ... } }`
+
+- `GET /pos/kalibrasi/shift/{shift}` (auth)
+  - Response (200): `{ "kalibrasi": [ { ... }, ... ] }`
 
 ---
 
-Checklist implementasi pada backend (expected behaviour):
-- Transaksi harus idempotent bila diberikan `client_request_id`.
-- Mutasi stok harus tercatat per transaksi dan bisa di-rollback saat pembatalan.
-- Penutupan shift harus menghasilkan `laporan_shift` yang menjelaskan item keuangan dan transaksi.
-- Sinkronisasi batch harus mengembalikan status per item (`ok` / `conflict` / `error`) dan ID server bila berhasil.
+**Produk**
+- `GET /pos/produk` (auth)
+  - Query: `kategori_id?`, `tipe?` (`beans|minuman|snack`), `search?`.
+  - Response (200): paginator berisi produk aktif (`data`, `links`, `meta`).
+
+- `GET /pos/produk/{produk}` (auth)
+  - Response (200): objek produk dengan relasi `kategori`, `satuan`.
+
+- `GET /pos/produk/tipe/{tipe}` (auth)
+  - Response (200): paginator produk berdasarkan tipe.
+
+- `GET /pos/produk/{produk}/satuan` (auth)
+  - Response (200): daftar satuan produk (array).
 
 ---
 
-Jika Anda mau, saya bisa:
-- menambahkan contoh `curl` / Postman collection untuk tiap simulasi,
-- atau memetakan endpoint ke route names yang persis ada di proyek (mis. `pos.transaksi.store`).
+**Stok**
+- `GET /pos/stok/cabang/{cabang}` (auth)
+  - Response: `{ "cabang": {id,nama}, "stok_produksi_minuman": [...], "stok_penjualan_retail": [...], "statistik": { total_item, stok_rendah, nilai_inventori } }`
 
-File ini: `docs/pos-api-mobile.md`.
+- `GET /pos/stok/cabang/{cabang}/rendah` (auth)
+  - Response: `{ "stok_rendah": [...], "kelompok": { kritis|tinggi|sedang }, "statistik": { ... }, "rekomendasi_pembelian_total": number }`
+
+- `GET /pos/stok/cabang/{cabang}/mendekati-kadaluarsa` (auth)
+  - Query: `hari?` (default 30).
+  - Response: `{ "data": [ batch dengan produk & cabang ] }`
+
+- `GET /pos/stok/mutasi/{stokEtalase}` (auth)
+  - Query: `tipe[]?` (`masuk|keluar|penyesuaian|kalibrasi|tidak_teralokasi`), `tanggal_mulai?`, `tanggal_selesai?`, `user_id?`, `per_page?`.
+  - Response: paginator mutasi.
 
 ---
 
-**Contoh `curl` (quick test)**
+**Transaksi**
+- `POST /pos/transaksi` (auth; owner shift)
+  - Body:
+    ```json
+    {
+      "shift_id": 11,
+      "items": [
+        { "produk_id": 101, "jumlah": 1, "catatan": "string?" }
+      ],
+      "pembayaran": [
+        { "metode": "tunai|qris", "jumlah": 48000, "referensi": "string?" }
+      ],
+      "diskon": 0,
+      "pajak": 0,
+      "catatan": "string?"
+    }
+    ```
+  - Response (201): objek transaksi (dengan item, pembayaran, shift, cabang).
+  - Error (400): `{"error": "Shift tidak terbuka"}`; (403) bila bukan owner shift.
+
+- `GET /pos/transaksi/{transaksi}` (auth)
+  - Response (200): transaksi + relasi `item.produk`, `pembayaran`, `shift`, `cabang`.
+
+- `PUT /pos/transaksi/{transaksi}/batal` (auth)
+  - Body: `{ "alasan": "string|min:10" }`
+  - Response (200): `{ "message": "Transaksi berhasil dibatalkan", "transaksi": { ... } }`
+
+- `GET /pos/transaksi/shift/{shift}` (auth)
+  - Query: `status?`, `per_page?` (default 15).
+  - Response: paginator transaksi per shift (akses kasir dibatasi ke shiftnya).
+
+---
+
+**Laporan**
+- `GET /pos/laporan/shift/{shift}/ringkasan` (auth)
+  - Response: `{ shift_id, total_transaksi, total_pendapatan_tunai, total_pendapatan_qris }`
+
+- `GET /pos/laporan/cabang/{cabang}/harian` (auth)
+  - Response: ringkasan harian per cabang (tanggal, total terjual, pendapatan, jumlah transaksi). Parameter umum: `tanggal_mulai`, `tanggal_akhir`.
+
+- `GET /pos/laporan/cabang/{cabang}/penjualan-produk` (auth)
+  - Response: `{ filters, ringkasanKategori, ringkasanTipe, trendHarian }`.
+
+- `GET /pos/laporan/cabang/{cabang}/stok` (auth)
+  - Response: ringkasan stok/inventori per cabang (nilai inventori, filter kategori/status).
+
+- `GET /pos/laporan/user/{user}/kinerja` (auth)
+  - Response: agregasi kinerja kasir (total shift, total transaksi, total penjualan, menit kerja, selisih total). Query: `cabang_id?`, `tanggal_mulai?`, `tanggal_akhir?`.
+
+---
+
+**Sinkronisasi**
+- `POST /pos/sinkronisasi/antrian` (auth)
+  - Body: `{ "id_perangkat": "string", "tipe_entitas": "transaksi|mutasi_stok|shift", "id_entitas": any, "payload": object|string }`
+  - Response (200): `{ "antrian": { id, id_perangkat, tipe_entitas, id_entitas, status: "pending", jumlah_percobaan: 0, ... } }`
+
+- `POST /pos/sinkronisasi/proses` (auth)
+  - Body/Query: `id_perangkat` (wajib).
+  - Response (200): `{ "jumlah_berhasil": number, "jumlah_gagal": number }`.
+  - Catatan: proses saat ini melakukan create/update naive sesuai `payload`; deduplikasi belum tersedia di server.
+
+- `GET /pos/sinkronisasi/status` (auth)
+  - Query: `id_perangkat`.
+  - Response (200): `{ id_perangkat, statistik: { pending, tersinkronisasi, gagal }, item_pending: [...], terakhir_sinkronisasi: datetime|null }`.
+
+---
+
+**Viewer (Read-only JSON, tanpa auth)**
+Endpoint di bawah prefix `/api/viewer/...` menyediakan data publik read-only seperti daftar shift, produk, stok, mutasi, dan status sinkronisasi. Cocok untuk dashboard ringan atau mode demo tanpa login.
+
+---
+
+**Alur Penggunaan yang Direkomendasikan**
+
+- Membeli minuman (kasir)
+  1. Login → dapatkan token.
+  2. `GET /pos/shift/aktif`; jika 404, buka shift via `POST /pos/shift/buka`.
+  3. Cari/pilih produk `GET /pos/produk` (filter `search`, `kategori_id`, `tipe`).
+  4. Jika perlu kalibrasi, catat via `POST /pos/kalibrasi` atau pilih via `PUT /pos/kalibrasi/{kalibrasi}/pilih`.
+  5. Buat transaksi via `POST /pos/transaksi` (gunakan `jumlah` bukan `qty`).
+  6. Ambil detail struk via `GET /pos/transaksi/{id}`; cetak.
+
+- Login, buka & tutup shift
+  - Buka: `POST /pos/shift/buka` dengan `cabang_id`, `saldo_awal`.
+  - Tutup: `POST /pos/shift/{shift}/tutup` dengan `saldo_akhir`, `catatan`.
+
+- Offline sync
+  - Tambah antrian: `POST /pos/sinkronisasi/antrian` per item lokal.
+  - Proses batch: `POST /pos/sinkronisasi/proses?id_perangkat=...`.
+  - Pantau: `GET /pos/sinkronisasi/status?id_perangkat=...`.
+  - Catatan: tambahkan `client_request_id` di dalam `payload` sisi klien untuk deduplikasi; server belum melakukan deduplikasi otomatis.
+
+---
+
+**Contoh `curl` (diselaraskan dengan routes aktual)**
 
 Catatan: ganti `BASE_URL` dan `TOKEN` sesuai environment.
 
-1) Login (dapatkan token/session)
-
+1) Login (ambil token)
 ```bash
 BASE_URL="http://localhost:8000/api"
 curl -s -X POST "$BASE_URL/pos/auth/login" \
@@ -202,10 +209,7 @@ curl -s -X POST "$BASE_URL/pos/auth/login" \
   -d '{ "email": "kasir@cabang.local", "password": "secret" }'
 ```
 
-Contoh response sukses mengandung token atau session cookie.
-
 2) Cek shift aktif
-
 ```bash
 curl -s -X GET "$BASE_URL/pos/shift/aktif" \
   -H "Authorization: Bearer $TOKEN" \
@@ -213,120 +217,69 @@ curl -s -X GET "$BASE_URL/pos/shift/aktif" \
 ```
 
 3) Buka shift
-
 ```bash
-curl -s -X POST "$BASE_URL/pos/shift" \
+curl -s -X POST "$BASE_URL/pos/shift/buka" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "cabang_id": 1, "user_id": 3, "saldo_awal": 500000, "client_request_id": "shift-open-20251122-3" }'
+  -d '{ "cabang_id": 1, "saldo_awal": 500000 }'
 ```
 
-4) Buat transaksi (contoh pembayaran tunai)
-
+4) Buat transaksi (pembayaran tunai)
 ```bash
 curl -s -X POST "$BASE_URL/pos/transaksi" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "client_request_id": "txn-20251122-0001",
     "shift_id": 11,
-    "user_id": 3,
-    "items": [
-      { "produk_id": 101, "qty": 1, "harga": 18000, "satuan_id": 1, "kalibrasi_id": 55 },
-      { "produk_id": 202, "qty": 2, "harga": 15000, "satuan_id": 1 }
-    ],
-    "pembayaran": [ { "metode": "tunai", "jumlah": 48000 } ],
-    "catatan": "No sugar"
+    "items": [ { "produk_id": 101, "jumlah": 1 } ],
+    "pembayaran": [ { "metode": "tunai", "jumlah": 18000 } ]
   }'
 ```
 
-5) Ambil detail transaksi (untuk struk)
-
+5) Detail transaksi (untuk struk)
 ```bash
 curl -s -X GET "$BASE_URL/pos/transaksi/12345" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Accept: application/json"
 ```
 
-6) Tutup shift
+6) Batalkan transaksi
+```bash
+curl -s -X PUT "$BASE_URL/pos/transaksi/12345/batal" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "alasan": "Salah input harga item" }'
+```
 
+7) Tutup shift
 ```bash
 curl -s -X POST "$BASE_URL/pos/shift/11/tutup" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "saldo_akhir": 450000, "catatan": "Serah terima ke kasir siang", "kasir_penutup_id": 4 }'
+  -d '{ "saldo_akhir": 450000, "catatan": "Serah terima ke kasir siang" }'
 ```
 
-7) Sinkronisasi batch (offline → online)
-
+8) Sinkronisasi batch
 ```bash
-curl -s -X POST "$BASE_URL/pos/sinkronisasi" \
+curl -s -X POST "$BASE_URL/pos/sinkronisasi/antrian" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{ "id_perangkat": "dev-001", "items": [ { "type": "transaksi", "client_request_id": "txn-20251122-0001", "payload": { /* transaksi */ } } ] }'
+  -d '{ "id_perangkat": "dev-001", "tipe_entitas": "transaksi", "id_entitas": "local-123", "payload": { "nomor_invoice": "POS-..." } }'
+
+curl -s -X POST "$BASE_URL/pos/sinkronisasi/proses" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "id_perangkat": "dev-001" }'
+
+curl -s -X GET "$BASE_URL/pos/sinkronisasi/status?id_perangkat=dev-001" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Accept: application/json"
 ```
 
 ---
 
-**TO-DO untuk Aplikasi Mobile (Flutter)**
-
-Tujuan: daftar pekerjaan fitur dan wireframe yang diperlukan agar aplikasi mobile POS bisa menangani transaksi minuman, manajemen shift, pencatatan kalibrasi, dan sinkronisasi offline.
-
-- **Arsitektur & Integrasi (harus dibuat)**
-  - Setup autentikasi (Sanctum / Bearer token) dan penyimpanan token aman (secure storage).
-  - Modul offline queue: penyimpanan transaksi lokal (SQLite / Hive) + sinkronisasi background.
-  - Mekanisme `client_request_id` generator (UUID + timestamp) untuk idempotency.
-  - Handler retry / conflict resolution untuk sinkronisasi.
-  - Integrasi printing/struk (Bluetooth / ESC/POS) — optional.
-
-- **Wireframes & mapping API (setiap wireframe: elemen UI & API utama yang dipanggil)**
-
-  1) **Login Screen**
-     - Elemen UI: email, password, tombol `Login`, feedback error, link `Forgot`.
-     - API: `POST /pos/auth/login` → simpan token / session.
-
-  2) **Dashboard / Shift Status**
-     - Elemen UI: status shift (Open / Closed), `Buka Shift` button, `Tutup Shift` button (jika owner), ringkasan singkat (total hari ini), quick actions (Buat Order, Sinkronisasi).
-     - API: `GET /pos/shift/aktif`, `POST /pos/shift`, `POST /pos/shift/{shift}/tutup`, `GET /pos/shift/{shift}` untuk detail.
-
-  3) **Produk / Catalog Search**
-     - Elemen UI: search bar, kategori filter, list produk (gambar, nama, harga, stok), tombol `Tambah` ke cart, badge stok rendah.
-     - API: `GET /pos/produk?q=...`, `GET /pos/produk/{id}`. Jika perlu cek `GET /pos/stok/cabang/{cabang}` untuk jumlah tersedia.
-
-  4) **Order / Cart Screen (Buat Pesanan)**
-     - Elemen UI: daftar item (qty, harga), pilihan modifikasi (size, sugar), dropdown kalibrasi jika product.perlu_kalibrasi, total, pilihan metode pembayaran, tombol `Bayar`.
-     - API: gunakan `POST /pos/transaksi` untuk submit. Ambil `GET /pos/kalibrasi/last` bila user perlu memilih kalibrasi.
-
-  5) **Payment & Receipt Screen**
-     - Elemen UI: ringkasan pembayaran, input jumlah diterima (tunai), konfirmasi pembayaran, tampilkan invoice/QR/nomor struk, tombol `Print`.
-     - API: `POST /pos/transaksi` (pembayaran sudah submit), `GET /pos/transaksi/{id}` untuk detail struk.
-
-  6) **Shift Close / Handover Screen**
-     - Elemen UI: ringkasan laporan shift (total penjualan, transaksi per metode, kas awal, kas akhir input), field `saldo_akhir`, tombol `Tutup Shift`, tampilkan perbedaan kas dan alert jika ada selisih.
-     - API: `GET /api/pos/laporan/shift/{shift}/ringkasan` (atau `GET /pos/shift/{shift}`), `POST /pos/shift/{shift}/tutup`.
-
-  7) **Offline Queue & Sync Screen**
-     - Elemen UI: daftar antrian (pending/failed/success), tombol `Sync Now`, history sinkronisasi, detail error pada item gagal.
-     - API: `POST /pos/sinkronisasi` (batch), `GET /viewer/sinkronisasi/status` untuk status.
-
-  8) **Stock & Alerts Screen**
-     - Elemen UI: daftar stok cabang, filter stok rendah, tombol `Refresh`, detail mutasi stok per produk.
-     - API: `GET /pos/stok/cabang/{cabang}`, `GET /pos/pos/stok/cabang/{cabang}/rendah` (atau `GET /pos/stok/low`), `GET /pos/stok/mutasi/{stokEtalase}`.
-
-  9) **Settings / Profile**
-     - Elemen UI: profil user, opsi logout, pilihan printing, opsi sinkronisasi, info device id.
-     - API: `GET /pos/auth/me`, `POST /pos/auth/logout`.
-
-- **Task checklist (implementasi Flutter)**
-  - [ ] Setup project skeleton (modules: auth, products, orders, shift, sync, settings).
-  - [ ] Implement secure token storage + auto-refresh/login fallback.
-  - [ ] Implement product list + search with pagination.
-  - [ ] Implement cart & order flow with `client_request_id` generation.
-  - [ ] Implement kalibrasi picker for products yang perlu_kalibrasi (mengambil `GET /pos/kalibrasi/last`).
-  - [ ] Implement offline queue (store transactions locally, background sync worker).
-  - [ ] Implement shift open/close flows with laporan view.
-  - [ ] Implement error handling & conflict resolution UI for sync failures.
-  - [ ] Add unit tests for API client & E2E test flows for order -> sync -> shift close.
-  - [ ] (Optional) Integrate print/struk via Bluetooth.
-
----
+**Catatan Implementasi (Mobile)**
+- Simpan token secara aman (secure storage) dan lakukan logout bila 401.
+- Generasi `client_request_id` di sisi klien untuk setiap transaksi offline; kirimkan di dalam `payload` sinkronisasi.
+- Tangani 403 (akses) dengan menampilkan informasi bahwa kasir hanya bisa mengakses shiftnya sendiri.
+- Gunakan pagination (`per_page`) untuk daftar panjang (produk, mutasi, transaksi).

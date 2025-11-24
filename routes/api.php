@@ -16,27 +16,29 @@ use App\Http\Controllers\SinkronisasiController;
 // prefix: /api/pos/...
 // -----------------------------
 Route::prefix('pos')->group(function () {
+    // Authentication (login tanpa auth)
     Route::prefix('auth')->group(function () {
         Route::post('login', [AuthController::class, 'login']);
-        Route::middleware('auth')->group(function () {
+        Route::middleware('auth:sanctum')->group(function () {
             Route::post('logout', [AuthController::class, 'logout']);
             Route::get('me', [AuthController::class, 'me']);
         });
     });
 
-    Route::middleware('auth')->group(function () {
+    // Semua endpoint POS menggunakan auth:sanctum
+    Route::middleware('auth:sanctum')->group(function () {
         Route::prefix('shift')->group(function () {
-            Route::get('aktif', [ShiftController::class, 'ambilShiftAktif']);
-            Route::post('buka', [ShiftController::class, 'bukaShift']);
-            Route::post('{shift}/tutup', [ShiftController::class, 'tutupShift']);
-            Route::get('{shift}', [ShiftController::class, 'tampilkanShift']);
-            Route::get('/', [ShiftController::class, 'daftarShift']);
+            Route::get('aktif', [ShiftController::class, 'dapatkanAktif']);
+            Route::post('buka', [ShiftController::class, 'buka']);
+            Route::post('{shift}/tutup', [ShiftController::class, 'tutup']);
+            Route::get('{shift}', [ShiftController::class, 'tampilkan']);
+            Route::get('/', [ShiftController::class, 'daftar']);
         });
 
         Route::prefix('kalibrasi')->group(function () {
-            Route::post('/', [KalibrasiController::class, 'simpanKalibrasi']);
-            Route::put('{kalibrasi}/pilih', [KalibrasiController::class, 'pilihKalibrasi']);
-            Route::get('shift/{shift}', [KalibrasiController::class, 'ambilKalibrasiPerShift']);
+            Route::post('/', [KalibrasiController::class, 'simpan']);
+            Route::put('{kalibrasi}/pilih', [KalibrasiController::class, 'pilih']);
+            Route::get('shift/{shift}', [KalibrasiController::class, 'dapatkanBerdasarkanShift']);
         });
 
         Route::prefix('produk')->group(function () {
@@ -47,10 +49,10 @@ Route::prefix('pos')->group(function () {
         });
 
         Route::prefix('stok')->group(function () {
-            Route::get('cabang/{cabang}', [StokController::class, 'stokBerdasarkanCabang']);
-            Route::get('cabang/{cabang}/rendah', [StokController::class, 'stokRendah']);
-            Route::get('cabang/{cabang}/mendekati-kadaluarsa', [StokController::class, 'barangMendekatiKadaluarsa']);
-            Route::get('mutasi/{stokEtalase}', [StokController::class, 'riwayatMutasi']);
+            Route::get('cabang/{cabang}', [StokController::class, 'byCabang']);
+            Route::get('cabang/{cabang}/rendah', [StokController::class, 'rendah']);
+            Route::get('cabang/{cabang}/mendekati-kadaluarsa', [StokController::class, 'kadaluarsa']);
+            Route::get('mutasi/{stokEtalase}', [StokController::class, 'mutasi']);
         });
 
         Route::prefix('transaksi')->group(function () {
@@ -62,9 +64,9 @@ Route::prefix('pos')->group(function () {
 
         Route::prefix('laporan')->group(function () {
             Route::get('shift/{shift}/ringkasan', [LaporanController::class, 'ringkasanShift']);
-            Route::get('cabang/{cabang}/harian', [LaporanController::class, 'laporanHarian']);
+            Route::get('cabang/{cabang}/harian', [LaporanController::class, 'harian']);
             Route::get('cabang/{cabang}/penjualan-produk', [LaporanController::class, 'penjualanProduk']);
-            Route::get('cabang/{cabang}/stok', [LaporanController::class, 'laporanStok']);
+            Route::get('cabang/{cabang}/stok', [LaporanController::class, 'stok']);
             Route::get('user/{user}/kinerja', [LaporanController::class, 'kinerjaUser']);
         });
 
@@ -82,13 +84,13 @@ Route::prefix('pos')->group(function () {
 // -----------------------------
 Route::prefix('viewer')->group(function () {
     Route::prefix('shift')->group(function () {
-        Route::get('aktif', [ShiftController::class, 'ambilShiftAktif']);
-        Route::get('{shift}', [ShiftController::class, 'tampilkanShift']);
-        Route::get('/', [ShiftController::class, 'daftarShift']);
+        Route::get('aktif', [ShiftController::class, 'dapatkanAktif']);
+        Route::get('{shift}', [ShiftController::class, 'tampilkan']);
+        Route::get('/', [ShiftController::class, 'daftar']);
     });
 
     Route::prefix('kalibrasi')->group(function () {
-        Route::get('shift/{shift}', [KalibrasiController::class, 'ambilKalibrasiPerShift']);
+        Route::get('shift/{shift}', [KalibrasiController::class, 'dapatkanBerdasarkanShift']);
     });
 
     Route::prefix('produk')->group(function () {
@@ -99,10 +101,10 @@ Route::prefix('viewer')->group(function () {
     });
 
     Route::prefix('stok')->group(function () {
-        Route::get('cabang/{cabang}', [StokController::class, 'stokBerdasarkanCabang']);
-        Route::get('cabang/{cabang}/rendah', [StokController::class, 'stokRendah']);
-        Route::get('cabang/{cabang}/mendekati-kadaluarsa', [StokController::class, 'barangMendekatiKadaluarsa']);
-        Route::get('mutasi/{stokEtalase}', [StokController::class, 'riwayatMutasi']);
+        Route::get('cabang/{cabang}', [StokController::class, 'byCabang']);
+        Route::get('cabang/{cabang}/rendah', [StokController::class, 'rendah']);
+        Route::get('cabang/{cabang}/mendekati-kadaluarsa', [StokController::class, 'kadaluarsa']);
+        Route::get('mutasi/{stokEtalase}', [StokController::class, 'mutasi']);
     });
 
     Route::prefix('transaksi')->group(function () {
@@ -112,9 +114,9 @@ Route::prefix('viewer')->group(function () {
 
     Route::prefix('laporan')->group(function () {
         Route::get('shift/{shift}/ringkasan', [LaporanController::class, 'ringkasanShift']);
-        Route::get('cabang/{cabang}/harian', [LaporanController::class, 'laporanHarian']);
+        Route::get('cabang/{cabang}/harian', [LaporanController::class, 'harian']);
         Route::get('cabang/{cabang}/penjualan-produk', [LaporanController::class, 'penjualanProduk']);
-        Route::get('cabang/{cabang}/stok', [LaporanController::class, 'laporanStok']);
+        Route::get('cabang/{cabang}/stok', [LaporanController::class, 'stok']);
         Route::get('user/{user}/kinerja', [LaporanController::class, 'kinerjaUser']);
     });
 

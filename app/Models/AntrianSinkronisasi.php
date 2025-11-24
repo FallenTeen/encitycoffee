@@ -33,4 +33,9 @@ class AntrianSinkronisasi extends Model
     {
         return $query->where('status', 'gagal');
     }
+
+    public function scopeTersinkronisasi($query)
+    {
+        return $query->where('status', 'tersinkronisasi');
+    }
 }

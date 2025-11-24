@@ -50,7 +50,6 @@ class SinkronisasiController extends Controller
                 if (! $payload) throw new \Exception('Invalid payload JSON');
 
                 if ($it->tipe_entitas === 'transaksi') {
-                    // naive create: assume payload matches Transaksi::create structure
                     Transaksi::create($payload);
                 } elseif ($it->tipe_entitas === 'mutasi_stok') {
                     MutasiStok::create($payload);
@@ -69,7 +68,6 @@ class SinkronisasiController extends Controller
                 $it->jumlah_percobaan += 1;
                 if ($it->jumlah_percobaan >= 3) $it->status = 'gagal';
                 $it->save();
-                // ideally log $e->getMessage()
                 $gagal++;
             }
         }
