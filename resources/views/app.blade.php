@@ -3,6 +3,13 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="csrf-token" content="{{ csrf_token() }}">
+
+        <script>
+            // Expose CSRF token to JavaScript for non-Axios forms
+            window.Laravel = window.Laravel || {};
+            window.Laravel.csrfToken = '{{ csrf_token() }}';
+        </script>
 
         {{-- Inline script to detect system dark mode preference and apply it immediately --}}
         <script>
@@ -40,7 +47,7 @@
         <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
 
         @viteReactRefresh
-        @vite(['resources/js/app.tsx', "resources/js/pages/{$page['component']}.tsx"])
+        @vite(['resources/js/app.tsx', 'resources/css/app.css', "resources/js/pages/{$page['component']}.tsx"])
         @inertiaHead
     </head>
     <body class="font-sans antialiased">

@@ -12,27 +12,53 @@ class ShiftService
 {
     public function bukaShift(User $user, Cabang $cabang, float $saldoAwal)
     {
+        // Cek shift aktif
         $shiftAktif = Shift::where('user_id', $user->id)
             ->where('status', 'buka')
             ->first();
-
         if ($shiftAktif) {
-            throw new \Exception('User sudah memiliki shift yang masih buka');
+            throw new \Exception('User sudah memiliki shift aktif');
         }
 
-        $shift = Shift::create([
-            'user_id' => $user->id,
-            'cabang_id' => $cabang->id,
-            'saldo_awal' => $saldoAwal,
-            'waktu_buka' => Carbon::now(),
-            'status' => 'buka',
-        ]);
+        // Cek akses cabang
+        $punyaAkses = $user->cabang()->where('cabang.id', $cabang->id)->exists();
+        if (!$punyaAkses) {
+            throw new \Exception('Tidak memiliki akses ke cabang ini');
+        }
 
-        return $shift;
+        // Validasi saldo awal
+        if ($saldoAwal < 0) {
+            throw new \InvalidArgumentException('Saldo awal tidak boleh negatif');
+        }
+
+        DB::beginTransaction();
+        try {
+            $shift = Shift::create([
+                'user_id' => $user->id,
+                'cabang_id' => $cabang->id,
+                'saldo_awal' => $saldoAwal,
+                'waktu_buka' => Carbon::now(),
+                'status' => 'buka',
+            ]);
+
+            DB::commit();
+            return $shift;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     public function tutupShift(Shift $shift, float $saldoAkhir, ?string $catatan = null)
     {
+        // Validasi status shift dan saldo akhir
+        if ($shift->status !== 'buka') {
+            throw new \Exception('Shift tidak dalam status buka');
+        }
+        if ($saldoAkhir < 0) {
+            throw new \InvalidArgumentException('Saldo akhir tidak boleh negatif');
+        }
+
         DB::beginTransaction();
         try {
             $transaksi = $shift->transaksi()->where('status', 'selesai')->get();
@@ -75,6 +101,30 @@ class ShiftService
     {
         return Shift::where('user_id', $user->id)
             ->where('status', 'buka')
+            ->with(['cabang', 'user', 'kalibrasi.produk'])
             ->first();
+    }
+
+    /**
+     * Daftar shift dengan filter, urutan waktu_buka DESC, pagination 20.
+     */
+    public function daftarShift(array $filter = [], int $perPage = 20)
+    {
+        $query = Shift::query()->with(['user', 'cabang'])->orderBy('waktu_buka', 'desc');
+
+        if (!empty($filter['user_id'])) {
+            $query->where('user_id', $filter['user_id']);
+        }
+        if (!empty($filter['cabang_id'])) {
+            $query->where('cabang_id', $filter['cabang_id']);
+        }
+        if (!empty($filter['status'])) {
+            $query->where('status', $filter['status']);
+        }
+        if (!empty($filter['tanggal'])) {
+            $query->whereDate('waktu_buka', $filter['tanggal']);
+        }
+
+        return $query->paginate($perPage);
     }
 }

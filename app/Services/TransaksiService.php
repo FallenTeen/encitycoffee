@@ -8,6 +8,8 @@ use App\Models\Pembayaran;
 use App\Models\Shift;
 use App\Models\Produk;
 use App\Models\StokEtalase;
+use App\Models\MutasiStok;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -30,6 +32,16 @@ class TransaksiService
         float $pajak = 0,
         ?string $catatan = null
     ) {
+        // Validasi awal sesuai spesifikasi
+        if ($shift->status !== 'buka') {
+            throw new \Exception('Shift tidak dalam status buka');
+        }
+        if (empty($items)) {
+            throw new \InvalidArgumentException('Items tidak boleh kosong');
+        }
+        if (empty($pembayaran)) {
+            throw new \InvalidArgumentException('Pembayaran tidak boleh kosong');
+        }
         DB::beginTransaction();
         try {
             $nomorInvoice = $this->generateNomorInvoice($shift->cabang_id);
@@ -106,6 +118,7 @@ class TransaksiService
                 if ($item['produk']->tipe === 'snack') {
                     $stokEtalase = StokEtalase::where('cabang_id', $shift->cabang_id)
                         ->where('produk_id', $item['produk']->id)
+                        ->where('tipe_stok', 'penjualan_retail')
                         ->firstOrFail();
 
                     $this->stokService->kurangiStok(
@@ -189,17 +202,31 @@ class TransaksiService
         return "INV-{$tanggal}-{$cabang}-{$nomorBaru}";
     }
 
-    public function batalkanTransaksi(Transaksi $transaksi, User $user)
+    public function batalkanTransaksi(Transaksi $transaksi, User $user, ?string $alasan = null)
     {
+        // Validasi status transaksi dan otorisasi user
         if ($transaksi->status === 'batal') {
             throw new \Exception('Transaksi sudah dibatalkan');
+        }
+        if ($transaksi->status !== 'selesai') {
+            throw new \Exception('Hanya transaksi selesai yang dapat dibatalkan');
+        }
+        $transaksi->loadMissing('shift');
+        if (($transaksi->shift->status ?? null) !== 'buka') {
+            throw new \Exception('Shift tidak dalam status buka');
+        }
+        if (!in_array($user->role, ['manager', 'it_support'])) {
+            throw new \Exception('Tidak berwenang membatalkan transaksi');
         }
 
         DB::beginTransaction();
         try {
             $transaksi->update([
                 'status' => 'batal',
-                'catatan' => ($transaksi->catatan ?? '') . " | Dibatalkan oleh {$user->nama} pada " . Carbon::now(),
+                'catatan' => trim(($transaksi->catatan ?? '') . ' | ' .
+                    'Dibatalkan oleh ' . ($user->name ?? $user->nama ?? 'User') .
+                    ' pada ' . Carbon::now()->toDateTimeString() .
+                    ($alasan ? (' | Alasan: ' . $alasan) : '')),
             ]);
 
             foreach ($transaksi->item as $item) {
@@ -224,11 +251,12 @@ class TransaksiService
                     MutasiStok::create([
                         'stok_etalase_id' => $stokEtalase->id,
                         'user_id' => $user->id,
+                        'shift_id' => $transaksi->shift_id,
                         'tipe' => 'masuk',
                         'jumlah_sebelum' => $jumlahSebelum,
                         'jumlah_sesudah' => $stokEtalase->jumlah,
                         'jumlah_perubahan' => $item->jumlah,
-                        'catatan' => "Pembatalan transaksi #{$transaksi->nomor_invoice}",
+                        'catatan' => "Return pembatalan transaksi #{$transaksi->nomor_invoice}",
                     ]);
                 }
             }
@@ -239,5 +267,24 @@ class TransaksiService
             DB::rollBack();
             throw $e;
         }
+    }
+
+    public function transaksiPerShift(Shift $shift, array $filter = [], int $perPage = 20)
+    {
+        $query = Transaksi::where('shift_id', $shift->id)
+            ->with(['item.produk', 'pembayaran'])
+            ->orderByDesc('created_at');
+
+        if (!empty($filter['status'])) {
+            $query->where('status', $filter['status']);
+        }
+
+        if (!empty($filter['metode'])) {
+            $query->whereHas('pembayaran', function ($q) use ($filter) {
+                $q->where('metode_pembayaran', $filter['metode']);
+            });
+        }
+
+        return $query->paginate($perPage);
     }
 }
