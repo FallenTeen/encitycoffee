@@ -14,15 +14,13 @@ class AuthController extends Controller
     {
         if (Auth::check()) {
             $user = Auth::user();
-            if ($user->role === 'it_support') {
-                return redirect()->route('admin.dashboard');
-            } elseif ($user->role === 'manager') {
-                return redirect()->route('manager.dashboard');
-            } elseif ($user->role === 'supervisor') {
-                return redirect()->route('supervisor.dashboard');
-            } else {
-                return redirect()->route('dashboard');
-            }
+
+            return match($user->role) {
+                'it_support' => redirect()->route('admin.dashboard'),
+                'manager' => redirect()->route('manager.dashboard'),
+                'supervisor' => redirect()->route('supervisor.dashboard'),
+                default => redirect()->route('dashboard'),
+            };
         }
 
         return Inertia::render('auth/login', [
@@ -39,51 +37,52 @@ class AuthController extends Controller
             'password' => 'required',
         ]);
 
-        $credentials = $request->only('email', 'password');
+        $user = User::where('email', $request->email)->first();
 
-        if (Auth::attempt($credentials, $request->filled('remember'))) {
-            $request->session()->regenerate();
+        if (!$user || !Hash::check($request->password, $user->password)) {
+            $error = ['email' => 'Kredensial salah'];
 
-            $user = Auth::user();
-
-            if ($request->expectsJson()) {
-                return response()->json([
-                    'user' => $user,
-                    'token' => $user->createToken('pos-token')->plainTextToken,
-                ]);
-            }
-
-            if ($user->role === 'it_support') {
-                return redirect()->route('admin.dashboard');
-            } elseif ($user->role === 'manager') {
-                return redirect()->route('manager.dashboard');
-            } elseif ($user->role === 'supervisor') {
-                return redirect()->route('supervisor.dashboard');
-            } else {
-                return redirect()->route('dashboard');
-            }
+            return $request->expectsJson()
+                ? response()->json(['errors' => $error], 401)
+                : back()->withErrors($error)->onlyInput('email');
         }
 
-        $errorResponse = ['email' => 'Kredensial salah'];
-
+        // ❗ If API Login → No session, return token
         if ($request->expectsJson()) {
-            return response()->json(['errors' => $errorResponse], 422);
+            $user->tokens()->delete();
+            $token = $user->createToken('pos-token')->plainTextToken;
+
+            return response()->json([
+                'message' => 'Login berhasil',
+                'user' => $user,
+                'token' => $token,
+            ]);
         }
 
-        return back()->withErrors($errorResponse)->onlyInput('email');
+        // 🔥 Web Login (session)
+        Auth::login($user, $request->filled('remember'));
+        $request->session()->regenerate();
+
+        return match($user->role) {
+            'it_support' => redirect()->route('admin.dashboard'),
+            'manager' => redirect()->route('manager.dashboard'),
+            'supervisor' => redirect()->route('supervisor.dashboard'),
+            default => redirect()->route('dashboard'),
+        };
     }
 
     public function logout(Request $request)
     {
-        Auth::logout();
-
-        $request->session()->invalidate();
-
-        $request->session()->regenerateToken();
-
+        // ❗ If API logout → Delete Sanctum token
         if ($request->expectsJson()) {
-            return response()->json(['message' => 'Berhasil logout']);
+            $request->user()->currentAccessToken()->delete();
+            return response()->json(['message' => 'Logout berhasil']);
         }
+
+        // 🔥 Web logout
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
 
         return redirect()->route('login')->with('success', 'Berhasil logout');
     }
