@@ -25,6 +25,37 @@ class CabangController extends Controller
         return Inertia::render('admin/cabang/Index', compact('cabangs'));
     }
 
+    public function daftarApi()
+    {
+    
+        $cabangs = Cabang::select(
+                'id',
+                'kode',
+                'nama',
+                'alamat',
+                'telepon',
+                'aktif'
+            )
+            ->orderBy('id', 'asc')
+            ->get()
+            ->map(function ($cabang) {
+                return [
+                    'id' => $cabang->id,
+                    'kode' => $cabang->kode,
+                    'nama' => $cabang->nama,
+                    'alamat' => $cabang->alamat,
+                    'telepon' => $cabang->telepon,
+                    'status' => (bool) $cabang->aktif,
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'data' => $cabangs,
+        ]);
+    
+    }
+
     public function create()
     {
         Gate::authorize('create-cabang');
