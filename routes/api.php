@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CabangController;
 use App\Http\Controllers\ShiftController;
 use App\Http\Controllers\KalibrasiController;
 use App\Http\Controllers\ProdukController;
@@ -23,6 +24,10 @@ Route::prefix('pos')->group(function () {
             Route::post('logout', [AuthController::class, 'logout']);
             Route::get('me', [AuthController::class, 'me']);
         });
+    });
+
+    Route::prefix('cabang')->group(function () {
+        Route::get('/', [CabangController::class, 'daftarApi']);
     });
 
     // Semua endpoint POS menggunakan auth:sanctum
