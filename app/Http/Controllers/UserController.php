@@ -39,12 +39,20 @@ class UserController extends Controller
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|confirmed|min:8',
             'role' => ['required', Rule::in(['it_support', 'manager', 'supervisor', 'kasir'])],
-            'cabang_id' => 'nullable|exists:cabangs,id',
+            'cabang_id' => 'nullable|exists:cabang,id',
             'aktif' => 'required|boolean',
         ]);
 
+        $cabangId = $validated['cabang_id'] ?? null;
+        unset($validated['cabang_id']);
+
         $validated['password'] = Hash::make($validated['password']);
         $user = User::create($validated);
+
+        if (!empty($cabangId)) {
+            $user->cabang()->sync([$cabangId]);
+        }
+
         return redirect()->route('admin.users.index')->with('success', 'User created successfully.');
     }
 
@@ -63,9 +71,12 @@ class UserController extends Controller
             'email' => ['required','email', Rule::unique('users')->ignore($user->id)],
             'password' => 'nullable|string|confirmed|min:8',
             'role' => ['required', Rule::in(['it_support', 'manager', 'supervisor', 'kasir'])],
-            'cabang_id' => 'nullable|exists:cabangs,id',
+            'cabang_id' => 'nullable|exists:cabang,id',
             'aktif' => 'required|boolean',
         ]);
+
+        $cabangId = $validated['cabang_id'] ?? null;
+        unset($validated['cabang_id']);
 
         if(!empty($validated['password'])){
             $validated['password'] = Hash::make($validated['password']);
@@ -74,6 +85,11 @@ class UserController extends Controller
         }
 
         $user->update($validated);
+
+        if (!empty($cabangId)) {
+            $user->cabang()->sync([$cabangId]);
+        }
+
         return redirect()->route('admin.users.index')->with('success', 'User updated successfully.');
     }
 
@@ -88,10 +104,10 @@ class UserController extends Controller
     {
         Gate::authorize('assign-cabang-user');
         $validated = $request->validate([
-            'cabang_id' => 'required|exists:cabangs,id',
+            'cabang_id' => 'required|exists:cabang,id',
         ]);
-        $user->cabang_id = $validated['cabang_id'];
-        $user->save();
+
+        $user->cabang()->sync([$validated['cabang_id']]);
         return redirect()->route('admin.users.index')->with('success', 'Cabang assigned successfully.');
     }
 }
