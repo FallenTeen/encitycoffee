@@ -118,7 +118,7 @@ class TransaksiService
                 if ($item['produk']->tipe === 'snack') {
                     $stokEtalase = StokEtalase::where('cabang_id', $shift->cabang_id)
                         ->where('produk_id', $item['produk']->id)
-                        ->where('tipe_stok', 'penjualan_retail')
+                        ->where('tipe_stok', 'produksi_minuman')
                         ->firstOrFail();
 
                     $this->stokService->kurangiStok(
@@ -151,17 +151,8 @@ class TransaksiService
 
     private function kurangiStokMinuman(Shift $shift, Produk $produk, int $jumlah)
     {
-        $produkBeans = Produk::where('tipe', 'beans')
-            ->where('perlu_kalibrasi', true)
-            ->first();
-
-        if (!$produkBeans) {
-            return;
-        }
-
-        $kalibrasi = $this->kalibrasiService->dapatkanKalibrasiTerpilih($shift, $produkBeans);
-
-        if (!$kalibrasi) {
+        $kalibrasi = $this->kalibrasiService->dapatkanKalibrasiTerpilih($shift, $produk);
+        if (! $kalibrasi) {
             throw new \Exception('Belum ada kalibrasi yang dipilih untuk shift ini');
         }
 
@@ -169,7 +160,7 @@ class TransaksiService
         $totalBeansKg = $totalBeansGram / 1000;
 
         $stokEtalase = StokEtalase::where('cabang_id', $shift->cabang_id)
-            ->where('produk_id', $produkBeans->id)
+            ->where('produk_id', $produk->id)
             ->where('tipe_stok', 'produksi_minuman')
             ->firstOrFail();
 

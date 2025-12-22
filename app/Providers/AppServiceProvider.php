@@ -84,7 +84,7 @@ class AppServiceProvider extends ServiceProvider
             return in_array($user->role, ['it_support', 'manager', 'supervisor'], true);
         });
         Gate::define('delete-user', function ($user) {
-            return in_array($user->role, ['it_support', 'manager'], true);
+            return in_array($user->role, ['it_support', 'manager', 'supervisor'], true);
         });
         Gate::define('create-cabang', function ($user) {
             return $user->role === 'it_support';

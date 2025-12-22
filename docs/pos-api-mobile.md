@@ -6,7 +6,7 @@ Dokumen ini merangkum seluruh endpoint POS Mobile di bawah prefix ` /api/pos/...
 - Base URL: `https://<server>/api` atau `http://localhost:8000/api` (development).
 - Autentikasi: `POST /pos/auth/login` menghasilkan token Sanctum; semua endpoint di bawah `/pos` (kecuali login) memerlukan header `Authorization: Bearer <token>`.
 - Header umum: `Content-Type: application/json`, `Accept: application/json`.
-- Peran & akses: `kasir`, `supervisor`, `manager`, `it_support` dengan pembatasan akses. Kasir hanya boleh mengakses shift miliknya sendiri.
+- Peran & akses: aplikasi mobile hanya mengizinkan login `kasir`. Kasir hanya boleh mengakses shift miliknya sendiri.
 - Pagination: endpoint daftar mengembalikan objek paginator Laravel (memiliki `data`, `links`, `meta`).
 - Error umum:
   - 401/403: `{"error": "Tidak memiliki akses"}`.
@@ -19,8 +19,10 @@ Dokumen ini merangkum seluruh endpoint POS Mobile di bawah prefix ` /api/pos/...
 **Autentikasi**
 - `POST /pos/auth/login`
   - Body: `{ "email": "string", "password": "string" }`
-  - Response (JSON, 200): `{ "user": { ... }, "token": "<sanctum_token>" }`
-  - Validation error (422): `{ "errors": { "email": ["Kredensial salah"] } }`
+  - Response (JSON, 200): `{ "message": "Login berhasil", "user": { ... }, "token": "<sanctum_token>" }`
+  - Error (403): `{ "error": "Hanya kasir yang dapat login di aplikasi mobile" }`
+  - Error (403): `{ "error": "Akun tidak aktif" }`
+  - Error (401): `{ "errors": { "email": ["Kredensial salah"] } }`
 
 - `POST /pos/auth/logout` (auth)
   - Response (200): `{ "message": "Berhasil logout" }`
@@ -167,11 +169,36 @@ Dokumen ini merangkum seluruh endpoint POS Mobile di bawah prefix ` /api/pos/...
 - `GET /pos/sinkronisasi/status` (auth)
   - Query: `id_perangkat`.
   - Response (200): `{ id_perangkat, statistik: { pending, tersinkronisasi, gagal }, item_pending: [...], terakhir_sinkronisasi: datetime|null }`.
+  - Catatan akses: endpoint sinkronisasi dibatasi untuk `kasir` (dan `it_support` untuk kebutuhan operasional).
 
 ---
 
 **Viewer (Read-only JSON, tanpa auth)**
 Endpoint di bawah prefix `/api/viewer/...` menyediakan data publik read-only seperti daftar shift, produk, stok, mutasi, dan status sinkronisasi. Cocok untuk dashboard ringan atau mode demo tanpa login.
+
+---
+
+**User Management API (Web/Admin)**
+Endpoint di bawah prefix `/api/user-management/...` digunakan untuk pengelolaan user berbasis hierarki via token Sanctum.
+- Middleware: `auth:sanctum` + `role:it_support,manager,supervisor`
+- Batasan hierarki:
+  - `it_support`: dapat mengelola `manager|supervisor|kasir` lintas cabang
+  - `manager`: hanya `supervisor|kasir` untuk cabang yang ditugaskan
+  - `supervisor`: hanya `kasir` untuk cabang yang ditugaskan
+- Audit: semua request mutasi oleh `it_support` dicatat ke tabel `audit_logs`.
+
+Endpoint:
+- `GET /user-management/users` (auth)
+  - Query: `search?`, `role?`, `aktif?`, `cabang_id?`, `per_page?`
+  - Response (200): paginator user + relasi `cabang`.
+- `POST /user-management/users` (auth)
+  - Body: `{ "name": "...", "email": "...", "password": "...", "password_confirmation": "...", "role": "manager|supervisor|kasir", "aktif": true|false, "cabang_ids": [1,2] }`
+  - Response (201): `{ "user": { ... } }`
+- `PUT /user-management/users/{user}` (auth)
+  - Body: `{ "name": "...", "email": "...", "password?": "...", "password_confirmation?": "...", "aktif?": true|false, "role?": "...", "cabang_ids?": [1,2] }`
+  - Response (200): `{ "user": { ... } }`
+- `DELETE /user-management/users/{user}` (auth)
+  - Response (200): `{ "deleted": true }`
 
 ---
 

@@ -1,6 +1,6 @@
 import { Head } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
-import { Breadcrumbs } from '@/components/breadcrumbs';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface SupervisorProps {
   user: { name: string };
@@ -13,25 +13,41 @@ export default function Supervisor({ problematic, kasDifference, pendingHandover
   return (
     <AppLayout title="Supervisor Dashboard">
       <Head title="Supervisor Dashboard" />
-      <Breadcrumbs
-        breadcrumbs={[
-          { title: 'Dashboard', href: '/' },
-          { title: 'Supervisor', href: '/' },
-        ]}
-      />
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
-          <div className="text-sm font-medium text-muted-foreground">Transaksi Bermasalah</div>
-          <div className="mt-2 text-2xl font-bold">{problematic}</div>
-        </div>
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
-          <div className="text-sm font-medium text-muted-foreground">Selisih Kas</div>
-          <div className="mt-2 text-2xl font-bold">Rp {kasDifference.toLocaleString('id-ID')}</div>
-        </div>
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
-          <div className="text-sm font-medium text-muted-foreground">Serah Terima Tertunda</div>
-          <div className="mt-2 text-2xl font-bold">{pendingHandovers}</div>
-        </div>
+          <Card>
+              <CardHeader>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Transaksi Bermasalah
+                  </CardTitle>
+              </CardHeader>
+              <CardContent>
+                  <div className="text-2xl font-semibold">{problematic}</div>
+              </CardContent>
+          </Card>
+          <Card>
+              <CardHeader>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Selisih Kas
+                  </CardTitle>
+              </CardHeader>
+              <CardContent>
+                  <div className="text-2xl font-semibold">
+                      Rp {kasDifference.toLocaleString('id-ID')}
+                  </div>
+              </CardContent>
+          </Card>
+          <Card>
+              <CardHeader>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Serah Terima Tertunda
+                  </CardTitle>
+              </CardHeader>
+              <CardContent>
+                  <div className="text-2xl font-semibold">
+                      {pendingHandovers}
+                  </div>
+              </CardContent>
+          </Card>
       </div>
     </AppLayout>
   );

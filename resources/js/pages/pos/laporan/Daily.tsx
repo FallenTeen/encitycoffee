@@ -1,10 +1,9 @@
 import { Head } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
-import { Breadcrumbs } from '@/components/breadcrumbs';
 
 export default function PosLaporanDaily(props: any) {
   return (
-    <AppLayout breadcrumbs={[{ title: 'POS', href: '/pos' }, { title: 'Laporan', href: '/pos/laporan' }, { title: 'Harian', href: '/pos/laporan/harian' }]}> 
+    <AppLayout>
       <Head title="POS - Laporan Harian" />
       <div className="space-y-6">
         <h1 className="text-xl font-semibold">Laporan Harian</h1>

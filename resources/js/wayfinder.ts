@@ -7,10 +7,9 @@ export type RouteQueryOptions = {
   mergeQuery?: QueryRecord;
 };
 
-export type RouteDefinition<M extends string> = {
+export type RouteDefinition<M extends string | readonly string[]> = {
   url: string;
-  method: M;
-};
+} & (M extends readonly string[] ? { methods: M } : { method: M });
 
 export type RouteFormDefinition<M extends string> = {
   action: string;

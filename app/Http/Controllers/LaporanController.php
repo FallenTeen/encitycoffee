@@ -629,10 +629,18 @@ class LaporanController extends Controller
             ->sum('total_qris');
 
         return response()->json([
-            'shift_id' => $shift->id,
-            'total_transaksi' => $totalTransaksi,
-            'total_pendapatan_tunai' => $totalPendapatanTunai,
-            'total_pendapatan_qris' => $totalPendapatanQris,
+            'keuangan' => [
+                'shift_id' => (int) $shift->id,
+                'total_transaksi' => (int) $totalTransaksi,
+                'total_pendapatan_tunai' => (float) $totalPendapatanTunai,
+                'total_pendapatan_qris' => (float) $totalPendapatanQris,
+                'saldo_awal' => (float) $shift->saldo_awal,
+                'saldo_akhir' => $shift->saldo_akhir !== null ? (float) $shift->saldo_akhir : null,
+            ],
+            'shift_id' => (int) $shift->id,
+            'total_transaksi' => (int) $totalTransaksi,
+            'total_pendapatan_tunai' => (float) $totalPendapatanTunai,
+            'total_pendapatan_qris' => (float) $totalPendapatanQris,
         ]);
     }
 

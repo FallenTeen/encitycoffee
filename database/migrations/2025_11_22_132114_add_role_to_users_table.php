@@ -11,13 +11,37 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-             $table->enum('role', ['it_support', 'manager', 'supervisor', 'kasir']);
-             $table->boolean('aktif')->default(true);
+        if (! Schema::hasColumn('users', 'role')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->enum('role', ['it_support', 'manager', 'supervisor', 'kasir'])->default('kasir');
+                $table->index('role');
+            });
+        }
 
-             $table->index('role');
-             $table->index('aktif')->default(true);
-        });
+        if (! Schema::hasColumn('users', 'aktif')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->boolean('aktif')->default(true);
+                $table->index('aktif');
+            });
+        }
+
+        if (! Schema::hasTable('audit_logs')) {
+            Schema::create('audit_logs', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('actor_user_id')->constrained('users')->onDelete('cascade');
+                $table->string('method', 10);
+                $table->text('path');
+                $table->string('ip', 45)->nullable();
+                $table->text('user_agent')->nullable();
+                $table->string('subject_type')->nullable();
+                $table->unsignedBigInteger('subject_id')->nullable();
+                $table->json('payload')->nullable();
+                $table->timestamp('created_at')->useCurrent();
+
+                $table->index(['actor_user_id', 'created_at']);
+                $table->index(['subject_type', 'subject_id']);
+            });
+        }
     }
 
     /**
@@ -25,8 +49,22 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('role');
-        });
+        if (Schema::hasTable('audit_logs')) {
+            Schema::drop('audit_logs');
+        }
+
+        if (Schema::hasColumn('users', 'aktif')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->dropIndex(['aktif']);
+                $table->dropColumn('aktif');
+            });
+        }
+
+        if (Schema::hasColumn('users', 'role')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->dropIndex(['role']);
+                $table->dropColumn('role');
+            });
+        }
     }
 };

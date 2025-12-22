@@ -4,11 +4,16 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
+use App\Services\HierarchyAssignmentService;
 use Carbon\Carbon;
 use App\Models\Shift;
 use App\Models\Transaksi;
 use App\Models\User;
+use App\Models\Cabang;
 use App\Models\StokEtalase;
 use App\Models\BatchStok;
 use Inertia\Inertia;
@@ -16,17 +21,182 @@ use Inertia\Inertia;
 class SupervisorController extends Controller
 {
 
-    public function index()
+    public function index(Request $request)
     {
-        Gate::authorize('view-supervisor');
+        Gate::authorize('view-manager-userManagement');
 
         $user = Auth::user();
-        $cabangIds = $user->cabang->pluck('id')->all();
+        $role = strtolower((string) $user->role);
+        $allowedCabangIds = $role === 'it_support'
+            ? Cabang::pluck('id')->all()
+            : $user->cabang()->pluck('cabang.id')->all();
 
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:255'],
+            'cabang_id' => ['nullable', Rule::in($allowedCabangIds)],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
 
-        return Inertia::render('supervisor/Index', [
-            'user' => $user,
-            'cabangIds' => $cabangIds,
+        $query = User::query()
+            ->where('role', 'supervisor')
+            ->with('cabang');
+
+        if ($role !== 'it_support') {
+            $query->whereHas('cabang', fn ($q) => $q->whereIn('cabang.id', $allowedCabangIds))
+                ->whereDoesntHave('cabang', fn ($q) => $q->whereNotIn('cabang.id', $allowedCabangIds));
+        }
+
+        if (! empty($validated['search'])) {
+            $search = $validated['search'];
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")->orWhere('email', 'like', "%{$search}%");
+            });
+        }
+        if (! empty($validated['cabang_id'])) {
+            $cabangId = (int) $validated['cabang_id'];
+            $query->whereHas('cabang', fn ($q) => $q->where('cabang.id', $cabangId));
+        }
+
+        $perPage = (int) ($validated['per_page'] ?? 20);
+        $supervisors = $query->orderBy('name')->paginate($perPage)->withQueryString();
+
+        $cabangList = $role === 'it_support'
+            ? Cabang::orderBy('kode')->get(['id', 'kode', 'nama'])
+            : $user->cabang()->get(['cabang.id', 'cabang.kode', 'cabang.nama']);
+
+        return Inertia::render('manager/supervisor/Index', [
+            'supervisors' => $supervisors,
+            'cabang_list' => $cabangList,
+            'filter_aktif' => [
+                'search' => $validated['search'] ?? '',
+                'cabang_id' => $validated['cabang_id'] ?? '',
+                'per_page' => $perPage,
+            ],
+        ]);
+    }
+
+    public function create(Request $request)
+    {
+        Gate::authorize('view-manager-userManagement');
+
+        $user = $request->user();
+        $role = strtolower((string) $user->role);
+        $cabangList = $role === 'it_support'
+            ? Cabang::orderBy('kode')->get(['id', 'kode', 'nama'])
+            : $user->cabang()->get(['cabang.id', 'cabang.kode', 'cabang.nama']);
+
+        return Inertia::render('manager/supervisor/Create', [
+            'cabang_list' => $cabangList,
+        ]);
+    }
+
+    public function store(Request $request)
+    {
+        Gate::authorize('create-user');
+
+        $actor = $request->user();
+        $role = strtolower((string) $actor->role);
+        $allowedCabangIds = $role === 'it_support'
+            ? Cabang::pluck('id')->all()
+            : $actor->cabang()->pluck('cabang.id')->all();
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'aktif' => ['nullable', 'boolean'],
+            'cabang_ids' => ['required', 'array', 'size:1'],
+            'cabang_ids.*' => ['integer', Rule::in($allowedCabangIds)],
+        ]);
+
+        $supervisor = null;
+        DB::transaction(function () use ($validated, &$supervisor, $actor) {
+            $supervisor = User::create([
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'password' => Hash::make($validated['password']),
+                'role' => 'supervisor',
+                'aktif' => $validated['aktif'] ?? true,
+            ]);
+            app(HierarchyAssignmentService::class)->syncRoleAndCabang($actor, $supervisor, 'supervisor', array_map('intval', $validated['cabang_ids']));
+        });
+
+        Log::info('Supervisor created', ['actor_user_id' => (int) $actor->id, 'user_id' => (int) $supervisor->id]);
+        return redirect()->route('manager.supervisor.index')->with('success', 'Supervisor berhasil dibuat');
+    }
+
+    public function edit(Request $request, User $supervisor)
+    {
+        Gate::authorize('edit-user');
+        $this->assertCanManageSupervisor($request->user(), $supervisor);
+
+        $actor = $request->user();
+        $role = strtolower((string) $actor->role);
+        $cabangList = $role === 'it_support'
+            ? Cabang::orderBy('kode')->get(['id', 'kode', 'nama'])
+            : $actor->cabang()->get(['cabang.id', 'cabang.kode', 'cabang.nama']);
+
+        $supervisor->load('cabang:id,kode,nama');
+
+        return Inertia::render('manager/supervisor/Edit', [
+            'supervisor' => $supervisor,
+            'cabang_list' => $cabangList,
+        ]);
+    }
+
+    public function update(Request $request, User $supervisor)
+    {
+        Gate::authorize('edit-user');
+        $this->assertCanManageSupervisor($request->user(), $supervisor);
+
+        $actor = $request->user();
+        $role = strtolower((string) $actor->role);
+        $allowedCabangIds = $role === 'it_support'
+            ? Cabang::pluck('id')->all()
+            : $actor->cabang()->pluck('cabang.id')->all();
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($supervisor->id)],
+            'password' => ['nullable', 'string', 'min:8', 'confirmed'],
+            'aktif' => ['nullable', 'boolean'],
+            'cabang_ids' => ['required', 'array', 'size:1'],
+            'cabang_ids.*' => ['integer', Rule::in($allowedCabangIds)],
+        ]);
+
+        DB::transaction(function () use ($validated, $supervisor, $actor) {
+            $supervisor->name = $validated['name'];
+            $supervisor->email = $validated['email'];
+            if (! empty($validated['password'])) {
+                $supervisor->password = Hash::make($validated['password']);
+            }
+            $supervisor->aktif = $validated['aktif'] ?? $supervisor->aktif;
+            $supervisor->save();
+            app(HierarchyAssignmentService::class)->syncRoleAndCabang($actor, $supervisor, 'supervisor', array_map('intval', $validated['cabang_ids']));
+        });
+
+        Log::info('Supervisor updated', ['actor_user_id' => (int) $actor->id, 'user_id' => (int) $supervisor->id]);
+        return redirect()->route('manager.supervisor.index')->with('success', 'Supervisor berhasil diperbarui');
+    }
+
+    public function destroy(Request $request, User $supervisor)
+    {
+        Gate::authorize('delete-user');
+        $this->assertCanManageSupervisor($request->user(), $supervisor);
+
+        app(HierarchyAssignmentService::class)->clearHierarchyForUser($supervisor);
+        $supervisor->delete();
+        Log::info('Supervisor deleted', ['actor_user_id' => (int) $request->user()->id, 'user_id' => (int) $supervisor->id]);
+        return redirect()->route('manager.supervisor.index')->with('success', 'Supervisor berhasil dihapus');
+    }
+
+    public function show(Request $request, User $supervisor)
+    {
+        Gate::authorize('view-manager-userManagement');
+        $this->assertCanManageSupervisor($request->user(), $supervisor);
+        $supervisor->load('cabang:id,kode,nama');
+        return Inertia::render('manager/supervisor/Show', [
+            'supervisor' => $supervisor,
         ]);
     }
 
@@ -96,6 +266,29 @@ class SupervisorController extends Controller
             'transaksi_terbaru' => $transaksiTerbaru,
             'kasir_aktif' => $kasirAktif,
         ]);
+    }
+
+    private function assertCanManageSupervisor(User $actor, User $supervisor): void
+    {
+        if ((string) $supervisor->role !== 'supervisor') {
+            abort(404);
+        }
+
+        $actorRole = strtolower((string) $actor->role);
+        if ($actorRole === 'it_support') {
+            return;
+        }
+
+        $allowedCabangIds = $actor->cabang()->pluck('cabang.id')->all();
+        if (empty($allowedCabangIds)) {
+            abort(403);
+        }
+
+        $targetCabangIds = $supervisor->cabang()->pluck('cabang.id')->all();
+        $diff = array_values(array_diff($targetCabangIds, $allowedCabangIds));
+        if (! empty($diff)) {
+            abort(403);
+        }
     }
 
     public function monitoringShift(Request $request)

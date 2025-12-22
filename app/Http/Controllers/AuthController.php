@@ -5,6 +5,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route as RouteFacade;
 use Inertia\Inertia;
 
@@ -41,6 +42,7 @@ class AuthController extends Controller
 
         if (!$user || !Hash::check($request->password, $user->password)) {
             $error = ['email' => 'Kredensial salah'];
+            Log::warning('Login failed', ['email' => (string) $request->email, 'expects_json' => (bool) $request->expectsJson()]);
 
             return $request->expectsJson()
                 ? response()->json(['errors' => $error], 401)
@@ -49,6 +51,15 @@ class AuthController extends Controller
 
         // ❗ If API Login → No session, return token
         if ($request->expectsJson()) {
+            if ((bool) ($user->aktif ?? true) === false) {
+                Log::warning('Mobile login rejected: user inactive', ['user_id' => (int) $user->id]);
+                return response()->json(['error' => 'Akun tidak aktif'], 403);
+            }
+            if ((string) $user->role !== 'kasir') {
+                Log::warning('Mobile login rejected: role not allowed', ['user_id' => (int) $user->id, 'role' => (string) $user->role]);
+                return response()->json(['error' => 'Hanya kasir yang dapat login di aplikasi mobile'], 403);
+            }
+
             $user->tokens()->delete();
             $token = $user->createToken('pos-token')->plainTextToken;
 

@@ -53,9 +53,14 @@ function getMainNavItems(role?: string): NavGroup[] {
             title: 'Admin',
             items: [
                 { title: 'Dashboard', href: admin.dashboard(), icon: LayoutDashboard },
-                { title: 'Users', href: admin.users.index(), icon: Users },
                 { title: 'Cabang', href: admin.cabang.index(), icon: Building },
                 { title: 'System Logs', href: admin.system.logs(), icon: FileText },
+            ],
+        });
+        groups.push({
+            title: 'Pengelolaan Pengguna',
+            items: [
+                { title: 'Pengguna', href: admin.users.index(), icon: Users },
             ],
         });
         groups.push({
@@ -94,9 +99,15 @@ function getMainNavItems(role?: string): NavGroup[] {
             title: 'Manager',
             items: [
                 { title: 'Dashboard', href: manager.dashboard(), icon: LayoutDashboard },
-                { title: 'Supervisor', href: manager.supervisor.index(), icon: Users },
                 { title: 'Laporan Cabang', href: manager.laporan.cabang(), icon: Building },
                 { title: 'Performa Shift', href: manager.performa.shift(), icon: TrendingUp },
+            ],
+        });
+        groups.push({
+            title: 'Pengelolaan Pengguna',
+            items: [
+                { title: 'Supervisor', href: manager.supervisor.index(), icon: Users },
+                { title: 'Kasir', href: '/manager/kasir', icon: Users },
             ],
         });
         groups.push({
@@ -136,6 +147,11 @@ function getMainNavItems(role?: string): NavGroup[] {
             items: [
                 { title: 'Dashboard', href: supervisor.dashboard(), icon: LayoutDashboard },
                 { title: 'Monitoring Shift', href: supervisor.monitoring.shift(), icon: Clock },
+            ],
+        });
+        groups.push({
+            title: 'Pengelolaan Pengguna',
+            items: [
                 { title: 'Kasir', href: supervisor.kasir.index(), icon: Users },
             ],
         });

@@ -1,4 +1,3 @@
-// Components
 import TextLink from '@/components/text-link';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -30,14 +29,13 @@ export default function VerifyEmail({ status }: { status?: string }) {
                             Resend verification email
                         </Button>
 
-                        {/* Use router.post to call logout as POST (avoid nested form) */}
-                        <button
+                        <Button
                             type="button"
-                            className="mx-auto block text-sm"
+                            variant="link"
                             onClick={() => router.post(logout().url)}
                         >
                             Log out
-                        </button>
+                        </Button>
                     </>
                 )}
             </Form>

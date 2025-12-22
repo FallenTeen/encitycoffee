@@ -1,10 +1,9 @@
 import { Head } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
-import { Breadcrumbs } from '@/components/breadcrumbs';
 
 export default function PosKalibrasiSelect(props: any) {
   return (
-    <AppLayout breadcrumbs={[{ title: 'POS', href: '/pos' }, { title: 'Kalibrasi', href: '/pos/kalibrasi' }, { title: 'Select', href: '/pos/kalibrasi/select' }]}> 
+    <AppLayout>
       <Head title="POS - Kalibrasi Select" />
       <div className="space-y-6">
         <h1 className="text-xl font-semibold">Kalibrasi - Pilih</h1>

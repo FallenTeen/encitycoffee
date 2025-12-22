@@ -1,6 +1,6 @@
 import { Head } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
-import { Breadcrumbs } from '@/components/breadcrumbs';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface AdminProps {
   user: { name: string };
@@ -13,25 +13,39 @@ export default function Admin({ user, totalRevenue, cabangCount, userCount }: Ad
   return (
     <AppLayout title="Admin Dashboard">
       <Head title="Admin Dashboard" />
-      <Breadcrumbs
-        breadcrumbs={[
-          { title: 'Dashboard', href: '/' },
-          { title: 'Admin', href: '/' },
-        ]}
-      />
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
-          <div className="text-sm font-medium text-muted-foreground">Total Revenue</div>
-          <div className="mt-2 text-2xl font-bold">Rp {totalRevenue.toLocaleString('id-ID')}</div>
-        </div>
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
-          <div className="text-sm font-medium text-muted-foreground">Jumlah Cabang</div>
-          <div className="mt-2 text-2xl font-bold">{cabangCount}</div>
-        </div>
-        <div className="rounded-lg border bg-card p-6 shadow-sm">
-          <div className="text-sm font-medium text-muted-foreground">Jumlah Pengguna</div>
-          <div className="mt-2 text-2xl font-bold">{userCount}</div>
-        </div>
+          <Card>
+              <CardHeader>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Total Revenue
+                  </CardTitle>
+              </CardHeader>
+              <CardContent>
+                  <div className="text-2xl font-semibold">
+                      Rp {totalRevenue.toLocaleString('id-ID')}
+                  </div>
+              </CardContent>
+          </Card>
+          <Card>
+              <CardHeader>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Jumlah Cabang
+                  </CardTitle>
+              </CardHeader>
+              <CardContent>
+                  <div className="text-2xl font-semibold">{cabangCount}</div>
+              </CardContent>
+          </Card>
+          <Card>
+              <CardHeader>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Jumlah Pengguna
+                  </CardTitle>
+              </CardHeader>
+              <CardContent>
+                  <div className="text-2xl font-semibold">{userCount}</div>
+              </CardContent>
+          </Card>
       </div>
     </AppLayout>
   );

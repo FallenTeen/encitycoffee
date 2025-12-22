@@ -1,10 +1,13 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Http\Request;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\CabangController;
+use App\Http\Controllers\ShiftController;
+use App\Http\Controllers\KalibrasiController;
 use App\Http\Controllers\SystemController;
 use App\Http\Controllers\ManagerController;
 use App\Http\Controllers\SupervisorController;
@@ -15,21 +18,24 @@ use App\Http\Controllers\KategoriProdukController;
 use App\Http\Controllers\LaporanController;
 use Inertia\Inertia;
 use App\Http\Controllers\TransaksiController;
+use App\Models\Cabang;
+use App\Services\StokService;
 
-// ============================================================================
-// GUEST ROUTES
-// ============================================================================
-Route::middleware('guest')->group(function () {
-    Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
-    Route::post('/login', [AuthController::class, 'login'])->name('login.post');
-});
+Route::get('/', function () {
+    if (auth()->check()) {
+        return redirect()->route('dashboard');
+    }
+
+    return Inertia::render('welcome', [
+        'canRegister' => true,
+    ]);
+})->name('home');
 
 // ============================================================================
 // AUTHENTICATED ROUTES
 // ============================================================================
 Route::middleware('auth')->group(function () {
-    Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
-    Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     // ------------------------------------------------------------------------
     // IT SUPPORT ROUTES (it_support only)
@@ -63,6 +69,12 @@ Route::middleware('auth')->group(function () {
         Route::get('/dashboard', [ManagerController::class, 'dashboard'])->name('dashboard');
         Route::get('/laporan-cabang', [ManagerController::class, 'laporanCabang'])->name('laporan.cabang');
         Route::get('/performa-shift', [ManagerController::class, 'perfomaShift'])->name('performa.shift');
+        Route::get('/kasir', [KasirController::class, 'indexManager'])->name('kasir.index');
+        Route::get('/kasir/create', [KasirController::class, 'createManager'])->name('kasir.create');
+        Route::post('/kasir', [KasirController::class, 'storeManager'])->name('kasir.store');
+        Route::get('/kasir/{kasir}/edit', [KasirController::class, 'editManager'])->name('kasir.edit');
+        Route::put('/kasir/{kasir}', [KasirController::class, 'updateManager'])->name('kasir.update');
+        Route::delete('/kasir/{kasir}', [KasirController::class, 'destroyManager'])->name('kasir.destroy');
         Route::get('/supervisor', [SupervisorController::class, 'index'])->name('supervisor.index');
         Route::get('/supervisor/create', [SupervisorController::class, 'create'])->name('supervisor.create');
         Route::post('/supervisor', [SupervisorController::class, 'store'])->name('supervisor.store');
@@ -157,4 +169,25 @@ Route::middleware('auth')->group(function () {
         Route::delete('/kasir/{kasir}', [KasirController::class, 'destroy'])->name('kasir.destroy');
         Route::get('/kasir/{kasir}', [KasirController::class, 'show'])->name('kasir.show');
     });
+
+    Route::prefix('pos')->middleware('role:kasir,supervisor,manager,it_support')->group(function () {
+        Route::post('shift/buka', [ShiftController::class, 'buka']);
+        Route::post('shift/{shift}/tutup', [ShiftController::class, 'tutup']);
+        Route::post('kalibrasi', [KalibrasiController::class, 'simpan']);
+        Route::post('transaksi', [TransaksiController::class, 'buatTransaksi']);
+        Route::get('laporan/shift/{shift}/ringkasan', [LaporanController::class, 'ringkasanShift']);
+    });
+
+    Route::prefix('viewer')->group(function () {
+        Route::get('stok/cabang/{cabang}/mendekati-kadaluarsa', function (Request $request, Cabang $cabang) {
+            $hari = (int) $request->get('hari', 30);
+            $hari = max(1, min(365, $hari));
+
+            $batches = (new StokService())->dapatkanBarangMendekatiKadaluarsa($cabang, $hari);
+
+            return response()->json(['batches' => $batches]);
+        });
+    });
 });
+
+require __DIR__.'/settings.php';

@@ -1,17 +1,186 @@
 import AppLayout from '@/layouts/app-layout';
-import { Head } from '@inertiajs/react';
+import InputError from '@/components/input-error';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import admin from '@/routes/admin';
+import { Head, Link, useForm } from '@inertiajs/react';
+import { useEffect, useMemo } from 'react';
 
 interface Props {
-  user: any;
-  cabangs: any;
+  user: {
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+    aktif: boolean;
+    cabang?: Array<{ id: number; kode?: string; nama?: string }>;
+  };
+  cabangs: Array<{ id: number; kode: string; nama: string | null }>;
 }
 
 export default function AdminUsersEdit({ user, cabangs }: Props) {
+  const cabangOptions = useMemo(
+    () => (cabangs ?? []).map((c) => ({ id: c.id, label: `${c.kode} - ${c.nama ?? '-'}` })),
+    [cabangs],
+  );
+
+  const initialCabangIds = useMemo(() => (user?.cabang ?? []).map((c) => c.id), [user]);
+
+  const { data, setData, put, processing, errors } = useForm({
+    name: user?.name ?? '',
+    email: user?.email ?? '',
+    password: '',
+    password_confirmation: '',
+    role: user?.role ?? 'kasir',
+    aktif: Boolean(user?.aktif),
+    cabang_ids: initialCabangIds as number[],
+  });
+
+  useEffect(() => {
+    if (data.role === 'it_support' && data.cabang_ids.length > 0) {
+      setData('cabang_ids', []);
+    }
+    if ((data.role === 'supervisor' || data.role === 'kasir') && data.cabang_ids.length > 1) {
+      setData('cabang_ids', [data.cabang_ids[0]]);
+    }
+  }, [data.role, data.cabang_ids.length, setData]);
+
   return (
-    <AppLayout title={`Edit User - ${user?.name ?? ''}`}> 
+    <AppLayout title={`Edit User - ${user?.name ?? ''}`}>
       <Head title="Admin - Edit User" />
       <div className="space-y-4">
-        <div className="rounded-md border p-4">Form placeholder edit data user dan assign cabang.</div>
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">Perbarui data pengguna</div>
+          <Link href={admin.users.index()} className="text-sm underline text-muted-foreground">
+            Kembali
+          </Link>
+        </div>
+
+        <div className="rounded-md border p-4">
+          <form
+            className="grid grid-cols-1 gap-4 md:grid-cols-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              put(admin.users.update(user.id).url);
+            }}
+          >
+            <div className="space-y-1">
+              <Label htmlFor="name">Nama</Label>
+              <Input id="name" value={data.name} onChange={(e) => setData('name', e.target.value)} />
+              <InputError message={errors.name} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="email">Email</Label>
+              <Input id="email" value={data.email} onChange={(e) => setData('email', e.target.value)} />
+              <InputError message={errors.email} />
+            </div>
+
+            <div className="space-y-1">
+              <Label>Role</Label>
+              <Select value={data.role} onValueChange={(v) => setData('role', v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="it_support">IT Support</SelectItem>
+                  <SelectItem value="manager">Manager</SelectItem>
+                  <SelectItem value="supervisor">Supervisor</SelectItem>
+                  <SelectItem value="kasir">Kasir</SelectItem>
+                </SelectContent>
+              </Select>
+              <InputError message={errors.role} />
+            </div>
+
+            <div className="space-y-1">
+              <Label>Status</Label>
+              <div className="flex items-center gap-2 pt-2">
+                <Checkbox checked={data.aktif} onCheckedChange={(v) => setData('aktif', Boolean(v))} />
+                <span className="text-sm">{data.aktif ? 'Aktif' : 'Nonaktif'}</span>
+              </div>
+              <InputError message={errors.aktif} />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="password">Password (opsional)</Label>
+              <Input
+                id="password"
+                type="password"
+                value={data.password}
+                onChange={(e) => setData('password', e.target.value)}
+                placeholder="Kosongkan jika tidak diubah"
+              />
+              <InputError message={errors.password} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="password_confirmation">Konfirmasi Password</Label>
+              <Input
+                id="password_confirmation"
+                type="password"
+                value={data.password_confirmation}
+                onChange={(e) => setData('password_confirmation', e.target.value)}
+              />
+              <InputError message={errors.password_confirmation} />
+            </div>
+
+            <div className="md:col-span-2 space-y-2">
+              <Label>Cabang</Label>
+              {data.role === 'it_support' ? (
+                <div className="text-sm text-muted-foreground">Role IT Support tidak ditetapkan ke cabang.</div>
+              ) : data.role === 'manager' ? (
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  {cabangOptions.map((c) => {
+                    const checked = data.cabang_ids.includes(c.id);
+                    return (
+                      <label key={c.id} className="flex items-center gap-2 rounded border px-3 py-2 text-sm">
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(v) => {
+                            const next = v
+                              ? Array.from(new Set(data.cabang_ids.concat([c.id])))
+                              : data.cabang_ids.filter((id) => id !== c.id);
+                            setData('cabang_ids', next);
+                          }}
+                        />
+                        <span>{c.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <Select
+                    value={data.cabang_ids.length === 1 ? String(data.cabang_ids[0]) : ''}
+                    onValueChange={(v) => setData('cabang_ids', v ? [Number(v)] : [])}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih cabang" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {cabangOptions.map((c) => (
+                        <SelectItem key={c.id} value={String(c.id)}>
+                          {c.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <InputError message={errors.cabang_ids as unknown as string} />
+            </div>
+
+            <div className="md:col-span-2 flex gap-2 pt-2">
+              <Button type="submit" disabled={processing}>
+                Simpan Perubahan
+              </Button>
+              <Button type="button" variant="secondary" asChild>
+                <Link href={admin.users.index()}>Batal</Link>
+              </Button>
+            </div>
+          </form>
+        </div>
       </div>
     </AppLayout>
   );

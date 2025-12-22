@@ -79,7 +79,7 @@ class TransaksiController extends Controller
                 (float) ($validated['pajak'] ?? 0),
                 $validated['catatan'] ?? null
             );
-            return response()->json($transaksi, 201);
+            return response()->json($transaksi);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 400);
         }

@@ -1,10 +1,9 @@
 import { Head } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
-import { Breadcrumbs } from '@/components/breadcrumbs';
 
 export default function PosAuthMe(props: any) {
   return (
-    <AppLayout breadcrumbs={[{ title: 'POS', href: '/pos' }, { title: 'Auth', href: '/pos/auth/me' }]}> 
+    <AppLayout>
       <Head title="POS - Me" />
       <div className="space-y-6">
         <h1 className="text-xl font-semibold">POS Me</h1>

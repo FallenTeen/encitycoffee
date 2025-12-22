@@ -177,11 +177,6 @@ class POSWorkflowTest extends TestCase
 
         // close shift: compute expected saldo akhir = saldo_awal + total_tunai
         // total_tunai is sum of tunai payments: 15000 + 100000 = 115000
-        // debug: output shift and auth user before closing
-        $shiftDebug = Shift::find($shiftId);
-        fwrite(STDOUT, "\nDEBUG SHIFT:" . json_encode($shiftDebug->toArray()) . "\n");
-        fwrite(STDOUT, "DEBUG AUTH USER:" . json_encode(auth()->user()?->id) . "\n");
-
         $respClose = $this->postJson("/pos/shift/{$shiftId}/tutup", [
             'saldo_akhir' => 100000 + 115000,
             'catatan' => 'Penutupan shift test'

@@ -6,8 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import AuthLayout from '@/layouts/auth-layout';
-// Link to register page directly to avoid broken aggregator
-import { post as loginPost } from '@/routes/login';
+import { store as loginPost } from '@/routes/login';
 import { request } from '@/routes/password';
 import { Form, Head } from '@inertiajs/react';
 
@@ -118,4 +117,3 @@ export default function Login({
         </AuthLayout>
     );
 }
-
