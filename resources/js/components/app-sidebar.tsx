@@ -73,9 +73,7 @@ function getMainNavItems(role?: string): NavGroup[] {
         groups.push({
             title: 'Stok',
             items: [
-                { title: 'Daftar Stok', href: stok.index(), icon: Warehouse },
-                { title: 'Stok Rendah', href: stok.rendah(), icon: Warehouse },
-                { title: 'Mendekati Kadaluarsa', href: stok.kadaluarsa(), icon: Warehouse },
+                { title: 'Stok', href: stok.index(), icon: Warehouse },
             ],
         });
         groups.push({
@@ -120,9 +118,7 @@ function getMainNavItems(role?: string): NavGroup[] {
         groups.push({
             title: 'Stok',
             items: [
-                { title: 'Daftar Stok', href: stok.index(), icon: Warehouse },
-                { title: 'Stok Rendah', href: stok.rendah(), icon: Warehouse },
-                { title: 'Mendekati Kadaluarsa', href: stok.kadaluarsa(), icon: Warehouse },
+                { title: 'Stok', href: stok.index(), icon: Warehouse },
             ],
         });
         groups.push({
@@ -158,9 +154,7 @@ function getMainNavItems(role?: string): NavGroup[] {
         groups.push({
             title: 'Stok',
             items: [
-                { title: 'Daftar Stok', href: stok.index(), icon: Warehouse },
-                { title: 'Stok Rendah', href: stok.rendah(), icon: Warehouse },
-                { title: 'Mendekati Kadaluarsa', href: stok.kadaluarsa(), icon: Warehouse },
+                { title: 'Stok', href: stok.index(), icon: Warehouse },
             ],
         });
         groups.push({
