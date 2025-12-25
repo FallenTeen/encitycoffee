@@ -128,8 +128,6 @@ class DeployCPanel extends Command
      */
     protected function gitPush(): bool
     {
-        $commitMessage = $this->ask('Enter commit message', 'Deploy: ' . date('Y-m-d H:i:s'));
-
         $this->info('📤 Pushing to git repository...');
 
         // Git add
@@ -139,24 +137,42 @@ class DeployCPanel extends Command
             return false;
         }
 
-        // Git commit
-        $result = Process::run("git commit -m \"{$commitMessage}\"");
-        if ($result->failed() && !str_contains($result->errorOutput(), 'nothing to commit')) {
-            $this->error('❌ Git commit failed');
-            $this->error($result->errorOutput());
-            return false;
+        // Check if there are changes to commit
+        $result = Process::run('git diff --cached --quiet');
+        $hasChanges = $result->failed(); // exit code 1 means there are changes
+
+        if ($hasChanges) {
+            $commitMessage = $this->ask('Enter commit message', 'Deploy: ' . date('Y-m-d H:i:s'));
+            
+            // Git commit
+            $result = Process::run("git commit -m \"{$commitMessage}\"");
+            if ($result->failed()) {
+                $this->error('❌ Git commit failed');
+                $this->error($result->errorOutput());
+                return false;
+            }
+            
+            $this->info('✓ Committed changes');
+        } else {
+            $this->warn('⚠️  No changes to commit, pushing existing commits...');
         }
 
         // Git push
         $gitBranch = config('deploy.git_branch', 'main');
         $result = Process::timeout(120)->run("git push origin {$gitBranch}");
         if ($result->failed()) {
-            $this->error('❌ Git push failed');
-            $this->error($result->errorOutput());
-            return false;
+            // Check if it's just "already up to date"
+            if (str_contains($result->errorOutput(), 'Everything up-to-date')) {
+                $this->info('✓ Repository already up to date');
+            } else {
+                $this->error('❌ Git push failed');
+                $this->error($result->errorOutput());
+                return false;
+            }
+        } else {
+            $this->info('✓ Pushed to repository');
         }
 
-        $this->info('✓ Pushed to repository');
         return true;
     }
 
