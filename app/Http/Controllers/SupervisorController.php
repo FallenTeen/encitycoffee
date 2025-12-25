@@ -316,7 +316,9 @@ class SupervisorController extends Controller
             $tanggal = Carbon::parse($validated['tanggal'])->toDateString();
             $query->whereDate('waktu_buka', $tanggal);
         } else {
-            $query->whereDate('waktu_buka', Carbon::today());
+            $tanggal = Carbon::today()->toDateString();
+            $validated['tanggal'] = $tanggal;
+            $query->whereDate('waktu_buka', $tanggal);
         }
 
         if (!empty($validated['cabang_id'])) {
@@ -366,6 +368,7 @@ class SupervisorController extends Controller
             'shift' => $shift,
             'filter_aktif' => $validated,
             'statistik_ringkasan' => $ringkasan,
+            'cabang_list' => Cabang::whereIn('id', $cabangIds)->orderBy('kode')->get(['id', 'kode', 'nama']),
         ]);
     }
 

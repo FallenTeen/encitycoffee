@@ -41,6 +41,7 @@ export default function AdminUsersIndex({ users, cabangs, filter_aktif }: Props)
     role: filter_aktif?.role ?? '',
     aktif: filter_aktif?.aktif ?? '',
     cabang_id: filter_aktif?.cabang_id ? String(filter_aktif.cabang_id) : '',
+    per_page: String(filter_aktif?.per_page ?? 15),
   });
 
   const cabangOptions = useMemo(
@@ -78,7 +79,7 @@ export default function AdminUsersIndex({ users, cabangs, filter_aktif }: Props)
 
         <div className="rounded-md border p-4">
           <form
-            className="grid grid-cols-1 gap-4 md:grid-cols-4"
+            className="grid grid-cols-1 gap-4 md:grid-cols-5"
             onSubmit={(e) => {
               e.preventDefault();
               submit();
@@ -141,7 +142,23 @@ export default function AdminUsersIndex({ users, cabangs, filter_aktif }: Props)
               <InputError message={errors.cabang_id} />
             </div>
 
-            <div className="md:col-span-4 flex items-center gap-2">
+            <div className="space-y-1">
+              <Label>Tampil</Label>
+              <Select value={data.per_page} onValueChange={(v) => setData('per_page', v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Per halaman" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="15">15</SelectItem>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+              <InputError message={errors.per_page as unknown as string} />
+            </div>
+
+            <div className="md:col-span-5 flex items-center gap-2">
               <Button type="submit" disabled={processing}>
                 Terapkan Filter
               </Button>
@@ -149,7 +166,7 @@ export default function AdminUsersIndex({ users, cabangs, filter_aktif }: Props)
                 type="button"
                 variant="secondary"
                 onClick={() => {
-                  setData({ search: '', role: '', aktif: '', cabang_id: '' });
+                  setData({ search: '', role: '', aktif: '', cabang_id: '', per_page: '15' });
                   router.get(admin.users.index().url, {}, { preserveScroll: true, replace: true });
                 }}
               >

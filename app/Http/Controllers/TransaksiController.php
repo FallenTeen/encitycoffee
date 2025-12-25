@@ -116,24 +116,68 @@ class TransaksiController extends Controller
     public function index(Request $request)
     {
         Gate::authorize('view-transaksi');
-        $query = Transaksi::query()->latest();
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
+
+        $validated = $request->validate([
+            'status' => ['nullable', 'in:pending,selesai,batal'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
+        $user = $request->user();
+        $query = Transaksi::query()
+            ->with([
+                'cabang:id,kode,nama',
+                'user:id,name,email',
+                'shift:id,status',
+            ])
+            ->latest();
+
+        if (method_exists($user, 'isItSupport') && ! $user->isItSupport()) {
+            $cabangIds = $user->cabang()->pluck('cabang.id')->all();
+            $query->whereIn('cabang_id', $cabangIds);
         }
-        $transaksis = $query->paginate(15);
-        return Inertia::render('transaksi/Index', compact('transaksis'));
+
+        if (! empty($validated['status'])) {
+            $query->where('status', $validated['status']);
+        }
+
+        $perPage = (int) ($validated['per_page'] ?? 15);
+        $transaksis = $query->paginate($perPage)->withQueryString();
+        return Inertia::render('transaksi/Index', [
+            'transaksis' => $transaksis,
+            'filter_aktif' => [
+                'status' => $validated['status'] ?? '',
+                'per_page' => $perPage,
+            ],
+        ]);
     }
 
     public function show(Transaksi $transaksi)
     {
         Gate::authorize('view-transaksi');
-        $transaksi->load(['item.produk', 'pembayaran', 'shift']);
+        $transaksi->load(['item.produk', 'pembayaran', 'shift', 'cabang', 'user']);
+
+        $user = request()->user();
+        if (method_exists($user, 'isItSupport') && ! $user->isItSupport()) {
+            $cabangIds = $user->cabang()->pluck('cabang.id')->all();
+            if (! in_array((int) $transaksi->cabang_id, $cabangIds, true)) {
+                abort(403, 'Tidak memiliki akses');
+            }
+        }
         return Inertia::render('transaksi/Show', compact('transaksi'));
     }
 
     public function byShift(Shift $shift, Request $request)
     {
         Gate::authorize('view-transaksi');
+
+        $user = $request->user();
+        if (method_exists($user, 'isItSupport') && ! $user->isItSupport()) {
+            $cabangIds = $user->cabang()->pluck('cabang.id')->all();
+            if (! in_array((int) $shift->cabang_id, $cabangIds, true)) {
+                abort(403, 'Tidak memiliki akses');
+            }
+        }
+
         $query = Transaksi::where('shift_id', $shift->id)->latest();
         if ($request->filled('status')) {
             $query->where('status', $request->status);
