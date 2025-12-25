@@ -59,8 +59,6 @@ class ProdukController extends Controller
 
     public function daftarProduk(Request $request)
     {
-        Gate::authorize('view-produk');
-
         $validated = $request->validate([
             'kategori_id' => 'nullable|integer|exists:kategori_produk,id',
             'tipe' => 'nullable|in:beans,minuman,snack',
@@ -91,7 +89,6 @@ class ProdukController extends Controller
 
     public function tampilkanProduk(Produk $produk)
     {
-        Gate::authorize('view-produk');
         $produk->load(['kategori', 'satuan']);
         return response()->json($produk);
     }
@@ -99,7 +96,6 @@ class ProdukController extends Controller
 
     public function produkBerdasarkanTipe($tipe)
     {
-        Gate::authorize('view-produk');
         if (!in_array($tipe, ['beans', 'minuman', 'snack'], true)) {
             return response()->json(['error' => 'Tipe produk tidak valid'], 422);
         }
@@ -114,7 +110,6 @@ class ProdukController extends Controller
 
     public function satuanProduk(Produk $produk)
     {
-        Gate::authorize('view-produk');
         $satuan = $produk->satuan()->orderBy('nilai_konversi')->get();
         return response()->json($satuan);
     }

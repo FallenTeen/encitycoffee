@@ -198,4 +198,56 @@ class POSWorkflowTest extends TestCase
         $near->assertStatus(200);
         $this->assertNotEmpty($near->json('batches'));
     }
+
+    public function test_mobile_kasir_can_access_produk_and_stok_via_api()
+    {
+        $user = User::create([
+            'name' => 'Kasir API',
+            'email' => 'kasir.api@example.test',
+            'password' => bcrypt('secret'),
+            'role' => 'kasir',
+            'aktif' => true,
+        ]);
+
+        $cabang = Cabang::create([
+            'kode' => 'CBG2',
+            'nama' => 'Cabang 2',
+            'alamat' => 'Alamat',
+            'telepon' => '08123456780',
+            'aktif' => true,
+        ]);
+
+        $user->cabang()->attach($cabang->id);
+
+        $kategori = KategoriProduk::create(['nama' => 'Minuman', 'slug' => 'minuman', 'deskripsi' => '']);
+
+        $produk = Produk::create([
+            'kategori_id' => $kategori->id,
+            'sku' => 'MIN-API-01',
+            'nama' => 'Latte API',
+            'deskripsi' => 'Minuman latte',
+            'tipe' => 'minuman',
+            'satuan_dasar' => 'cup',
+            'harga_modal' => 7000,
+            'harga_jual' => 20000,
+            'aktif' => true,
+            'perlu_kalibrasi' => false,
+        ]);
+
+        StokEtalase::create([
+            'cabang_id' => $cabang->id,
+            'produk_id' => $produk->id,
+            'tipe_stok' => 'produksi_minuman',
+            'jumlah' => 5.0,
+            'stok_minimum' => 1.0,
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $respProduk = $this->getJson("/api/pos/produk");
+        $respProduk->assertStatus(200);
+
+        $respStok = $this->getJson("/api/pos/stok/cabang/{$cabang->id}");
+        $respStok->assertStatus(200);
+    }
 }

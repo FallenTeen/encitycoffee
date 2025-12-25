@@ -620,13 +620,19 @@ class LaporanController extends Controller
             ->where('status', 'selesai')
             ->count();
 
-        $totalPendapatanTunai = Transaksi::where('shift_id', $shift->id)
-            ->where('status', 'selesai')
-            ->sum('total_tunai');
+        $totalPendapatanTunai = DB::table('pembayaran')
+            ->join('transaksi', 'pembayaran.transaksi_id', '=', 'transaksi.id')
+            ->where('transaksi.shift_id', $shift->id)
+            ->where('transaksi.status', 'selesai')
+            ->where('pembayaran.metode_pembayaran', 'tunai')
+            ->sum('pembayaran.jumlah');
 
-        $totalPendapatanQris = Transaksi::where('shift_id', $shift->id)
-            ->where('status', 'selesai')
-            ->sum('total_qris');
+        $totalPendapatanQris = DB::table('pembayaran')
+            ->join('transaksi', 'pembayaran.transaksi_id', '=', 'transaksi.id')
+            ->where('transaksi.shift_id', $shift->id)
+            ->where('transaksi.status', 'selesai')
+            ->where('pembayaran.metode_pembayaran', 'qris')
+            ->sum('pembayaran.jumlah');
 
         return response()->json([
             'keuangan' => [
