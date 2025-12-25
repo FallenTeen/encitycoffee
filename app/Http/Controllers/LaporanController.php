@@ -526,6 +526,118 @@ class LaporanController extends Controller
         ]);
     }
 
+    public function pendapatanKategori(Request $request)
+    {
+        Gate::authorize('view-laporan');
+
+        $user = Auth::user();
+        $cabangIds = $this->tentukanCabangIds($user);
+
+        $validated = $request->validate([
+            'tanggal_mulai' => 'nullable|date',
+            'tanggal_selesai' => 'nullable|date|after_or_equal:tanggal_mulai',
+            'kategori_id' => 'nullable|integer|exists:kategori_produk,id',
+            'harga_min' => 'nullable|numeric|min:0',
+            'harga_max' => 'nullable|numeric|min:0|gte:harga_min',
+        ]);
+
+        $tanggalMulai = $validated['tanggal_mulai'] ?? Carbon::now()->startOfMonth()->toDateString();
+        $tanggalSelesai = $validated['tanggal_selesai'] ?? Carbon::now()->toDateString();
+        $kategoriId = $request->integer('kategori_id') ?: null;
+        $hargaMin = $validated['harga_min'] ?? null;
+        $hargaMax = $validated['harga_max'] ?? null;
+
+        $akhirHari = Carbon::parse($tanggalSelesai)->endOfDay()->toDateTimeString();
+
+        $base = ItemTransaksi::query()
+            ->join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
+            ->join('produk', 'item_transaksi.produk_id', '=', 'produk.id')
+            ->join('kategori_produk', 'produk.kategori_id', '=', 'kategori_produk.id')
+            ->where('transaksi.status', 'selesai')
+            ->when(!empty($cabangIds), fn($q) => $q->whereIn('transaksi.cabang_id', $cabangIds))
+            ->whereBetween('transaksi.waktu_selesai', [$tanggalMulai, $akhirHari]);
+
+        if ($kategoriId) {
+            $base->where('produk.kategori_id', $kategoriId);
+        }
+        if ($hargaMin !== null) {
+            $base->where('produk.harga_jual', '>=', $hargaMin);
+        }
+        if ($hargaMax !== null) {
+            $base->where('produk.harga_jual', '<=', $hargaMax);
+        }
+
+        $perKategori = (clone $base)
+            ->select(
+                'kategori_produk.id as kategori_id',
+                'kategori_produk.nama as kategori',
+                DB::raw('SUM(item_transaksi.jumlah * produk.harga_jual) as pendapatan_kotor'),
+                DB::raw('SUM(item_transaksi.jumlah * produk.harga_modal) as total_modal'),
+                DB::raw('SUM(item_transaksi.jumlah * (produk.harga_jual - produk.harga_modal)) as margin')
+            )
+            ->groupBy('kategori_produk.id', 'kategori_produk.nama')
+            ->orderByDesc('pendapatan_kotor')
+            ->get()
+            ->map(function ($row) {
+                $pendapatanKotor = (float) ($row->pendapatan_kotor ?? 0.0);
+                $totalModal = (float) ($row->total_modal ?? 0.0);
+                $margin = (float) ($row->margin ?? 0.0);
+                $row->pendapatan_kotor = $pendapatanKotor;
+                $row->total_modal = $totalModal;
+                $row->margin = $margin;
+                $row->margin_persen = $pendapatanKotor > 0.0
+                    ? round(($margin / $pendapatanKotor) * 100, 2)
+                    : 0.0;
+                return $row;
+            });
+
+        $totalPendapatanKotor = (float) $perKategori->sum('pendapatan_kotor');
+        $totalModal = (float) $perKategori->sum('total_modal');
+        $totalMargin = (float) $perKategori->sum('margin');
+        $rataRataMarginPerKategori = $perKategori->count() > 0
+            ? round($perKategori->avg('margin'), 2)
+            : 0.0;
+
+        $kategoriTertinggi = $perKategori->sortByDesc('margin')->values()->first();
+        $kategoriTerendah = $perKategori->sortBy('margin')->values()->first();
+
+        $kategoriOptions = KategoriProduk::orderBy('nama')
+            ->get(['id', 'nama']);
+
+        $ringkasan = [
+            'total_pendapatan_kotor' => $totalPendapatanKotor,
+            'total_modal' => $totalModal,
+            'total_margin' => $totalMargin,
+            'rata_rata_margin_per_kategori' => $rataRataMarginPerKategori,
+            'kategori_margin_tertinggi' => $kategoriTertinggi,
+            'kategori_margin_terendah' => $kategoriTerendah,
+        ];
+
+        $filterAktif = [
+            'tanggal_mulai' => $tanggalMulai,
+            'tanggal_selesai' => $tanggalSelesai,
+            'kategori_id' => $kategoriId,
+            'harga_min' => $hargaMin,
+            'harga_max' => $hargaMax,
+        ];
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'kategori' => $perKategori,
+                'ringkasan' => $ringkasan,
+                'filter_aktif' => $filterAktif,
+                'kategori_options' => $kategoriOptions,
+            ]);
+        }
+
+        return Inertia::render('laporan/PendapatanKategori', [
+            'kategori' => $perKategori,
+            'ringkasan' => $ringkasan,
+            'filter_aktif' => $filterAktif,
+            'kategori_options' => $kategoriOptions,
+        ]);
+    }
+
     public function kinerjaKasir(Request $request)
     {
         Gate::authorize('view-laporan');

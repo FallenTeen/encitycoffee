@@ -18,11 +18,12 @@ use App\Http\Controllers\KategoriProdukController;
 use App\Http\Controllers\LaporanController;
 use Inertia\Inertia;
 use App\Http\Controllers\TransaksiController;
+use Illuminate\Support\Facades\Auth;
 use App\Models\Cabang;
 use App\Services\StokService;
 
 Route::get('/', function () {
-    if (auth()->check()) {
+    if (Auth::check()) {
         return redirect()->route('dashboard');
     }
 
@@ -93,9 +94,12 @@ Route::middleware('auth')->group(function () {
         Route::get('/', [ProdukController::class, 'index'])->name('index');
         Route::get('/create', [ProdukController::class, 'create'])->name('create');
         Route::post('/', [ProdukController::class, 'store'])->name('store');
+        Route::get('/sku-suggest', [ProdukController::class, 'suggestSku'])->name('sku.suggest');
+        Route::get('/check-sku', [ProdukController::class, 'checkSku'])->name('sku.check');
         Route::get('/kategori', [KategoriProdukController::class, 'index'])->name('kategori.index');
         Route::get('/kategori/create', [KategoriProdukController::class, 'create'])->name('kategori.create');
         Route::post('/kategori', [KategoriProdukController::class, 'store'])->name('kategori.store');
+        Route::get('/kategori/{kategori}', [KategoriProdukController::class, 'show'])->name('kategori.show');
         Route::get('/kategori/{kategori}/edit', [KategoriProdukController::class, 'edit'])->name('kategori.edit');
         Route::put('/kategori/{kategori}', [KategoriProdukController::class, 'update'])->name('kategori.update');
         Route::delete('/kategori/{kategori}', [KategoriProdukController::class, 'destroy'])->name('kategori.destroy');
@@ -131,6 +135,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/shift', [LaporanController::class, 'shift'])->name('shift');
         Route::get('/harian', [LaporanController::class, 'harian'])->name('harian');
         Route::get('/penjualan-produk', [LaporanController::class, 'penjualanProduk'])->name('penjualan-produk');
+        Route::get('/pendapatan-kategori', [LaporanController::class, 'pendapatanKategori'])->name('pendapatan-kategori');
         Route::get('/stok', [LaporanController::class, 'stok'])->name('stok');
         Route::get('/kinerja-kasir', [LaporanController::class, 'kinerjaKasir'])->name('kinerja-kasir');
         Route::post('/export-pdf', [LaporanController::class, 'exportPdf'])->name('export.pdf');

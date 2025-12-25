@@ -7,6 +7,7 @@ use App\Models\SatuanProduk;
 use App\Models\StokEtalase;
 use App\Models\ItemTransaksi;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 
@@ -54,6 +55,68 @@ class ProdukController extends Controller
             'kategori_list' => $kategori_list,
             'filter_aktif' => $validated,
         ]);
+    }
+
+    public function suggestSku(Request $request)
+    {
+        Gate::authorize('view-produk');
+
+        $validated = $request->validate([
+            'tipe' => 'nullable|in:beans,minuman,snack',
+            'kategori_id' => 'nullable|integer|exists:kategori_produk,id',
+            'nama' => 'nullable|string|max:255',
+        ]);
+
+        $tipe = $validated['tipe'] ?? null;
+        $kategoriId = $validated['kategori_id'] ?? null;
+        $nama = $validated['nama'] ?? '';
+
+        $prefix = 'PROD';
+        if ($tipe === 'beans') {
+            $prefix = 'BEAN';
+        } elseif ($kategoriId) {
+            $kategori = KategoriProduk::find($kategoriId);
+            if ($kategori) {
+                $source = $kategori->slug ?: $kategori->nama;
+                $prefix = strtoupper(Str::of($source)->slug('-')->limit(10, ''));
+            }
+        }
+
+        $middleSource = $nama !== '' ? $nama : $tipe;
+        $middle = $middleSource ? strtoupper(Str::of($middleSource)->slug('-')->limit(12, '')) : 'ITEM';
+
+        $nextId = (int) ((Produk::max('id') ?? 0) + 1);
+        $suffix = str_pad((string) $nextId, 3, '0', STR_PAD_LEFT);
+
+        $sku = $prefix . '-' . $middle . '-' . $suffix;
+        $attempts = 0;
+        while (Produk::where('sku', $sku)->exists() && $attempts < 5) {
+            $nextId++;
+            $suffix = str_pad((string) $nextId, 3, '0', STR_PAD_LEFT);
+            $sku = $prefix . '-' . $middle . '-' . $suffix;
+            $attempts++;
+        }
+
+        return response()->json(['sku' => $sku]);
+    }
+
+    public function checkSku(Request $request)
+    {
+        Gate::authorize('view-produk');
+
+        $validated = $request->validate([
+            'sku' => 'required|string|max:50',
+            'exclude_id' => 'nullable|integer|exists:produk,id',
+        ]);
+
+        $query = Produk::where('sku', $validated['sku']);
+        if (!empty($validated['exclude_id'])) {
+            $query->where('id', '!=', (int) $validated['exclude_id']);
+        }
+
+        $exists = $query->exists();
+
+        return response()->json(['exists' => $exists]);
     }
 
 

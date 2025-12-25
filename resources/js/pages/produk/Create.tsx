@@ -5,6 +5,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Head, Link, useForm } from '@inertiajs/react';
+import { useEffect, useRef, useState } from 'react';
 
 interface Kategori {
   id: number;
@@ -30,6 +31,69 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
     perlu_kalibrasi: false,
     aktif: true,
   });
+
+  const [skuStatus, setSkuStatus] = useState<'idle' | 'checking' | 'taken' | 'available'>('idle');
+  const [skuLabel, setSkuLabel] = useState('');
+  const skuCheckTimeout = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!skuLabel && data.nama) {
+      setSkuLabel(data.nama);
+    }
+  }, [data.nama, skuLabel]);
+
+  const checkSkuAvailability = (value: string) => {
+    if (!value) {
+      setSkuStatus('idle');
+      return;
+    }
+    setSkuStatus('checking');
+    const params = new URLSearchParams();
+    params.set('sku', value);
+    fetch(`/produk/check-sku?${params.toString()}`, {
+      headers: {
+        Accept: 'application/json',
+      },
+    })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const json = (await res.json()) as { exists?: boolean };
+        setSkuStatus(json.exists ? 'taken' : 'available');
+      })
+      .catch(() => {
+        setSkuStatus('idle');
+      });
+  };
+
+  const handleGenerateSku = () => {
+    const params = new URLSearchParams();
+    if (data.tipe) {
+      params.set('tipe', String(data.tipe));
+    }
+    if (data.kategori_id) {
+      params.set('kategori_id', String(data.kategori_id));
+    }
+    if (skuLabel) {
+      params.set('nama', skuLabel);
+    }
+
+    fetch(`/produk/sku-suggest?${params.toString()}`, {
+      headers: {
+        Accept: 'application/json',
+      },
+    })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const json = (await res.json()) as { sku?: string };
+        if (json.sku) {
+          setData('sku', json.sku);
+          checkSkuAvailability(json.sku);
+        }
+      })
+      .catch(() => {
+        return;
+      });
+  };
 
   return (
     <AppLayout breadcrumbs={[{ title: 'Produk', href: '/produk' }, { title: 'Tambah Produk', href: '/produk/create' }]}>
@@ -76,10 +140,42 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
               <Input
                 id="sku"
                 value={data.sku}
-                onChange={(e) => setData('sku', e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setData('sku', value);
+                  if (skuCheckTimeout.current) {
+                    window.clearTimeout(skuCheckTimeout.current);
+                  }
+                  skuCheckTimeout.current = window.setTimeout(() => {
+                    checkSkuAvailability(value);
+                  }, 400);
+                }}
                 placeholder="Contoh: PROD-001"
               />
               <InputError message={errors.sku as string} />
+              <div className="mt-2 space-y-1 text-xs">
+                <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-2">
+                  <span>Generator SKU:</span>
+                  <div className="flex flex-1 items-center gap-2">
+                    <Input
+                      value={skuLabel}
+                      onChange={(e) => setSkuLabel(e.target.value)}
+                      placeholder="Label, misal nama singkat"
+                    />
+                    <Button type="button" variant="outline" size="sm" onClick={handleGenerateSku}>
+                      Generate SKU
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-1">
+                  {skuStatus === 'taken' && (
+                    <span className="text-destructive">SKU ini sudah dipakai</span>
+                  )}
+                  {skuStatus === 'available' && (
+                    <span className="text-emerald-600">SKU tersedia</span>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="space-y-1">
