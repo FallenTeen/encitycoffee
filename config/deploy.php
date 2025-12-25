@@ -8,10 +8,11 @@ return [
     |--------------------------------------------------------------------------
     |
     | Configure your cPanel SSH connection details
+    | (Not used when webhook is enabled)
     |
     */
     
-    'ssh_host' => env('DEPLOY_SSH_HOST', 'your-server.com'),
+    'ssh_host' => env('DEPLOY_SSH_HOST', 'cikapundung.iixcp.rumahweb.net'),
     'ssh_user' => env('DEPLOY_SSH_USER', 'bhij4149'),
     'ssh_port' => env('DEPLOY_SSH_PORT', 22),
     
@@ -48,5 +49,17 @@ return [
     */
     
     'git_branch' => env('DEPLOY_GIT_BRANCH', 'main'),
+    
+    /*
+    |--------------------------------------------------------------------------
+    | Webhook Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Webhook for automated deployment
+    |
+    */
+    
+    'webhook_url' => env('DEPLOY_WEBHOOK_URL'),
+    'webhook_secret' => env('DEPLOY_WEBHOOK_SECRET'),
     
 ];
