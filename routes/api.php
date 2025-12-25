@@ -335,7 +335,7 @@ Route::prefix('pos')->group(function () {
             });
         });
 
-        Route::middleware('role:supervisor,manager,it_support')->group(function () {
+        Route::middleware('role:kasir,supervisor,manager,it_support')->group(function () {
             Route::prefix('stok')->group(function () {
                 Route::get('cabang/{cabang}', [StokController::class, 'byCabang']);
                 Route::get('cabang/{cabang}/rendah', [StokController::class, 'rendah']);
