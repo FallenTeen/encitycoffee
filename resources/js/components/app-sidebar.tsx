@@ -72,6 +72,7 @@ function getMainNavItems(role?: string): NavGroup[] {
             items: [
                 { title: 'Shift', href: laporan.shift(), icon: Clock },
                 { title: 'Harian', href: laporan.harian(), icon: FileText },
+                { title: 'Pendapatan Kategori', href: laporan.pendapatanKategori(), icon: TrendingUp },
                 { title: 'Penjualan', href: laporan.penjualanProduk(), icon: TrendingUp },
                 { title: 'Stok', href: stok.index(), icon: Warehouse },
             ],
@@ -100,6 +101,7 @@ function getMainNavItems(role?: string): NavGroup[] {
             items: [
                 { title: 'Shift', href: laporan.shift(), icon: Clock },
                 { title: 'Harian', href: laporan.harian(), icon: FileText },
+                { title: 'Pendapatan Kategori', href: laporan.pendapatanKategori(), icon: TrendingUp },
                 { title: 'Penjualan', href: laporan.penjualanProduk(), icon: TrendingUp },
                 { title: 'Stok', href: stok.index(), icon: Warehouse },
             ],
@@ -123,6 +125,7 @@ function getMainNavItems(role?: string): NavGroup[] {
             items: [
                 { title: 'Shift', href: laporan.shift(), icon: Clock },
                 { title: 'Harian', href: laporan.harian(), icon: FileText },
+                { title: 'Pendapatan Kategori', href: laporan.pendapatanKategori(), icon: TrendingUp },
                 { title: 'Penjualan', href: laporan.penjualanProduk(), icon: TrendingUp },
                 { title: 'Stok', href: stok.index(), icon: Warehouse },
             ],
