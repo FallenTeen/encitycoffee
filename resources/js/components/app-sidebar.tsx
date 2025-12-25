@@ -90,6 +90,7 @@ function getMainNavItems(role?: string): NavGroup[] {
             title: 'Transaksi',
             items: [
                 { title: 'Transaksi', href: transaksi.index(), icon: ShoppingCart },
+                { title: 'Open Bill', href: transaksi.openBill.index(), icon: ShoppingCart },
             ],
         });
     } else if (role === 'manager') {
@@ -135,6 +136,7 @@ function getMainNavItems(role?: string): NavGroup[] {
             title: 'Transaksi',
             items: [
                 { title: 'Transaksi', href: transaksi.index(), icon: ShoppingCart },
+                { title: 'Open Bill', href: transaksi.openBill.index(), icon: ShoppingCart },
             ],
         });
     } else if (role === 'supervisor') {

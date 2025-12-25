@@ -145,7 +145,9 @@ Route::middleware('auth')->group(function () {
     // ------------------------------------------------------------------------
     Route::middleware('role:supervisor,manager,it_support')->prefix('transaksi')->name('transaksi.')->group(function () {
         Route::get('/', [TransaksiController::class, 'index'])->name('index');
+        Route::get('/open-bill', [TransaksiController::class, 'daftarOpenBill'])->name('open-bill.index');
         Route::get('/shift/{shift}', [TransaksiController::class, 'byShift'])->name('by-shift');
+        Route::get('/open-bill/{openBill}', [TransaksiController::class, 'tampilkanOpenBill'])->name('open-bill.show');
         Route::get('/{transaksi}/show', [TransaksiController::class, 'show'])->name('show');
         Route::get('/{transaksi}/print', [TransaksiController::class, 'printStruk'])->name('print');
         Route::put('/{transaksi}/batal', [TransaksiController::class, 'void'])->name('void');

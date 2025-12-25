@@ -319,6 +319,9 @@ Route::prefix('pos')->group(function () {
                 Route::get('{transaksi}', [TransaksiController::class, 'tampilkanTransaksi']);
                 Route::put('{transaksi}/batal', [TransaksiController::class, 'batalkanTransaksi']);
                 Route::get('shift/{shift}', [TransaksiController::class, 'transaksiPerShift']);
+                Route::post('open-bill', [TransaksiController::class, 'buatOpenBill']);
+                Route::get('open-bill/list', [TransaksiController::class, 'daftarOpenBill']);
+                Route::get('open-bill/{openBill}', [TransaksiController::class, 'tampilkanOpenBill']);
             });
 
             Route::prefix('laporan')->group(function () {

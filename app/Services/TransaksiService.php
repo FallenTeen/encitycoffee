@@ -10,6 +10,8 @@ use App\Models\Produk;
 use App\Models\StokEtalase;
 use App\Models\MutasiStok;
 use App\Models\User;
+use App\Models\OpenBill;
+use App\Models\OpenBillItem;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -149,6 +151,75 @@ class TransaksiService
         }
     }
 
+    public function buatOpenBill(
+        Shift $shift,
+        array $items,
+        float $diskon = 0,
+        float $pajak = 0,
+        ?string $catatan = null
+    ) {
+        if ($shift->status !== 'buka') {
+            throw new \Exception('Shift tidak dalam status buka');
+        }
+        if (empty($items)) {
+            throw new \InvalidArgumentException('Items tidak boleh kosong');
+        }
+
+        DB::beginTransaction();
+        try {
+            $nomorOpenBill = $this->generateNomorOpenBill($shift->cabang_id);
+
+            $subtotal = 0;
+            $itemOpenBill = [];
+
+            foreach ($items as $item) {
+                $produk = Produk::findOrFail($item['produk_id']);
+                $subtotalItem = $produk->harga_jual * $item['jumlah'];
+                $subtotal += $subtotalItem;
+
+                $itemOpenBill[] = [
+                    'produk' => $produk,
+                    'jumlah' => $item['jumlah'],
+                    'harga_satuan' => $produk->harga_jual,
+                    'subtotal' => $subtotalItem,
+                    'catatan' => $item['catatan'] ?? null,
+                ];
+            }
+
+            $total = $subtotal - $diskon + $pajak;
+
+            $openBill = OpenBill::create([
+                'shift_id' => $shift->id,
+                'cabang_id' => $shift->cabang_id,
+                'user_id' => $shift->user_id,
+                'nomor_open_bill' => $nomorOpenBill,
+                'subtotal' => $subtotal,
+                'diskon' => $diskon,
+                'pajak' => $pajak,
+                'total' => $total,
+                'status' => 'open',
+                'catatan' => $catatan,
+            ]);
+
+            foreach ($itemOpenBill as $item) {
+                OpenBillItem::create([
+                    'open_bill_id' => $openBill->id,
+                    'produk_id' => $item['produk']->id,
+                    'jumlah' => $item['jumlah'],
+                    'harga_satuan' => $item['harga_satuan'],
+                    'subtotal' => $item['subtotal'],
+                    'catatan' => $item['catatan'],
+                ]);
+            }
+
+            DB::commit();
+            return $openBill->load(['items.produk', 'shift', 'cabang']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
     private function kurangiStokMinuman(Shift $shift, Produk $produk, int $jumlah)
     {
         $kalibrasi = $this->kalibrasiService->dapatkanKalibrasiTerpilih($shift, $produk);
@@ -191,6 +262,25 @@ class TransaksiService
         }
 
         return "INV-{$tanggal}-{$cabang}-{$nomorBaru}";
+    }
+
+    private function generateNomorOpenBill(int $cabangId): string
+    {
+        $tanggal = Carbon::now()->format('Ymd');
+        $cabang = str_pad($cabangId, 3, '0', STR_PAD_LEFT);
+
+        $openBillTerakhir = OpenBill::where('nomor_open_bill', 'like', "OB-{$tanggal}-{$cabang}-%")
+            ->orderBy('id', 'desc')
+            ->first();
+
+        if ($openBillTerakhir) {
+            $nomorTerakhir = (int) substr($openBillTerakhir->nomor_open_bill, -4);
+            $nomorBaru = str_pad($nomorTerakhir + 1, 4, '0', STR_PAD_LEFT);
+        } else {
+            $nomorBaru = '0001';
+        }
+
+        return "OB-{$tanggal}-{$cabang}-{$nomorBaru}";
     }
 
     public function batalkanTransaksi(Transaksi $transaksi, User $user, ?string $alasan = null)

@@ -2,6 +2,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Transaksi;
+use App\Models\OpenBill;
 use App\Models\Produk;
 use App\Models\Shift;
 use App\Services\TransaksiService;
@@ -110,6 +111,87 @@ class TransaksiController extends Controller
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 400);
         }
+    }
+
+    public function buatOpenBill(Request $request)
+    {
+        Gate::authorize('create-transaksi');
+        $validated = $request->validate([
+            'shift_id' => 'required|exists:shift,id',
+            'items' => 'required|array|min:1',
+            'items.*.produk_id' => 'required|exists:produk,id',
+            'items.*.jumlah' => 'required|integer|min:1',
+            'items.*.catatan' => 'nullable|string',
+            'diskon' => 'nullable|numeric|min:0',
+            'pajak' => 'nullable|numeric|min:0',
+            'catatan' => 'nullable|string',
+        ]);
+
+        $shift = Shift::findOrFail($validated['shift_id']);
+
+        if ($shift->status !== 'buka') {
+            return response()->json(['error' => 'Shift tidak terbuka'], 400);
+        }
+
+        if ($shift->user_id !== $request->user()->id) {
+            return response()->json(['error' => 'Tidak memiliki akses'], 403);
+        }
+
+        try {
+            $openBill = $this->transaksiService->buatOpenBill(
+                $shift,
+                $validated['items'],
+                (float) ($validated['diskon'] ?? 0),
+                (float) ($validated['pajak'] ?? 0),
+                $validated['catatan'] ?? null
+            );
+            return response()->json($openBill);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 400);
+        }
+    }
+
+    public function daftarOpenBill(Request $request)
+    {
+        Gate::authorize('view-transaksi');
+
+        $user = $request->user();
+        $query = OpenBill::query()
+            ->with(['cabang:id,kode,nama', 'shift:id,status', 'user:id,name'])
+            ->where('status', 'open')
+            ->latest();
+
+        if (method_exists($user, 'isItSupport') && ! $user->isItSupport()) {
+            $cabangIds = $user->cabang()->pluck('cabang.id')->all();
+            $query->whereIn('cabang_id', $cabangIds);
+        }
+
+        $perPage = (int) $request->get('per_page', 15);
+        $openBills = $query->paginate($perPage)->withQueryString();
+
+        if ($request->expectsJson()) {
+            return response()->json($openBills);
+        }
+
+        return Inertia::render('transaksi/OpenBillIndex', [
+            'open_bills' => $openBills,
+            'per_page' => $perPage,
+        ]);
+    }
+
+    public function tampilkanOpenBill(OpenBill $openBill, Request $request)
+    {
+        Gate::authorize('view-transaksi');
+
+        $openBill->load(['items.produk', 'shift', 'cabang', 'user']);
+
+        if ($request->expectsJson()) {
+            return response()->json($openBill);
+        }
+
+        return Inertia::render('transaksi/OpenBillShow', [
+            'open_bill' => $openBill,
+        ]);
     }
 
 
