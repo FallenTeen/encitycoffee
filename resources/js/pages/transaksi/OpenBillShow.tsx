@@ -36,16 +36,16 @@ export default function OpenBillShow({ open_bill }: OpenBillShowProps) {
   return (
     <AppLayout
       breadcrumbs={[
-        { title: 'Open Bill', href: transaksi.openBill.index().url },
+        { title: 'Bill', href: transaksi.openBill.index().url },
         { title: open_bill?.nomor_open_bill ?? `OB-${open_bill?.id ?? ''}`, href: transaksi.openBill.show(open_bill?.id ?? 0) },
       ]}
     >
-      <Head title={`Open Bill ${open_bill?.nomor_open_bill ?? `#${open_bill?.id ?? ''}`}`} />
+      <Head title={`Bill ${open_bill?.nomor_open_bill ?? `#${open_bill?.id ?? ''}`}`} />
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold">
-              Open Bill {open_bill?.nomor_open_bill ?? `#${open_bill?.id ?? ''}`}
+              Bill {open_bill?.nomor_open_bill ?? `#${open_bill?.id ?? ''}`}
             </h1>
             <div className="text-sm text-muted-foreground">
               Cabang: {open_bill?.cabang?.nama ?? open_bill?.cabang?.kode ?? '-'} · Kasir:{' '}
@@ -119,4 +119,3 @@ export default function OpenBillShow({ open_bill }: OpenBillShowProps) {
     </AppLayout>
   );
 }
-

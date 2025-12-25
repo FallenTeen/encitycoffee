@@ -50,136 +50,97 @@ function getMainNavItems(role?: string): NavGroup[] {
 
     if (role === 'it_support') {
         groups.push({
-            title: 'Admin',
+            title: 'Admin Menu',
             items: [
                 { title: 'Dashboard', href: admin.dashboard(), icon: LayoutDashboard },
                 { title: 'Cabang', href: admin.cabang.index(), icon: Building },
+                { title: 'Pengguna', href: admin.users.index(), icon: Users },
                 { title: 'System Logs', href: admin.system.logs(), icon: FileText },
             ],
         });
         groups.push({
-            title: 'Pengelolaan Pengguna',
+            title: 'Coffeeshop',
             items: [
-                { title: 'Pengguna', href: admin.users.index(), icon: Users },
-            ],
-        });
-        groups.push({
-            title: 'Produk',
-            items: [
-                { title: 'Daftar Produk', href: produk.index(), icon: Package },
                 { title: 'Kategori', href: produk.kategori.index(), icon: FolderTree },
+                { title: 'Daftar Produk', href: produk.index(), icon: Package },
+                { title: 'Transaksi', href: transaksi.index(), icon: ShoppingCart },
+                { title: 'Bill', href: transaksi.openBill.index(), icon: ShoppingCart },
             ],
         });
         groups.push({
-            title: 'Stok',
-            items: [
-                { title: 'Stok', href: stok.index(), icon: Warehouse },
-            ],
-        });
-        groups.push({
-            title: 'Laporan',
+            title: 'Report',
             items: [
                 { title: 'Shift', href: laporan.shift(), icon: Clock },
                 { title: 'Harian', href: laporan.harian(), icon: FileText },
-                { title: 'Penjualan Produk', href: laporan.penjualanProduk(), icon: FileText },
-                { title: 'Stok', href: laporan.stok(), icon: Package },
-                { title: 'Kinerja Kasir', href: laporan.kinerjaKasir(), icon: TrendingUp },
-            ],
-        });
-        groups.push({
-            title: 'Transaksi',
-            items: [
-                { title: 'Transaksi', href: transaksi.index(), icon: ShoppingCart },
-                { title: 'Open Bill', href: transaksi.openBill.index(), icon: ShoppingCart },
+                { title: 'Penjualan', href: laporan.penjualanProduk(), icon: TrendingUp },
+                { title: 'Stok', href: stok.index(), icon: Warehouse },
             ],
         });
     } else if (role === 'manager') {
         groups.push({
-            title: 'Manager',
+            title: 'Admin Menu',
             items: [
                 { title: 'Dashboard', href: manager.dashboard(), icon: LayoutDashboard },
                 { title: 'Laporan Cabang', href: manager.laporan.cabang(), icon: Building },
-                { title: 'Performa Shift', href: manager.performa.shift(), icon: TrendingUp },
-            ],
-        });
-        groups.push({
-            title: 'Pengelolaan Pengguna',
-            items: [
                 { title: 'Supervisor', href: manager.supervisor.index(), icon: Users },
                 { title: 'Kasir', href: '/manager/kasir', icon: Users },
             ],
         });
         groups.push({
-            title: 'Produk',
+            title: 'Coffeeshop',
             items: [
-                { title: 'Daftar Produk', href: produk.index(), icon: Package },
                 { title: 'Kategori', href: produk.kategori.index(), icon: FolderTree },
+                { title: 'Daftar Produk', href: produk.index(), icon: Package },
+                { title: 'Transaksi', href: transaksi.index(), icon: ShoppingCart },
+                { title: 'Bill', href: transaksi.openBill.index(), icon: ShoppingCart },
             ],
         });
         groups.push({
-            title: 'Stok',
-            items: [
-                { title: 'Stok', href: stok.index(), icon: Warehouse },
-            ],
-        });
-        groups.push({
-            title: 'Laporan',
+            title: 'Report',
             items: [
                 { title: 'Shift', href: laporan.shift(), icon: Clock },
                 { title: 'Harian', href: laporan.harian(), icon: FileText },
-                { title: 'Penjualan Produk', href: laporan.penjualanProduk(), icon: FileText },
-                { title: 'Stok', href: laporan.stok(), icon: Package },
-                { title: 'Kinerja Kasir', href: laporan.kinerjaKasir(), icon: TrendingUp },
-            ],
-        });
-        groups.push({
-            title: 'Transaksi',
-            items: [
-                { title: 'Transaksi', href: transaksi.index(), icon: ShoppingCart },
-                { title: 'Open Bill', href: transaksi.openBill.index(), icon: ShoppingCart },
+                { title: 'Penjualan', href: laporan.penjualanProduk(), icon: TrendingUp },
+                { title: 'Stok', href: stok.index(), icon: Warehouse },
             ],
         });
     } else if (role === 'supervisor') {
         groups.push({
-            title: 'Supervisor',
+            title: 'Admin Menu',
             items: [
                 { title: 'Dashboard', href: supervisor.dashboard(), icon: LayoutDashboard },
-                { title: 'Monitoring Shift', href: supervisor.monitoring.shift(), icon: Clock },
-            ],
-        });
-        groups.push({
-            title: 'Pengelolaan Pengguna',
-            items: [
                 { title: 'Kasir', href: supervisor.kasir.index(), icon: Users },
             ],
         });
         groups.push({
-            title: 'Stok',
-            items: [
-                { title: 'Stok', href: stok.index(), icon: Warehouse },
-            ],
-        });
-        groups.push({
-            title: 'Laporan',
-            items: [
-                { title: 'Shift', href: laporan.shift(), icon: Clock },
-                { title: 'Harian', href: laporan.harian(), icon: FileText },
-                { title: 'Penjualan Produk', href: laporan.penjualanProduk(), icon: FileText },
-                { title: 'Stok', href: laporan.stok(), icon: Package },
-                { title: 'Kinerja Kasir', href: laporan.kinerjaKasir(), icon: TrendingUp },
-            ],
-        });
-        groups.push({
-            title: 'Transaksi',
+            title: 'Coffeeshop',
             items: [
                 { title: 'Transaksi', href: transaksi.index(), icon: ShoppingCart },
             ],
         });
+        groups.push({
+            title: 'Report',
+            items: [
+                { title: 'Shift', href: laporan.shift(), icon: Clock },
+                { title: 'Harian', href: laporan.harian(), icon: FileText },
+                { title: 'Penjualan', href: laporan.penjualanProduk(), icon: TrendingUp },
+                { title: 'Stok', href: stok.index(), icon: Warehouse },
+            ],
+        });
     } else if (role === 'kasir') {
         groups.push({
-            title: 'Menu',
+            title: 'Coffeeshop',
             items: [
                 { title: 'Dashboard', href: dashboard(), icon: LayoutDashboard },
+                { title: 'Transaksi', href: transaksi.index(), icon: ShoppingCart },
+                { title: 'Bill', href: transaksi.openBill.index(), icon: ShoppingCart },
+            ],
+        });
+        groups.push({
+            title: 'Report',
+            items: [
+                { title: 'Shift', href: laporan.shift(), icon: Clock },
+                { title: 'Harian', href: laporan.harian(), icon: FileText },
             ],
         });
     }

@@ -40,12 +40,12 @@ function formatDateTime(value?: string | null) {
 
 export default function OpenBillIndex({ open_bills, per_page }: Props) {
   return (
-    <AppLayout breadcrumbs={[{ title: 'Open Bill', href: transaksi.openBill.index().url }]}>
-      <Head title="Open Bill" />
+    <AppLayout breadcrumbs={[{ title: 'Bill', href: transaksi.openBill.index().url }]}>
+      <Head title="Bill" />
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-xl font-semibold">Daftar Open Bill</h1>
+            <h1 className="text-xl font-semibold">Daftar Bill</h1>
             <div className="text-sm text-muted-foreground">Total: {open_bills?.total ?? 0}</div>
           </div>
         </div>
@@ -112,4 +112,3 @@ export default function OpenBillIndex({ open_bills, per_page }: Props) {
     </AppLayout>
   );
 }
-

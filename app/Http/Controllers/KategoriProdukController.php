@@ -16,8 +16,42 @@ class KategoriProdukController extends Controller
     public function index(Request $request)
     {
         Gate::authorize('view-manager-dashboard');
-        $kategori = KategoriProduk::withCount('produk')->orderBy('nama')->paginate(20);
-        return Inertia::render('produk/kategori/Index', compact('kategori'));
+        $validated = $request->validate([
+            'search' => 'nullable|string|max:255',
+            'sort_by' => 'nullable|in:nama,produk_count',
+            'sort_dir' => 'nullable|in:asc,desc',
+        ]);
+
+        $query = KategoriProduk::withCount('produk');
+
+        if (!empty($validated['search'])) {
+            $q = $validated['search'];
+            $query->where(function ($sub) use ($q) {
+                $sub->where('nama', 'like', "%{$q}%")
+                    ->orWhere('slug', 'like', "%{$q}%")
+                    ->orWhere('deskripsi', 'like', "%{$q}%");
+            });
+        }
+
+        $sortBy = $validated['sort_by'] ?? 'nama';
+        $sortDir = $validated['sort_dir'] ?? 'asc';
+
+        if ($sortBy === 'produk_count') {
+            $query->orderBy('produk_count', $sortDir);
+        } else {
+            $query->orderBy('nama', $sortDir);
+        }
+
+        $kategori = $query->paginate(20)->appends($validated);
+
+        return Inertia::render('produk/kategori/Index', [
+            'kategori' => $kategori,
+            'filter_aktif' => [
+                'search' => $validated['search'] ?? '',
+                'sort_by' => $sortBy,
+                'sort_dir' => $sortDir,
+            ],
+        ]);
     }
 
     public function create()

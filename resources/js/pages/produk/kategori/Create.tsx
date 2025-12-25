@@ -1,11 +1,91 @@
-import { Head } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
+import InputError from '@/components/input-error';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Head, Link, useForm } from '@inertiajs/react';
 
 export default function KategoriCreate() {
+  const { data, setData, post, processing, errors } = useForm({
+    nama: '',
+    slug: '',
+    deskripsi: '',
+  });
+
   return (
-    <AppLayout title="Tambah Kategori">
+    <AppLayout
+      breadcrumbs={[
+        { title: 'Kategori Produk', href: '/produk/kategori' },
+        { title: 'Tambah Kategori', href: '/produk/kategori/create' },
+      ]}
+    >
       <Head title="Produk - Tambah Kategori" />
-      <div className="rounded-md border p-4">Form placeholder tambah kategori produk.</div>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-semibold">Tambah Kategori Produk</h1>
+            <div className="text-sm text-muted-foreground">
+              Isi informasi kategori baru untuk pengelompokan produk.
+            </div>
+          </div>
+          <Button asChild variant="secondary">
+            <Link href="/produk/kategori">Kembali</Link>
+          </Button>
+        </div>
+
+        <div className="rounded-md border p-4">
+          <form
+            className="grid grid-cols-1 gap-4 md:grid-cols-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              post('/produk/kategori');
+            }}
+          >
+            <div className="space-y-1">
+              <Label htmlFor="nama">Nama Kategori</Label>
+              <Input
+                id="nama"
+                value={data.nama}
+                onChange={(e) => setData('nama', e.target.value)}
+                placeholder="Contoh: Minuman Kopi"
+              />
+              <InputError message={errors.nama as string} />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="slug">Slug</Label>
+              <Input
+                id="slug"
+                value={data.slug}
+                onChange={(e) => setData('slug', e.target.value)}
+                placeholder="contoh: minuman-kopi"
+              />
+              <InputError message={errors.slug as string} />
+            </div>
+
+            <div className="space-y-1 md:col-span-2">
+              <Label htmlFor="deskripsi">Deskripsi</Label>
+              <textarea
+                id="deskripsi"
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                value={data.deskripsi}
+                onChange={(e) => setData('deskripsi', e.target.value)}
+                placeholder="Deskripsi kategori (opsional)"
+              />
+              <InputError message={errors.deskripsi as string} />
+            </div>
+
+            <div className="md:col-span-2 flex items-center gap-2 pt-2">
+              <Button type="submit" disabled={processing}>
+                Simpan
+              </Button>
+              <Button type="button" variant="secondary" asChild>
+                <Link href="/produk/kategori">Batal</Link>
+              </Button>
+            </div>
+          </form>
+        </div>
+      </div>
     </AppLayout>
   );
 }
