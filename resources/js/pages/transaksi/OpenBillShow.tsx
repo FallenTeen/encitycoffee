@@ -37,7 +37,7 @@ export default function OpenBillShow({ open_bill }: OpenBillShowProps) {
     <AppLayout
       breadcrumbs={[
         { title: 'Bill', href: transaksi.openBill.index().url },
-        { title: open_bill?.nomor_open_bill ?? `OB-${open_bill?.id ?? ''}`, href: transaksi.openBill.show(open_bill?.id ?? 0) },
+        { title: open_bill?.nomor_open_bill ?? `OB-${open_bill?.id ?? ''}`, href: `/transaksi/open-bill/${open_bill?.id ?? ''}` },
       ]}
     >
       <Head title={`Bill ${open_bill?.nomor_open_bill ?? `#${open_bill?.id ?? ''}`}`} />

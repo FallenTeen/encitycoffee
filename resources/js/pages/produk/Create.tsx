@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Head, Link, useForm } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -137,34 +138,50 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
 
             <div className="space-y-1">
               <Label htmlFor="sku">SKU</Label>
-              <Input
-                id="sku"
-                value={data.sku}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setData('sku', value);
-                  if (skuCheckTimeout.current) {
-                    window.clearTimeout(skuCheckTimeout.current);
-                  }
-                  skuCheckTimeout.current = window.setTimeout(() => {
-                    checkSkuAvailability(value);
-                  }, 400);
-                }}
-                placeholder="Contoh: PROD-001"
-              />
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  id="sku"
+                  className="sm:flex-1"
+                  value={data.sku}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setData('sku', value);
+                    if (skuCheckTimeout.current) {
+                      window.clearTimeout(skuCheckTimeout.current);
+                    }
+                    skuCheckTimeout.current = window.setTimeout(() => {
+                      checkSkuAvailability(value);
+                    }, 400);
+                  }}
+                  placeholder="Contoh: PROD-001"
+                />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="whitespace-nowrap"
+                      onClick={handleGenerateSku}
+                    >
+                      Generate SKU
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Generate SKU otomatis sesuai standar dan cek keunikan.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <InputError message={errors.sku as string} />
               <div className="mt-2 space-y-1 text-xs">
                 <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-2">
-                  <span>Generator SKU:</span>
+                  <span>Label untuk generator:</span>
                   <div className="flex flex-1 items-center gap-2">
                     <Input
                       value={skuLabel}
                       onChange={(e) => setSkuLabel(e.target.value)}
                       placeholder="Label, misal nama singkat"
                     />
-                    <Button type="button" variant="outline" size="sm" onClick={handleGenerateSku}>
-                      Generate SKU
-                    </Button>
                   </div>
                 </div>
                 <div className="mt-1">

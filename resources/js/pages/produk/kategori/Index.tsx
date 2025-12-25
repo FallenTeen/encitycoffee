@@ -30,9 +30,9 @@ interface KategoriPaginator {
 }
 
 interface FilterAktif {
-  search?: string | null;
-  sort_by?: 'nama' | 'produk_count' | '';
-  sort_dir?: 'asc' | 'desc' | '';
+  search: string;
+  sort_by: 'nama' | 'produk_count' | '';
+  sort_dir: 'asc' | 'desc' | '';
 }
 
 interface Props {
