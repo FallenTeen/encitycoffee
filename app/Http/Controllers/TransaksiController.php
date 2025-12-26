@@ -67,8 +67,19 @@ class TransaksiController extends Controller
             return response()->json(['error' => 'Shift tidak terbuka'], 400);
         }
 
-        if ($shift->user_id !== $request->user()->id) {
-            return response()->json(['error' => 'Tidak memiliki akses'], 403);
+        // Kasir hanya bisa transaksi di shift miliknya sendiri
+        // Supervisor/manager bisa transaksi di shift apapun di cabangnya
+        $user = $request->user();
+        if ($user->isKasir() && $shift->user_id !== $user->id) {
+            return response()->json(['error' => 'Kasir hanya bisa transaksi di shift miliknya sendiri'], 403);
+        }
+
+        // Validasi cabang untuk supervisor/manager
+        if (!$user->isKasir() && !$user->isItSupport()) {
+            $userCabangIds = $user->cabang()->pluck('cabang.id')->all();
+            if (!in_array((int) $shift->cabang_id, $userCabangIds, true)) {
+                return response()->json(['error' => 'Tidak memiliki akses ke cabang ini'], 403);
+            }
         }
 
         try {
@@ -133,8 +144,19 @@ class TransaksiController extends Controller
             return response()->json(['error' => 'Shift tidak terbuka'], 400);
         }
 
-        if ($shift->user_id !== $request->user()->id) {
-            return response()->json(['error' => 'Tidak memiliki akses'], 403);
+        // Kasir hanya bisa buat open bill di shift miliknya sendiri
+        // Supervisor/manager bisa buat open bill di shift apapun di cabangnya
+        $user = $request->user();
+        if ($user->isKasir() && $shift->user_id !== $user->id) {
+            return response()->json(['error' => 'Kasir hanya bisa buat open bill di shift miliknya sendiri'], 403);
+        }
+
+        // Validasi cabang untuk supervisor/manager
+        if (!$user->isKasir() && !$user->isItSupport()) {
+            $userCabangIds = $user->cabang()->pluck('cabang.id')->all();
+            if (!in_array((int) $shift->cabang_id, $userCabangIds, true)) {
+                return response()->json(['error' => 'Tidak memiliki akses ke cabang ini'], 403);
+            }
         }
 
         try {
