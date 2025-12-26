@@ -16,8 +16,16 @@ class ProdukController extends Controller
         $this->productCacheService = $productCacheService;
     }
     
-    public function index(Request $request, $cabangId)
+    /**
+     * Get all products by cabang
+     * URL: /produk?cabang_id=1&search=kopi&use_cache=true
+     */
+    public function index(Request $request)
     {
+        // Ambil cabang_id dari query parameter
+        $cabangId = $request->input('cabang_id');
+        
+        // Validasi cabang_id
         $v = Validator::make(['cabang_id' => $cabangId], [
             'cabang_id' => 'required|integer|exists:cabang,id'
         ]);
@@ -27,7 +35,10 @@ class ProdukController extends Controller
                 'cabang_id' => $cabangId,
                 'errors' => $v->errors()
             ]);
-            return response()->json(['error' => $v->errors()], 422);
+            return response()->json([
+                'error' => 'Parameter cabang_id tidak valid',
+                'details' => $v->errors()
+            ], 422);
         }
         
         try {
@@ -40,6 +51,7 @@ class ProdukController extends Controller
                 'search' => $search
             ]);
             
+            // Cari produk berdasarkan search atau ambil semua
             if ($search) {
                 $produk = $this->productCacheService->searchProduk($cabangId, $search, $useCache);
             } else {
@@ -55,7 +67,8 @@ class ProdukController extends Controller
             return response()->json([
                 'produk' => $produk,
                 'count' => $produk->count(),
-                'cached' => $useCache
+                'cached' => $useCache,
+                'cabang_id' => $cabangId
             ]);
             
         } catch (\Exception $e) {
@@ -72,8 +85,16 @@ class ProdukController extends Controller
         }
     }
     
-    public function show(Request $request, $cabangId, $produkId)
+    /**
+     * Get single product detail
+     * URL: /produk/{produk}?cabang_id=1
+     */
+    public function show(Request $request, $produkId)
     {
+        // Ambil cabang_id dari query parameter
+        $cabangId = $request->input('cabang_id');
+        
+        // Validasi
         $v = Validator::make([
             'cabang_id' => $cabangId,
             'produk_id' => $produkId
@@ -83,7 +104,10 @@ class ProdukController extends Controller
         ]);
         
         if ($v->fails()) {
-            return response()->json(['error' => $v->errors()], 422);
+            return response()->json([
+                'error' => 'Parameter tidak valid',
+                'details' => $v->errors()
+            ], 422);
         }
         
         try {
@@ -91,10 +115,15 @@ class ProdukController extends Controller
             $produk = $this->productCacheService->getProdukById($cabangId, $produkId, $useCache);
             
             if (!$produk) {
-                return response()->json(['error' => 'Produk tidak ditemukan di cabang ini'], 404);
+                return response()->json([
+                    'error' => 'Produk tidak ditemukan di cabang ini'
+                ], 404);
             }
             
-            return response()->json(['produk' => $produk]);
+            return response()->json([
+                'produk' => $produk,
+                'cabang_id' => $cabangId
+            ]);
             
         } catch (\Exception $e) {
             Log::error('Error fetching produk detail', [
@@ -103,12 +132,33 @@ class ProdukController extends Controller
                 'error' => $e->getMessage()
             ]);
             
-            return response()->json(['error' => 'Gagal mengambil detail produk'], 500);
+            return response()->json([
+                'error' => 'Gagal mengambil detail produk'
+            ], 500);
         }
     }
     
-    public function clearCache($cabangId)
+    /**
+     * Clear product cache
+     * URL: /produk/cache/clear?cabang_id=1
+     */
+    public function clearCache(Request $request)
     {
+        // Ambil cabang_id dari query parameter
+        $cabangId = $request->input('cabang_id');
+        
+        // Validasi
+        $v = Validator::make(['cabang_id' => $cabangId], [
+            'cabang_id' => 'required|integer|exists:cabang,id'
+        ]);
+        
+        if ($v->fails()) {
+            return response()->json([
+                'error' => 'Parameter cabang_id tidak valid',
+                'details' => $v->errors()
+            ], 422);
+        }
+        
         try {
             $this->productCacheService->clearCache($cabangId);
             
@@ -117,7 +167,10 @@ class ProdukController extends Controller
                 'user_id' => auth()->id()
             ]);
             
-            return response()->json(['message' => 'Cache produk berhasil dibersihkan']);
+            return response()->json([
+                'message' => 'Cache produk berhasil dibersihkan',
+                'cabang_id' => $cabangId
+            ]);
             
         } catch (\Exception $e) {
             Log::error('Error clearing product cache', [
@@ -125,7 +178,9 @@ class ProdukController extends Controller
                 'error' => $e->getMessage()
             ]);
             
-            return response()->json(['error' => 'Gagal membersihkan cache'], 500);
+            return response()->json([
+                'error' => 'Gagal membersihkan cache'
+            ], 500);
         }
     }
 }

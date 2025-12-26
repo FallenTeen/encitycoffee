@@ -91,11 +91,16 @@ Route::middleware('auth')->group(function () {
     // CRITICAL: ALL static routes MUST come BEFORE dynamic {produk} routes
     // ------------------------------------------------------------------------
     Route::middleware('role:manager,it_support')->prefix('produk')->name('produk.')->group(function () {
-        Route::get('/', [ProdukController::class, 'index'])->name('index');
+        // STATIC ROUTES (harus di atas)
         Route::get('/create', [ProdukController::class, 'create'])->name('create');
         Route::post('/', [ProdukController::class, 'store'])->name('store');
         Route::get('/sku-suggest', [ProdukController::class, 'suggestSku'])->name('sku.suggest');
         Route::get('/check-sku', [ProdukController::class, 'checkSku'])->name('sku.check');
+        
+        // Cache management route
+        Route::get('/cache/clear', [ProdukController::class, 'clearCache'])->name('cache.clear');
+        
+        // Kategori routes
         Route::get('/kategori', [KategoriProdukController::class, 'index'])->name('kategori.index');
         Route::get('/kategori/create', [KategoriProdukController::class, 'create'])->name('kategori.create');
         Route::post('/kategori', [KategoriProdukController::class, 'store'])->name('kategori.store');
@@ -103,12 +108,19 @@ Route::middleware('auth')->group(function () {
         Route::get('/kategori/{kategori}/edit', [KategoriProdukController::class, 'edit'])->name('kategori.edit');
         Route::put('/kategori/{kategori}', [KategoriProdukController::class, 'update'])->name('kategori.update');
         Route::delete('/kategori/{kategori}', [KategoriProdukController::class, 'destroy'])->name('kategori.destroy');
+        
+        // Satuan routes
         Route::delete('/satuan/{satuan}', [ProdukController::class, 'deleteSatuan'])->name('satuan.delete');
         Route::post('/{produk}/satuan', [ProdukController::class, 'addSatuan'])->name('satuan.store');
+        
+        // DYNAMIC ROUTES (harus di bawah semua static routes)
         Route::get('/{produk}/edit', [ProdukController::class, 'edit'])->name('edit');
         Route::put('/{produk}', [ProdukController::class, 'update'])->name('update');
         Route::delete('/{produk}', [ProdukController::class, 'destroy'])->name('destroy');
         Route::get('/{produk}', [ProdukController::class, 'show'])->name('show');
+        
+        // INDEX ROUTE - Menggunakan query parameter ?cabang_id=1
+        Route::get('/', [ProdukController::class, 'index'])->name('index');
     });
 
     // ------------------------------------------------------------------------
