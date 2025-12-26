@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\Produk;
 use App\Models\KategoriProduk;
+use App\Models\StokEtalase;
 use Illuminate\Database\Seeder;
 
 class ProdukSeeder extends Seeder
@@ -122,5 +123,30 @@ class ProdukSeeder extends Seeder
         }
 
         echo "======== Produk beans dan minuman berhasil dibuat ========\n";
+
+        // Tambahkan stok etalase untuk produk beans saja (tidak untuk minuman)
+        $produkBeans = Produk::where('tipe', 'beans')->get();
+
+        foreach ($produkBeans as $produk) {
+            // Cabang 1 - Stok awal
+            StokEtalase::updateOrCreate(
+                ['produk_id' => $produk->id, 'cabang_id' => 1],
+                [
+                    'jumlah' => 100,
+                    'stok_minimum' => 20,
+                ]
+            );
+
+            // Cabang 2 - Stok awal (jika ada)
+            StokEtalase::updateOrCreate(
+                ['produk_id' => $produk->id, 'cabang_id' => 2],
+                [
+                    'jumlah' => 80,
+                    'stok_minimum' => 20,
+                ]
+            );
+        }
+
+        echo "======== Stok etalase berhasil dibuat untuk produk beans ========\n";
     }
 }
