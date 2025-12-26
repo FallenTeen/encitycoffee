@@ -28,9 +28,19 @@ class TransaksiController extends Controller
             return response()->json(['error' => 'Tidak memiliki akses'], 403);
         }
 
-        // Kasir hanya boleh melihat shift miliknya sendiri
-        if ($request->user()->isKasir() && $shift->user_id !== $request->user()->id) {
+        // Permission check: Kasir hanya boleh melihat shift miliknya sendiri
+        // Supervisor dan IT Support bisa melihat semua shift di cabang mereka
+        $user = $request->user();
+        if ($user->isKasir() && $shift->user_id !== $user->id) {
             return response()->json(['error' => 'Tidak memiliki akses ke shift ini'], 403);
+        }
+        
+        // Supervisor dan kasir hanya boleh melihat shift di cabang mereka
+        if (!$user->isItSupport()) {
+            $userCabangIds = $user->cabang()->pluck('cabang.id')->all();
+            if (!in_array((int) $shift->cabang_id, $userCabangIds, true)) {
+                return response()->json(['error' => 'Tidak memiliki akses ke cabang ini'], 403);
+            }
         }
 
         $filter = [];
@@ -266,6 +276,22 @@ class TransaksiController extends Controller
     public function tampilkanOpenBill(OpenBill $openBill, Request $request)
     {
         Gate::authorize('view-transaksi');
+
+        $user = $request->user();
+        
+        // Permission check: Kasir hanya boleh melihat shift miliknya sendiri
+        // Supervisor dan IT Support bisa melihat semua shift di cabang mereka
+        if ($user->isKasir() && $openBill->shift->user_id !== $user->id) {
+            return response()->json(['error' => 'Tidak memiliki akses ke shift ini'], 403);
+        }
+        
+        // Supervisor dan kasir hanya boleh melihat shift di cabang mereka
+        if (!$user->isItSupport()) {
+            $userCabangIds = $user->cabang()->pluck('cabang.id')->all();
+            if (!in_array((int) $openBill->cabang_id, $userCabangIds, true)) {
+                return response()->json(['error' => 'Tidak memiliki akses ke cabang ini'], 403);
+            }
+        }
 
         $openBill->load(['items.produk', 'shift', 'cabang', 'user']);
 
