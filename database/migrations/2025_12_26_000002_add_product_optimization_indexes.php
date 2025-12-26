@@ -23,9 +23,6 @@ return new class extends Migration
             $table->index('cabang_id');
         });
 
-        Schema::table('cabang', function (Blueprint $table) {
-            $table->index('aktif');
-        });
     }
 
     /**
