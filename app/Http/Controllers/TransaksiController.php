@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use Illuminate\Support\Facades\Log;
 
 class TransaksiController extends Controller
 {
@@ -46,6 +47,15 @@ class TransaksiController extends Controller
     public function buatTransaksi(Request $request)
     {
         Gate::authorize('create-transaksi');
+        
+        // Debug: Log all received data
+        Log::info('TransaksiController.buatTransaksi: Received data', [
+            'all_data' => $request->all(),
+            'shift_id' => $request->input('shift_id'),
+            'user_id' => $request->user()->id,
+            'user_role' => $request->user()->role,
+        ]);
+        
         $validated = $request->validate([
             'shift_id' => 'required|exists:shift,id',
             'items' => 'required|array|min:1',
@@ -61,7 +71,24 @@ class TransaksiController extends Controller
             'catatan' => 'nullable|string',
         ]);
 
+        // Debug: Log validated data
+        Log::info('TransaksiController.buatTransaksi: Validated data', [
+            'shift_id' => $validated['shift_id'],
+            'items_count' => count($validated['items']),
+            'pembayaran_count' => count($validated['pembayaran']),
+        ]);
+
         $shift = Shift::findOrFail($validated['shift_id']);
+
+        // Debug: Log shift details
+        Log::info('TransaksiController.buatTransaksi: Shift details', [
+            'shift_id' => $shift->id,
+            'shift_status' => $shift->status,
+            'shift_user_id' => $shift->user_id,
+            'shift_cabang_id' => $shift->cabang_id,
+            'current_user_id' => $request->user()->id,
+            'current_user_role' => $request->user()->role,
+        ]);
 
         if ($shift->status !== 'buka') {
             return response()->json(['error' => 'Shift tidak terbuka'], 400);
