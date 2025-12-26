@@ -224,7 +224,7 @@ class TransaksiService
     {
         $kalibrasi = $this->kalibrasiService->dapatkanKalibrasiTerpilih($shift, $produk);
         if (! $kalibrasi) {
-            throw new \Exception('Belum ada kalibrasi yang dipilih untuk shift ini');
+            return;
         }
 
         $totalBeansGram = $kalibrasi->berat_beans_gram * $jumlah;
