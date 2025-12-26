@@ -61,7 +61,7 @@ class AppServiceProvider extends ServiceProvider
             return in_array($user->role, ['kasir', 'supervisor', 'manager', 'it_support'], true);
         });
         Gate::define('view-produk', function ($user) {
-            return in_array($user->role, ['manager', 'it_support'], true);
+            return in_array($user->role, ['supervisor', 'manager', 'it_support'], true);
         });
         Gate::define('view-laporan', function ($user) {
             return in_array($user->role, ['supervisor', 'manager', 'it_support'], true);

@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Head, Link, useForm } from '@inertiajs/react';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 
 interface Kategori {
   id: number;
@@ -37,12 +37,6 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
   const [skuStatus, setSkuStatus] = useState<'idle' | 'checking' | 'taken' | 'available'>('idle');
   const [skuLabel, setSkuLabel] = useState('');
   const skuCheckTimeout = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (!skuLabel && data.nama) {
-      setSkuLabel(data.nama);
-    }
-  }, [data.nama, skuLabel]);
 
   const checkSkuAvailability = (value: string) => {
     if (!value) {
@@ -201,7 +195,13 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
               <Input
                 id="nama"
                 value={data.nama}
-                onChange={(e) => setData('nama', e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setData('nama', value);
+                  if (!skuLabel) {
+                    setSkuLabel(value);
+                  }
+                }}
                 placeholder="Nama produk"
               />
               <InputError message={errors.nama as string} />

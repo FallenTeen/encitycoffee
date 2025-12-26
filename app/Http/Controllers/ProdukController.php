@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Controllers;
 
 use App\Models\Produk;
@@ -9,14 +10,12 @@ use App\Models\ItemTransaksi;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
 class ProdukController extends Controller
 {
-    public function __construct()
-    {
-
-    }
+    public function __construct() {}
 
     public function index(Request $request)
     {
@@ -47,7 +46,19 @@ class ProdukController extends Controller
             });
         }
 
-        $produks = $query->orderBy('nama')->paginate(20)->appends($validated);
+        $produks = $query->orderBy('nama')
+            ->paginate(20)
+            ->through(fn($produk) => [
+                'id' => $produk->id,
+                'sku' => $produk->sku,
+                'nama' => $produk->nama,
+                'tipe' => $produk->tipe,
+                'harga_jual' => $produk->harga_jual,
+                'aktif' => $produk->aktif,
+                'image_path' => $produk->image_path,
+                'kategori' => $produk->kategori,
+            ])
+            ->appends($validated);
         $kategori_list = KategoriProduk::orderBy('nama')->get(['id', 'nama']);
 
         return Inertia::render('produk/Index', [
@@ -130,6 +141,23 @@ class ProdukController extends Controller
 
         $query = Produk::with(['kategori', 'satuan'])->where('aktif', true);
 
+        $user = $request->user();
+        if ($user) {
+            $role = strtolower((string) $user->role);
+            if ($role === 'kasir') {
+                $cabangIds = $user->cabang()->pluck('cabang.id')->all();
+                if (empty($cabangIds)) {
+                    return response()->json([
+                        'message' => 'Kasir belum memiliki cabang yang ditetapkan',
+                    ], 422);
+                }
+
+                $query->whereHas('stokEtalase', function ($q) use ($cabangIds) {
+                    $q->whereIn('cabang_id', $cabangIds)->where('jumlah', '>', 0);
+                });
+            }
+        }
+
         if (!empty($validated['kategori_id'])) {
             $query->where('kategori_id', (int) $validated['kategori_id']);
         }
@@ -152,6 +180,28 @@ class ProdukController extends Controller
 
     public function tampilkanProduk(Produk $produk)
     {
+        $user = request()->user();
+        if ($user) {
+            $role = strtolower((string) $user->role);
+            if ($role === 'kasir') {
+                $cabangIds = $user->cabang()->pluck('cabang.id')->all();
+                if (empty($cabangIds)) {
+                    return response()->json([
+                        'message' => 'Kasir belum memiliki cabang yang ditetapkan',
+                    ], 422);
+                }
+
+                $hasStok = StokEtalase::where('produk_id', $produk->id)
+                    ->whereIn('cabang_id', $cabangIds)
+                    ->where('jumlah', '>', 0)
+                    ->exists();
+
+                if (! $hasStok) {
+                    return response()->json(['error' => 'Produk tidak tersedia untuk cabang kasir'], 404);
+                }
+            }
+        }
+
         $produk->load(['kategori', 'satuan']);
         return response()->json($produk);
     }
@@ -162,11 +212,29 @@ class ProdukController extends Controller
         if (!in_array($tipe, ['beans', 'minuman', 'snack'], true)) {
             return response()->json(['error' => 'Tipe produk tidak valid'], 422);
         }
-        $produks = Produk::where('tipe', $tipe)
+
+        $query = Produk::where('tipe', $tipe)
             ->where('aktif', true)
-            ->with(['kategori', 'satuan'])
-            ->orderBy('nama')
-            ->paginate(50);
+            ->with(['kategori', 'satuan']);
+
+        $user = request()->user();
+        if ($user) {
+            $role = strtolower((string) $user->role);
+            if ($role === 'kasir') {
+                $cabangIds = $user->cabang()->pluck('cabang.id')->all();
+                if (empty($cabangIds)) {
+                    return response()->json([
+                        'message' => 'Kasir belum memiliki cabang yang ditetapkan',
+                    ], 422);
+                }
+
+                $query->whereHas('stokEtalase', function ($q) use ($cabangIds) {
+                    $q->whereIn('cabang_id', $cabangIds)->where('jumlah', '>', 0);
+                });
+            }
+        }
+
+        $produks = $query->orderBy('nama')->paginate(50);
         return response()->json($produks);
     }
 
@@ -251,7 +319,7 @@ class ProdukController extends Controller
         );
 
         if ($request->hasFile('image')) {
-            $path = $request->file('image')->store('produk', 'public');
+            $path = $request->file('image')->store('foto-produk', 'public');
             $payload['image_path'] = $path;
         }
 
@@ -293,6 +361,7 @@ class ProdukController extends Controller
             'harga_jual' => 'required|numeric|gt:harga_modal',
             'perlu_kalibrasi' => 'nullable|boolean',
             'aktif' => 'nullable|boolean',
+            'hapus_gambar' => 'nullable|boolean',
         ]);
 
         if (($validated['tipe'] ?? null) !== 'beans' && ($validated['perlu_kalibrasi'] ?? false)) {
@@ -307,15 +376,21 @@ class ProdukController extends Controller
         }
 
         $payload = array_merge(
-            $request->except('image'),
+            $request->except(['image', 'hapus_gambar']),
             [
                 'aktif' => $validated['aktif'] ?? $produk->aktif,
             ]
         );
 
         if ($request->hasFile('image')) {
-            $path = $request->file('image')->store('produk', 'public');
+            if ($produk->image_path) {
+                Storage::disk('public')->delete($produk->image_path);
+            }
+            $path = $request->file('image')->store('foto-produk', 'public');
             $payload['image_path'] = $path;
+        } elseif ($request->boolean('hapus_gambar') && $produk->image_path) {
+            Storage::disk('public')->delete($produk->image_path);
+            $payload['image_path'] = null;
         }
 
         $produk->update($payload);
@@ -337,6 +412,10 @@ class ProdukController extends Controller
             return back()->withErrors(['produk' => 'Tidak bisa hapus produk dengan riwayat transaksi']);
         }
 
+        if ($produk->image_path) {
+            Storage::disk('public')->delete($produk->image_path);
+        }
+
         $produk->delete();
 
         return redirect()->route('produk.index')->with('success', 'Produk berhasil dihapus');
@@ -345,6 +424,9 @@ class ProdukController extends Controller
     public function show(Produk $produk)
     {
         Gate::authorize('view-produk');
-        return Inertia::render('produk/Show', compact('produk'));
+        $produk->load('kategori');
+        return Inertia::render('produk/Show', [
+            'produk' => $produk,
+        ]);
     }
 }

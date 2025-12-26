@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Head, Link, useForm } from '@inertiajs/react';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 
 interface Kategori {
   id: number;
@@ -43,12 +43,14 @@ interface Props {
 }
 
 export default function ProdukEdit({ produk, kategori, tipe_options, satuan_options, stok_tersedia }: Props) {
-  const { data, setData, put, processing, errors } = useForm({
+  const { data, setData, post, processing, errors } = useForm({
+    _method: 'PUT',
     kategori_id: produk?.kategori_id ? String(produk.kategori_id) : '',
     sku: produk?.sku ?? '',
     nama: produk?.nama ?? '',
     deskripsi: produk?.deskripsi ?? '',
     image: null as File | null,
+    hapus_gambar: false,
     tipe: produk?.tipe ?? '',
     satuan_dasar: produk?.satuan_dasar ?? '',
     harga_modal: produk?.harga_modal !== undefined && produk?.harga_modal !== null ? String(produk.harga_modal) : '',
@@ -59,15 +61,10 @@ export default function ProdukEdit({ produk, kategori, tipe_options, satuan_opti
 
   const [skuStatus, setSkuStatus] = useState<'idle' | 'checking' | 'taken' | 'available'>('idle');
   const [skuLabel, setSkuLabel] = useState(produk?.nama ?? '');
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
   const skuCheckTimeout = useRef<number | null>(null);
 
   const currentImageUrl = produk?.image_path ? `/storage/${produk.image_path}` : null;
-
-  useEffect(() => {
-    if (!skuLabel && data.nama) {
-      setSkuLabel(data.nama);
-    }
-  }, [data.nama, skuLabel]);
 
   const checkSkuAvailability = (value: string) => {
     if (!value) {
@@ -127,11 +124,26 @@ export default function ProdukEdit({ produk, kategori, tipe_options, satuan_opti
       });
   };
 
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setData('image', file);
+    if (file) {
+      setData('hapus_gambar', false);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreviewImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setPreviewImage(null);
+    }
+  };
+
   return (
     <AppLayout
       breadcrumbs={[
         { title: 'Produk', href: '/produk' },
-        { title: `Edit #${produk?.id ?? ''}`, href: `/produk/${produk?.id ?? ''}/edit` },
+        { title: `Edit ${produk?.nama ?? ''}`, href: `/produk/${produk?.id ?? ''}/edit` },
       ]}
     >
       <Head title="Edit Produk" />
@@ -148,14 +160,14 @@ export default function ProdukEdit({ produk, kategori, tipe_options, satuan_opti
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr),minmax(0,1fr)]">
           <div className="rounded-md border p-4">
-          <form
-            className="grid grid-cols-1 gap-4 md:grid-cols-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!produk?.id) return;
-              put(`/produk/${produk.id}`);
-            }}
-          >
+            <form
+              className="grid grid-cols-1 gap-4 md:grid-cols-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!produk?.id) return;
+                post(`/produk/${produk.id}`);
+              }}
+            >
               <div className="space-y-1">
                 <Label htmlFor="kategori_id">Kategori</Label>
                 <select
@@ -171,73 +183,79 @@ export default function ProdukEdit({ produk, kategori, tipe_options, satuan_opti
                     </option>
                   ))}
                 </select>
-              <InputError message={errors.kategori_id as string} />
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="sku">SKU</Label>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  id="sku"
-                  className="sm:flex-1"
-                  value={data.sku}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setData('sku', value);
-                    if (skuCheckTimeout.current) {
-                      window.clearTimeout(skuCheckTimeout.current);
-                    }
-                    skuCheckTimeout.current = window.setTimeout(() => {
-                      checkSkuAvailability(value);
-                    }, 400);
-                  }}
-                />
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="whitespace-nowrap"
-                      onClick={handleGenerateSku}
-                    >
-                      Generate SKU
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Generate SKU otomatis sesuai standar dan cek keunikan.</p>
-                  </TooltipContent>
-                </Tooltip>
+                <InputError message={errors.kategori_id as string} />
               </div>
-              <InputError message={errors.sku as string} />
-              <div className="mt-2 space-y-1 text-xs">
-                <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-2">
-                  <span>Label untuk generator:</span>
-                  <div className="flex flex-1 items-center gap-2">
-                    <Input
-                      value={skuLabel}
-                      onChange={(e) => setSkuLabel(e.target.value)}
-                      placeholder="Label, misal nama singkat"
-                    />
+
+              <div className="space-y-1">
+                <Label htmlFor="sku">SKU</Label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    id="sku"
+                    className="sm:flex-1"
+                    value={data.sku}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setData('sku', value);
+                      if (skuCheckTimeout.current) {
+                        window.clearTimeout(skuCheckTimeout.current);
+                      }
+                      skuCheckTimeout.current = window.setTimeout(() => {
+                        checkSkuAvailability(value);
+                      }, 400);
+                    }}
+                  />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="whitespace-nowrap"
+                        onClick={handleGenerateSku}
+                      >
+                        Generate SKU
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Generate SKU otomatis sesuai standar dan cek keunikan.</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <InputError message={errors.sku as string} />
+                <div className="mt-2 space-y-1 text-xs">
+                  <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-2">
+                    <span>Label untuk generator:</span>
+                    <div className="flex flex-1 items-center gap-2">
+                      <Input
+                        value={skuLabel}
+                        onChange={(e) => setSkuLabel(e.target.value)}
+                        placeholder="Label, misal nama singkat"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-1">
+                    {skuStatus === 'taken' && (
+                      <span className="text-destructive">SKU ini sudah dipakai</span>
+                    )}
+                    {skuStatus === 'available' && (
+                      <span className="text-emerald-600">SKU tersedia</span>
+                    )}
                   </div>
                 </div>
-                <div className="mt-1">
-                  {skuStatus === 'taken' && (
-                    <span className="text-destructive">SKU ini sudah dipakai</span>
-                  )}
-                  {skuStatus === 'available' && (
-                    <span className="text-emerald-600">SKU tersedia</span>
-                  )}
-                </div>
               </div>
-            </div>
 
               <div className="space-y-1">
                 <Label htmlFor="nama">Nama Produk</Label>
                 <Input
                   id="nama"
                   value={data.nama}
-                  onChange={(e) => setData('nama', e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setData('nama', value);
+                    if (!skuLabel) {
+                      setSkuLabel(value);
+                    }
+                  }}
                 />
                 <InputError message={errors.nama as string} />
               </div>
@@ -271,30 +289,53 @@ export default function ProdukEdit({ produk, kategori, tipe_options, satuan_opti
                 <InputError message={errors.deskripsi as string} />
               </div>
 
-              <div className="space-y-1">
+              <div className="space-y-1 md:col-span-2">
                 <Label htmlFor="image">Gambar Produk</Label>
                 <Input
                   id="image"
                   type="file"
                   accept="image/png,image/jpeg,image/jpg,image/webp"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] ?? null;
-                    setData('image', file);
-                  }}
+                  onChange={handleImageChange}
                 />
                 <p className="text-xs text-muted-foreground">
                   Format: JPG, PNG, WebP. Maksimal 2MB.
                 </p>
                 <InputError message={errors.image as string} />
-                {currentImageUrl && (
-                  <div className="mt-2">
-                    <img
-                      src={currentImageUrl}
-                      alt="Gambar produk saat ini"
-                      className="h-32 w-32 rounded-md border object-cover"
-                    />
-                  </div>
-                )}
+                
+                {/* Preview gambar */}
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {currentImageUrl && !data.hapus_gambar && !previewImage && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Gambar saat ini:</p>
+                      <img
+                        src={currentImageUrl}
+                        alt="Gambar produk saat ini"
+                        className="h-40 w-full rounded-md border object-cover"
+                      />
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="hapus_gambar"
+                          checked={data.hapus_gambar}
+                          onCheckedChange={(value) => setData('hapus_gambar', Boolean(value))}
+                        />
+                        <Label htmlFor="hapus_gambar" className="text-sm font-normal">
+                          Hapus gambar saat ini
+                        </Label>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {previewImage && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Preview gambar baru:</p>
+                      <img
+                        src={previewImage}
+                        alt="Preview gambar baru"
+                        className="h-40 w-full rounded-md border object-cover"
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-1">
@@ -321,6 +362,7 @@ export default function ProdukEdit({ produk, kategori, tipe_options, satuan_opti
                   id="harga_modal"
                   type="number"
                   min="0"
+                  step="0.01"
                   value={data.harga_modal}
                   onChange={(e) => setData('harga_modal', e.target.value)}
                 />
@@ -333,6 +375,7 @@ export default function ProdukEdit({ produk, kategori, tipe_options, satuan_opti
                   id="harga_jual"
                   type="number"
                   min="0"
+                  step="0.01"
                   value={data.harga_jual}
                   onChange={(e) => setData('harga_jual', e.target.value)}
                 />
@@ -354,13 +397,16 @@ export default function ProdukEdit({ produk, kategori, tipe_options, satuan_opti
               <div className="space-y-1">
                 <Label>Status</Label>
                 <div className="flex items-center gap-2 pt-2">
-                  <Checkbox checked={data.aktif} onCheckedChange={(value) => setData('aktif', Boolean(value))} />
+                  <Checkbox 
+                    checked={data.aktif} 
+                    onCheckedChange={(value) => setData('aktif', Boolean(value))} 
+                  />
                   <span className="text-sm">{data.aktif ? 'Aktif' : 'Nonaktif'}</span>
                 </div>
                 <InputError message={errors.aktif as string} />
               </div>
 
-              <div className="md:col-span-2 flex items-center gap-2 pt-2">
+              <div className="flex items-center gap-2 pt-2 md:col-span-2">
                 <Button type="submit" disabled={processing}>
                   Simpan Perubahan
                 </Button>
@@ -375,7 +421,9 @@ export default function ProdukEdit({ produk, kategori, tipe_options, satuan_opti
             <div className="rounded-md border p-4">
               <h2 className="text-sm font-semibold">Ringkasan Stok Tersedia</h2>
               {(stok_tersedia ?? []).length === 0 && (
-                <div className="mt-2 text-sm text-muted-foreground">Belum ada stok tercatat untuk produk ini.</div>
+                <div className="mt-2 text-sm text-muted-foreground">
+                  Belum ada stok tercatat untuk produk ini.
+                </div>
               )}
               {(stok_tersedia ?? []).length > 0 && (
                 <div className="mt-3 space-y-2 text-sm">

@@ -9,7 +9,11 @@ class SatuanProdukSeeder extends Seeder
 {
     public function run()
     {
-        $arabica = Produk::where('sku', 'BEAN-ARB-001')->first();
+         $arabica = Produk::where('sku', 'BEAN-ARB-001')->first();
+    if (!$arabica) {
+        echo "Produk Arabica tidak ditemukan, lewati seeding satuan.\n";
+        return;
+    }
         SatuanProduk::create([
             'produk_id'      => $arabica->id,
             'nama_satuan'    => '100 gram',

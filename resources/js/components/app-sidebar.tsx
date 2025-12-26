@@ -117,6 +117,8 @@ function getMainNavItems(role?: string): NavGroup[] {
         groups.push({
             title: 'Coffeeshop',
             items: [
+                { title: 'Kategori', href: produk.kategori.index(), icon: FolderTree },
+                { title: 'Daftar Produk', href: produk.index(), icon: Package },
                 { title: 'Transaksi', href: transaksi.index(), icon: ShoppingCart },
             ],
         });
