@@ -100,7 +100,7 @@ class MobileShiftTest extends TestCase
 
         $response->assertStatus(400)
                 ->assertJson([
-                    'error' => 'Cabang tidak ditemukan'
+                    'error' => 'Cabang tidak valid'
                 ]);
 
         Log::info('Invalid cabang correctly rejected');

@@ -183,14 +183,20 @@ class ProdukController extends Controller
             $search = $request->input('search', '');
             $kategoriId = $request->input('kategori_id', '');
             $tipe = $request->input('tipe', '');
+            $perPage = $request->input('per_page', 20);
             
             $produk = $this->getProdukForApi($cabangId, $search, $kategoriId, $tipe);
+            
+            // Apply pagination
+            $total = $produk->count();
+            $produk = $produk->take($perPage)->values();
             
             return response()->json([
                 'success' => true,
                 'produk' => $produk,
                 'kategori_list' => KategoriProduk::select('id', 'nama')->get(),
-                'total' => $produk->count()
+                'total' => $total,
+                'per_page' => $perPage
             ]);
             
         } catch (\Exception $e) {
