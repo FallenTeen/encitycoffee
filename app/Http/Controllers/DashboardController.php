@@ -122,6 +122,9 @@ class DashboardController extends Controller
 
             return Inertia::render('dashboard/Manager', [
                 'user' => $user,
+                'problematic' => 0, // Transaksi bermasalah
+                'kasDifference' => 0.0, // Selisih kas
+                'pendingHandovers' => 0, // Serah terima tertunda
                 'total_cabang_kelola' => count($cabangIds),
                 'shift_aktif' => $shiftAktif,
                 'penjualan_hari_ini' => $penjualanHariIni,
@@ -176,6 +179,9 @@ class DashboardController extends Controller
 
             return Inertia::render('dashboard/Supervisor', [
                 'user' => $user,
+                'problematic' => 0, // Transaksi bermasalah
+                'kasDifference' => 0.0, // Selisih kas
+                'pendingHandovers' => 0, // Serah terima tertunda
                 'shift_aktif' => $shiftAktif,
                 'total_transaksi_hari_ini' => $totalTransaksiHariIni,
                 'total_penjualan' => $totalPenjualan,
