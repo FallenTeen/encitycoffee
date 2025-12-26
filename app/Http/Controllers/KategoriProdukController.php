@@ -15,7 +15,7 @@ class KategoriProdukController extends Controller
 
     public function index(Request $request)
     {
-        Gate::authorize('view-produk');
+        Gate::authorize('manage-kategori');
         $validated = $request->validate([
             'search' => 'nullable|string|max:255',
             'sort_by' => 'nullable|in:nama,produk_count',
@@ -56,13 +56,13 @@ class KategoriProdukController extends Controller
 
     public function create()
     {
-        Gate::authorize('view-produk');
+        Gate::authorize('manage-kategori');
         return Inertia::render('produk/kategori/Create');
     }
 
     public function store(Request $request)
     {
-        Gate::authorize('view-produk');
+        Gate::authorize('manage-kategori');
         $validated = $request->validate([
             'nama' => 'required|string|max:255|unique:kategori_produk,nama',
             'slug' => 'required|string|max:255|unique:kategori_produk,slug',
@@ -76,7 +76,7 @@ class KategoriProdukController extends Controller
 
     public function show(KategoriProduk $kategori)
     {
-        Gate::authorize('view-produk');
+        Gate::authorize('manage-kategori');
         $produk_list = $kategori->produk()->with('satuan')->paginate(20);
         return Inertia::render('produk/kategori/Show', [
             'kategori' => $kategori,
@@ -86,13 +86,13 @@ class KategoriProdukController extends Controller
 
     public function edit(KategoriProduk $kategori)
     {
-        Gate::authorize('view-produk');
+        Gate::authorize('manage-kategori');
         return Inertia::render('produk/kategori/Edit', ['kategori' => $kategori]);
     }
 
     public function update(Request $request, KategoriProduk $kategori)
     {
-        Gate::authorize('view-produk');
+        Gate::authorize('manage-kategori');
         $validated = $request->validate([
             'nama' => 'required|string|max:255|unique:kategori_produk,nama,' . $kategori->id,
             'slug' => 'required|string|max:255|unique:kategori_produk,slug,' . $kategori->id,
@@ -106,7 +106,7 @@ class KategoriProdukController extends Controller
 
     public function destroy(KategoriProduk $kategori)
     {
-        Gate::authorize('view-produk');
+        Gate::authorize('manage-kategori');
         if ($kategori->produk()->count() > 0) {
             return back()->withErrors(['kategori' => 'Kategori masih memiliki produk']);
         }

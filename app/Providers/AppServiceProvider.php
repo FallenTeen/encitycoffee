@@ -104,5 +104,20 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('delete-transaksi', function ($user) {
             return in_array($user->role, ['manager', 'it_support'], true);
         });
+        
+        // PRODUCT MANAGEMENT
+        Gate::define('manage-produk', function ($user) {
+            return in_array($user->role, ['supervisor', 'manager', 'it_support'], true);
+        });
+        
+        // CATEGORY MANAGEMENT  
+        Gate::define('manage-kategori', function ($user) {
+            return in_array($user->role, ['supervisor', 'manager', 'it_support'], true);
+        });
+        
+        // CASHIER MANAGEMENT (for manager/supervisor)
+        Gate::define('manage-kasir', function ($user) {
+            return in_array($user->role, ['supervisor', 'manager', 'it_support'], true);
+        });
     }
 }

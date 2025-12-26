@@ -169,7 +169,7 @@ class ProdukController extends Controller
     {
         try {
             $user = auth()->user();
-            $cabangId = $user->cabang_id ?? $request->input('cabang_id');
+            $cabangId = $this->getCabangId($request, $user);
             
             if (!$cabangId) {
                 return response()->json([
@@ -203,7 +203,8 @@ class ProdukController extends Controller
     
     private function getCabangId(Request $request, $user)
     {
-        if (in_array($user->role, ['manager', 'supervisor', 'it_support'])) {
+        if ($user->role === 'it_support') {
+            // it_support can access all cabang
             $cabangId = $request->input('cabang_id');
             
             if (!$cabangId) {
@@ -214,13 +215,43 @@ class ProdukController extends Controller
             return $cabangId;
         }
         
+        if (in_array($user->role, ['manager', 'supervisor'])) {
+            // manager/supervisor can only access their assigned cabang
+            $cabangId = $request->input('cabang_id');
+            
+            if ($cabangId) {
+                // Verify the requested cabang is in their assigned cabang list
+                $assignedCabangIds = $user->cabang->pluck('id')->all();
+                if (!in_array((int)$cabangId, $assignedCabangIds)) {
+                    return null; // Return null to indicate unauthorized access
+                }
+                return $cabangId;
+            }
+            
+            // If no cabang_id specified, use the first assigned cabang
+            $assignedCabang = $user->cabang->first();
+            return $assignedCabang ? $assignedCabang->id : null;
+        }
+        
         return $user->cabang_id;
     }
     
     private function getCabangList($user)
     {
-        if (in_array($user->role, ['manager', 'supervisor', 'it_support'])) {
+        if ($user->role === 'it_support') {
+            // it_support can see all cabang
             return Cabang::select('id', 'nama', 'kode')->get();
+        }
+        
+        if (in_array($user->role, ['manager', 'supervisor'])) {
+            // manager/supervisor can only see their assigned cabang
+            return $user->cabang->map(function ($cabang) {
+                return [
+                    'id' => $cabang->id,
+                    'nama' => $cabang->nama,
+                    'kode' => $cabang->kode,
+                ];
+            });
         }
         
         return null;
