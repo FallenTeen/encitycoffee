@@ -81,4 +81,30 @@ class Produk extends Model
     {
         return $query->where('tipe', 'snack');
     }
+
+    public function scopeCabang($query, $cabangId)
+    {
+        return $query->whereHas('stokEtalase', function ($q) use ($cabangId) {
+            $q->where('cabang_id', $cabangId);
+        });
+    }
+
+    public function scopeWithStokCabang($query, $cabangId)
+    {
+        return $query->with(['stokEtalase' => function ($q) use ($cabangId) {
+            $q->where('cabang_id', $cabangId);
+        }, 'kategori']);
+    }
+
+    public function getStokCabang($cabangId)
+    {
+        return $this->stokEtalase()
+            ->where('cabang_id', $cabangId)
+            ->first();
+    }
+
+    public function getHargaFormattedAttribute()
+    {
+        return 'Rp ' . number_format($this->harga_jual, 0, ',', '.');
+    }
 }

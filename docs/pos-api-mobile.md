@@ -3,7 +3,8 @@
 Dokumen ini merangkum seluruh endpoint POS Mobile di bawah prefix ` /api/pos/... ` beserta autentikasi, payload, response, dan alur penggunaan yang direkomendasikan untuk aplikasi mobile (kasir). Seluruh spesifikasi telah diselaraskan dengan routes dan controller aktual pada kode.
 
 **Ikhtisar**
-- Base URL: `https://<server>/api` atau `http://localhost:8000/api` (development).
+- Base URL produksi: `https://encity.bhinneka.space/api`
+- Base URL generik: `https://<server>/api` atau `http://localhost:8000/api` (development).
 - Autentikasi: `POST /pos/auth/login` menghasilkan token Sanctum; semua endpoint di bawah `/pos` (kecuali login) memerlukan header `Authorization: Bearer <token>`.
 - Header umum: `Content-Type: application/json`, `Accept: application/json`.
 - Peran & akses: aplikasi mobile hanya mengizinkan login `kasir`. Kasir hanya boleh mengakses shift miliknya sendiri.

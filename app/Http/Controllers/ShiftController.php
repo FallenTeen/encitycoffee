@@ -56,31 +56,84 @@ class ShiftController extends Controller
     {
         $v = Validator::make($request->all(), [
             'cabang_id' => 'required|integer|exists:cabang,id',
-            'saldo_awal' => 'required|numeric|min:0',
+            'saldo_awal' => 'required|numeric|min:0|max:999999999.99',
         ]);
 
         if ($v->fails()) {
+            Log::error('Validasi buka shift gagal', [
+                'user_id' => $request->user()->id,
+                'errors' => $v->errors(),
+                'input' => $request->all()
+            ]);
             return response()->json(['error' => $v->errors()], 422);
         }
 
         $user = $request->user();
         $cabang = Cabang::find($request->cabang_id);
 
+        if (!$cabang) {
+            Log::error('Cabang tidak ditemukan', [
+                'user_id' => $user->id,
+                'cabang_id' => $request->cabang_id
+            ]);
+            return response()->json(['error' => 'Cabang tidak valid'], 400);
+        }
+
         $existing = Shift::where('user_id', $user->id)->where('status', 'buka')->first();
         if ($existing) {
+            Log::warning('Percobaan buka shift ganda', [
+                'user_id' => $user->id,
+                'existing_shift_id' => $existing->id
+            ]);
             return response()->json(['error' => 'User sudah memiliki shift yang masih buka'], 400);
         }
 
-        $shift = Shift::create([
-            'user_id' => $user->id,
-            'cabang_id' => $cabang->id,
-            'saldo_awal' => $request->saldo_awal,
-            'waktu_buka' => Carbon::now(),
-            'status' => 'buka',
-        ]);
+        DB::beginTransaction();
+        try {
+            $saldoAwal = (float) $request->saldo_awal;
+            if (!is_numeric($saldoAwal) || $saldoAwal < 0) {
+                throw new \InvalidArgumentException('Saldo awal harus berupa angka positif');
+            }
 
-        $shift->load('cabang');
-        return response()->json(['shift' => $shift]);
+            $shift = Shift::create([
+                'user_id' => $user->id,
+                'cabang_id' => $cabang->id,
+                'saldo_awal' => number_format($saldoAwal, 2, '.', ''),
+                'waktu_buka' => Carbon::now(),
+                'status' => 'buka',
+                'audit_log' => [[
+                    'action' => 'buka_shift',
+                    'user_id' => $user->id,
+                    'timestamp' => Carbon::now()->toDateTimeString(),
+                    'data' => [
+                        'saldo_awal' => $saldoAwal,
+                        'cabang_id' => $cabang->id
+                    ]
+                ]]
+            ]);
+
+            Log::info('Shift berhasil dibuka', [
+                'shift_id' => $shift->id,
+                'user_id' => $user->id,
+                'cabang_id' => $cabang->id,
+                'saldo_awal' => $saldoAwal,
+                'timestamp' => Carbon::now()
+            ]);
+
+            DB::commit();
+            $shift->load('cabang');
+            return response()->json(['shift' => $shift]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Gagal membuka shift', [
+                'user_id' => $user->id,
+                'cabang_id' => $cabang->id,
+                'saldo_awal' => $request->saldo_awal,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json(['error' => 'Gagal membuka shift: ' . $e->getMessage()], 500);
+        }
     }
 
     public function tutupShift(Request $request, Shift $shift)

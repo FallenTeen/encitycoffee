@@ -4,10 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Shift extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $table = 'shift';
 
@@ -24,6 +26,7 @@ class Shift extends Model
         'waktu_tutup',
         'status',
         'catatan',
+        'audit_log',
     ];
 
     protected $casts = [
@@ -35,6 +38,7 @@ class Shift extends Model
         'total_qris' => 'decimal:2',
         'waktu_buka' => 'datetime',
         'waktu_tutup' => 'datetime',
+        'audit_log' => 'array',
     ];
 
     public function user()
@@ -80,5 +84,69 @@ class Shift extends Model
     public function getTotalTransaksiAttribute()
     {
         return $this->transaksi()->where('status', 'selesai')->sum('total');
+    }
+
+    public function addAuditLog(string $action, array $data = [])
+    {
+        $log = $this->audit_log ?? [];
+        $log[] = [
+            'action' => $action,
+            'user_id' => auth()->id(),
+            'timestamp' => now()->toDateTimeString(),
+            'data' => $data,
+        ];
+        $this->update(['audit_log' => $log]);
+    }
+
+    public function validateSaldo()
+    {
+        if (!is_numeric($this->saldo_awal) || $this->saldo_awal < 0) {
+            throw new \InvalidArgumentException('Saldo awal harus berupa angka positif');
+        }
+
+        if ($this->saldo_akhir !== null && (!is_numeric($this->saldo_akhir) || $this->saldo_akhir < 0)) {
+            throw new \InvalidArgumentException('Saldo akhir harus berupa angka positif atau null');
+        }
+
+        return true;
+    }
+
+    public function safeUpdate(array $data)
+    {
+        try {
+            $this->validateSaldo();
+            $this->update($data);
+            $this->addAuditLog('update', $data);
+            return true;
+        } catch (\Exception $e) {
+            Log::error('Shift safeUpdate failed', [
+                'shift_id' => $this->id,
+                'data' => $data,
+                'error' => $e->getMessage()
+            ]);
+            return false;
+        }
+    }
+
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($shift) {
+            $shift->validateSaldo();
+            Log::info('Creating shift', [
+                'user_id' => $shift->user_id,
+                'cabang_id' => $shift->cabang_id,
+                'saldo_awal' => $shift->saldo_awal
+            ]);
+        });
+
+        static::updating(function ($shift) {
+            $shift->validateSaldo();
+            Log::info('Updating shift', [
+                'shift_id' => $shift->id,
+                'changes' => $shift->getDirty()
+            ]);
+        });
     }
 }
