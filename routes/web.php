@@ -90,7 +90,7 @@ Route::middleware('auth')->group(function () {
     // Prefix: /produk
     // CRITICAL: ALL static routes MUST come BEFORE dynamic {produk} routes
     // ------------------------------------------------------------------------
-    Route::middleware('role:manager,it_support')->prefix('produk')->name('produk.')->group(function () {
+    Route::middleware('role:manager,it_support, supervisor, kasir')->prefix('produk')->name('produk.')->group(function () {
         // INDEX ROUTE - Tampilan utama (bisa pilih cabang via query ?cabang_id=1)
         Route::get('/', [ProdukController::class, 'index'])->name('index');
         
@@ -160,7 +160,7 @@ Route::middleware('auth')->group(function () {
     // Prefix: /transaksi
     // CRITICAL: Static routes BEFORE dynamic routes
     // ------------------------------------------------------------------------
-    Route::middleware('role:supervisor,manager,it_support')->prefix('transaksi')->name('transaksi.')->group(function () {
+    Route::middleware('role:supervisor,manager,it_support, kasir')->prefix('transaksi')->name('transaksi.')->group(function () {
         Route::get('/', [TransaksiController::class, 'index'])->name('index');
         Route::get('/open-bill', [TransaksiController::class, 'daftarOpenBill'])->name('open-bill.index');
         Route::get('/shift/{shift}', [TransaksiController::class, 'byShift'])->name('by-shift');
