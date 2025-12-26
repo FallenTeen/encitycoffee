@@ -220,6 +220,72 @@ class TransaksiService
         }
     }
 
+    public function updateOpenBill(
+        OpenBill $openBill,
+        array $items,
+        float $diskon = 0,
+        float $pajak = 0,
+        ?string $catatan = null
+    ) {
+        $shift = $openBill->shift;
+        if (! $shift || $shift->status !== 'buka') {
+            throw new \Exception('Shift tidak dalam status buka');
+        }
+        if (empty($items)) {
+            throw new \InvalidArgumentException('Items tidak boleh kosong');
+        }
+
+        DB::beginTransaction();
+        try {
+            $subtotal = 0;
+            $itemOpenBill = [];
+
+            foreach ($items as $item) {
+                $produk = Produk::findOrFail($item['produk_id']);
+                $subtotalItem = $produk->harga_jual * $item['jumlah'];
+                $subtotal += $subtotalItem;
+
+                $itemOpenBill[] = [
+                    'produk' => $produk,
+                    'jumlah' => $item['jumlah'],
+                    'harga_satuan' => $produk->harga_jual,
+                    'subtotal' => $subtotalItem,
+                    'catatan' => $item['catatan'] ?? null,
+                ];
+            }
+
+            $total = $subtotal - $diskon + $pajak;
+
+            $openBill->update([
+                'subtotal' => $subtotal,
+                'diskon' => $diskon,
+                'pajak' => $pajak,
+                'total' => $total,
+                'status' => 'open',
+                'catatan' => $catatan,
+            ]);
+
+            $openBill->items()->delete();
+
+            foreach ($itemOpenBill as $item) {
+                OpenBillItem::create([
+                    'open_bill_id' => $openBill->id,
+                    'produk_id' => $item['produk']->id,
+                    'jumlah' => $item['jumlah'],
+                    'harga_satuan' => $item['harga_satuan'],
+                    'subtotal' => $item['subtotal'],
+                    'catatan' => $item['catatan'],
+                ]);
+            }
+
+            DB::commit();
+            return $openBill->load(['items.produk', 'shift', 'cabang']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
     private function kurangiStokMinuman(Shift $shift, Produk $produk, int $jumlah)
     {
         $kalibrasi = $this->kalibrasiService->dapatkanKalibrasiTerpilih($shift, $produk);

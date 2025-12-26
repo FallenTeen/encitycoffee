@@ -216,6 +216,53 @@ class TransaksiController extends Controller
         ]);
     }
 
+    public function updateOpenBill(OpenBill $openBill, Request $request)
+    {
+        Gate::authorize('create-transaksi');
+
+        $validated = $request->validate([
+            'items' => 'required|array|min:1',
+            'items.*.produk_id' => 'required|exists:produk,id',
+            'items.*.jumlah' => 'required|integer|min:1',
+            'items.*.catatan' => 'nullable|string',
+            'diskon' => 'nullable|numeric|min:0',
+            'pajak' => 'nullable|numeric|min:0',
+            'catatan' => 'nullable|string',
+        ]);
+
+        $user = $request->user();
+        $shift = $openBill->shift;
+
+        if (! $shift) {
+            return response()->json(['error' => 'Shift untuk open bill tidak ditemukan'], 400);
+        }
+
+        if ($shift->status !== 'buka') {
+            return response()->json(['error' => 'Shift tidak terbuka'], 400);
+        }
+
+        if (! $user->isKasir() && ! $user->isItSupport()) {
+            $userCabangIds = $user->cabang()->pluck('cabang.id')->all();
+            if (! in_array((int) $shift->cabang_id, $userCabangIds, true)) {
+                return response()->json(['error' => 'Tidak memiliki akses ke cabang ini'], 403);
+            }
+        }
+
+        try {
+            $updated = $this->transaksiService->updateOpenBill(
+                $openBill,
+                $validated['items'],
+                (float) ($validated['diskon'] ?? 0),
+                (float) ($validated['pajak'] ?? 0),
+                $validated['catatan'] ?? null
+            );
+
+            return response()->json($updated);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 400);
+        }
+    }
+
     public function tampilkanOpenBill(OpenBill $openBill, Request $request)
     {
         Gate::authorize('view-transaksi');
