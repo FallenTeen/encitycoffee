@@ -25,6 +25,7 @@ interface Produk {
   sku: string;
   nama: string;
   deskripsi?: string | null;
+  image_path?: string | null;
   tipe: string;
   satuan_dasar: string;
   harga_modal: number | string;
@@ -47,6 +48,7 @@ export default function ProdukEdit({ produk, kategori, tipe_options, satuan_opti
     sku: produk?.sku ?? '',
     nama: produk?.nama ?? '',
     deskripsi: produk?.deskripsi ?? '',
+    image: null as File | null,
     tipe: produk?.tipe ?? '',
     satuan_dasar: produk?.satuan_dasar ?? '',
     harga_modal: produk?.harga_modal !== undefined && produk?.harga_modal !== null ? String(produk.harga_modal) : '',
@@ -58,6 +60,8 @@ export default function ProdukEdit({ produk, kategori, tipe_options, satuan_opti
   const [skuStatus, setSkuStatus] = useState<'idle' | 'checking' | 'taken' | 'available'>('idle');
   const [skuLabel, setSkuLabel] = useState(produk?.nama ?? '');
   const skuCheckTimeout = useRef<number | null>(null);
+
+  const currentImageUrl = produk?.image_path ? `/storage/${produk.image_path}` : null;
 
   useEffect(() => {
     if (!skuLabel && data.nama) {
@@ -265,6 +269,32 @@ export default function ProdukEdit({ produk, kategori, tipe_options, satuan_opti
                   onChange={(e) => setData('deskripsi', e.target.value)}
                 />
                 <InputError message={errors.deskripsi as string} />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="image">Gambar Produk</Label>
+                <Input
+                  id="image"
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/webp"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    setData('image', file);
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Format: JPG, PNG, WebP. Maksimal 2MB.
+                </p>
+                <InputError message={errors.image as string} />
+                {currentImageUrl && (
+                  <div className="mt-2">
+                    <img
+                      src={currentImageUrl}
+                      alt="Gambar produk saat ini"
+                      className="h-32 w-32 rounded-md border object-cover"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1">

@@ -20,11 +20,12 @@ interface Props {
 }
 
 export default function ProdukCreate({ kategori, tipe_options, satuan_options }: Props) {
-  const { data, setData, post, processing, errors } = useForm({
+  const { data, setData, post, processing, errors, progress } = useForm({
     kategori_id: '',
     sku: '',
     nama: '',
     deskripsi: '',
+    image: null as File | null,
     tipe: '',
     satuan_dasar: '',
     harga_modal: '',
@@ -234,6 +235,23 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
                 placeholder="Deskripsi produk (opsional)"
               />
               <InputError message={errors.deskripsi as string} />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="image">Gambar Produk</Label>
+              <Input
+                id="image"
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  setData('image', file);
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                Format: JPG, PNG, WebP. Maksimal 2MB.
+              </p>
+              <InputError message={errors.image as string} />
             </div>
 
             <div className="space-y-1">

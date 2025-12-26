@@ -230,6 +230,7 @@ class ProdukController extends Controller
             'sku' => 'required|string|max:50|unique:produk,sku',
             'nama' => 'required|string|max:255',
             'deskripsi' => 'nullable|string',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             'tipe' => 'required|in:beans,minuman,snack',
             'satuan_dasar' => 'required|string|max:50',
             'harga_modal' => 'required|numeric|min:0',
@@ -242,9 +243,17 @@ class ProdukController extends Controller
             return back()->withErrors(['perlu_kalibrasi' => 'Hanya produk beans yang bisa dikalibrasi'])->withInput();
         }
 
-        $payload = array_merge($validated, [
-            'aktif' => $validated['aktif'] ?? true,
-        ]);
+        $payload = array_merge(
+            $request->except('image'),
+            [
+                'aktif' => $validated['aktif'] ?? true,
+            ]
+        );
+
+        if ($request->hasFile('image')) {
+            $path = $request->file('image')->store('produk', 'public');
+            $payload['image_path'] = $path;
+        }
 
         Produk::create($payload);
 
@@ -277,6 +286,7 @@ class ProdukController extends Controller
             'sku' => 'required|string|max:50|unique:produk,sku,' . $produk->id,
             'nama' => 'required|string|max:255',
             'deskripsi' => 'nullable|string',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             'tipe' => 'required|in:beans,minuman,snack',
             'satuan_dasar' => 'required|string|max:50',
             'harga_modal' => 'required|numeric|min:0',
@@ -296,9 +306,17 @@ class ProdukController extends Controller
             }
         }
 
-        $payload = array_merge($validated, [
-            'aktif' => $validated['aktif'] ?? $produk->aktif,
-        ]);
+        $payload = array_merge(
+            $request->except('image'),
+            [
+                'aktif' => $validated['aktif'] ?? $produk->aktif,
+            ]
+        );
+
+        if ($request->hasFile('image')) {
+            $path = $request->file('image')->store('produk', 'public');
+            $payload['image_path'] = $path;
+        }
 
         $produk->update($payload);
 

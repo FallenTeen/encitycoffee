@@ -16,6 +16,7 @@ class Produk extends Model
         'sku',
         'nama',
         'deskripsi',
+        'image_path',
         'tipe',
         'satuan_dasar',
         'harga_modal',
