@@ -24,6 +24,12 @@ class ProdukController extends Controller
     {
         try {
             $user = auth()->user();
+            
+            // IT Support: tampilkan semua produk dari semua cabang
+            if ($user->role === 'it_support') {
+                return $this->indexForItSupport($request);
+            }
+            
             $cabangId = $this->getCabangId($request, $user);
             
             if (!$cabangId) {
@@ -61,10 +67,68 @@ class ProdukController extends Controller
         }
     }
     
+    private function indexForItSupport(Request $request)
+    {
+        $search = $request->input('search', '');
+        $kategoriId = $request->input('kategori_id', '');
+        $cabangId = $request->input('cabang_id', '');
+        
+        $query = Produk::with(['kategori', 'stokEtalase.cabang']);
+        
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('nama', 'like', "%{$search}%")
+                  ->orWhere('sku', 'like', "%{$search}%")
+                  ->orWhere('deskripsi', 'like', "%{$search}%");
+            });
+        }
+        
+        if ($kategoriId) {
+            $query->where('kategori_id', $kategoriId);
+        }
+        
+        if ($cabangId) {
+            $query->whereHas('stokEtalase', function($q) use ($cabangId) {
+                $q->where('cabang_id', $cabangId);
+            });
+        }
+        
+        $produk = $query->get();
+        
+        return Inertia::render('produk/Index', [
+            'produk' => $produk,
+            'cabangList' => Cabang::select('id', 'nama', 'kode')->get(),
+            'selectedCabang' => $cabangId ? Cabang::find($cabangId) : null,
+            'filters' => [
+                'search' => $search,
+                'cabang_id' => $cabangId,
+                'kategori_id' => $kategoriId
+            ],
+            'kategoriList' => KategoriProduk::all(),
+            'isItSupport' => true
+        ]);
+    }
+    
     public function show(Request $request, $produkId)
     {
         try {
             $user = auth()->user();
+            
+            // IT Support: tampilkan produk tanpa batasan cabang
+            if ($user->role === 'it_support') {
+                $produk = Produk::with(['kategori', 'stokEtalase.cabang'])->find($produkId);
+                
+                if (!$produk) {
+                    return back()->with('error', 'Produk tidak ditemukan');
+                }
+                
+                return Inertia::render('produk/Show', [
+                    'produk' => $produk,
+                    'selectedCabang' => null,
+                    'isItSupport' => true
+                ]);
+            }
+            
             $cabangId = $this->getCabangId($request, $user);
             
             if (!$cabangId) {
@@ -96,6 +160,21 @@ class ProdukController extends Controller
     {
         try {
             $user = auth()->user();
+            
+            // IT Support: clear cache semua cabang
+            if ($user->role === 'it_support') {
+                $cabangIds = Cabang::pluck('id');
+                foreach ($cabangIds as $cabangId) {
+                    $this->productCacheService->clearCache($cabangId);
+                }
+                
+                Log::info('Product cache cleared for all branches', [
+                    'user_id' => $user->id
+                ]);
+                
+                return back()->with('success', 'Cache produk semua cabang berhasil dibersihkan');
+            }
+            
             $cabangId = $this->getCabangId($request, $user);
             
             if (!$cabangId) {
@@ -121,6 +200,12 @@ class ProdukController extends Controller
     {
         try {
             $user = auth()->user();
+            
+            // IT Support: ambil semua produk
+            if ($user->role === 'it_support') {
+                return $this->daftarProdukForItSupport($request);
+            }
+            
             $cabangId = $this->getCabangId($request, $user);
             
             if (!$cabangId) {
@@ -165,10 +250,64 @@ class ProdukController extends Controller
         }
     }
     
+    private function daftarProdukForItSupport(Request $request)
+    {
+        $search = $request->input('search', '');
+        $kategoriId = $request->input('kategori_id', '');
+        $cabangId = $request->input('cabang_id', '');
+        $perPage = $request->input('per_page', 20);
+        $page = $request->input('page', 1);
+        
+        $query = Produk::with(['kategori', 'stokEtalase.cabang']);
+        
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('nama', 'like', "%{$search}%")
+                  ->orWhere('sku', 'like', "%{$search}%");
+            });
+        }
+        
+        if ($kategoriId) {
+            $query->where('kategori_id', $kategoriId);
+        }
+        
+        if ($cabangId) {
+            $query->whereHas('stokEtalase', function($q) use ($cabangId) {
+                $q->where('cabang_id', $cabangId);
+            });
+        }
+        
+        $total = $query->count();
+        $items = $query->skip(($page - 1) * $perPage)
+                       ->take($perPage)
+                       ->get();
+        
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'items' => $items,
+                'current_page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'last_page' => ceil($total / $perPage),
+                'from' => (($page - 1) * $perPage) + 1,
+                'to' => min($page * $perPage, $total),
+            ],
+            'kategori_list' => KategoriProduk::select('id', 'nama')->get(),
+            'cabang_list' => Cabang::select('id', 'nama', 'kode')->get()
+        ]);
+    }
+    
     public function mobileProduk(Request $request)
     {
         try {
             $user = auth()->user();
+            
+            // IT Support: ambil semua produk
+            if ($user->role === 'it_support') {
+                return $this->mobileProdukForItSupport($request);
+            }
+            
             $cabangId = $user->cabang_id ?? $request->input('cabang_id');
             
             if (!$cabangId) {
@@ -201,9 +340,69 @@ class ProdukController extends Controller
         }
     }
     
+    private function mobileProdukForItSupport(Request $request)
+    {
+        $search = $request->input('search', '');
+        $kategoriId = $request->input('kategori_id', '');
+        $cabangId = $request->input('cabang_id', '');
+        $tipe = $request->input('tipe', '');
+        
+        $query = Produk::with(['kategori', 'stokEtalase.cabang']);
+        
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('nama', 'like', "%{$search}%")
+                  ->orWhere('sku', 'like', "%{$search}%");
+            });
+        }
+        
+        if ($kategoriId) {
+            $query->where('kategori_id', $kategoriId);
+        }
+        
+        if ($tipe) {
+            $query->where('tipe', $tipe);
+        }
+        
+        if ($cabangId) {
+            $query->whereHas('stokEtalase', function($q) use ($cabangId) {
+                $q->where('cabang_id', $cabangId);
+            });
+        }
+        
+        $produk = $query->get()->map(function ($item) {
+            return [
+                'id' => $item->id,
+                'sku' => $item->sku,
+                'nama' => $item->nama,
+                'deskripsi' => $item->deskripsi,
+                'harga_jual' => $item->harga_jual,
+                'tipe' => $item->tipe,
+                'kategori_id' => $item->kategori_id,
+                'image_path' => $item->image_path,
+                'stok_etalase' => $item->stokEtalase->map(function($stok) {
+                    return [
+                        'cabang_id' => $stok->cabang_id,
+                        'cabang_nama' => $stok->cabang->nama ?? null,
+                        'jumlah' => $stok->jumlah,
+                        'stok_minimum' => $stok->stok_minimum
+                    ];
+                })
+            ];
+        });
+        
+        return response()->json([
+            'success' => true,
+            'produk' => $produk,
+            'kategori_list' => KategoriProduk::select('id', 'nama')->get(),
+            'cabang_list' => Cabang::select('id', 'nama', 'kode')->get(),
+            'total' => $produk->count()
+        ]);
+    }
+    
     private function getCabangId(Request $request, $user)
     {
-        if (in_array($user->role, ['manager', 'it_support'])) {
+        if ($user->role === 'manager') {
             $cabangId = $request->input('cabang_id');
             
             if (!$cabangId) {
