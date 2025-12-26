@@ -27,7 +27,7 @@ class ProdukController extends Controller
             $cabangId = $this->getCabangId($request, $user);
             
             if (!$cabangId) {
-                return Inertia::render('Produk/Index', [
+                return Inertia::render('produk/Index', [
                     'produk' => collect(),
                     'cabangList' => $this->getCabangList($user),
                     'selectedCabang' => null,
@@ -39,7 +39,7 @@ class ProdukController extends Controller
             $produk = $this->getProdukByCabang($cabangId, $request);
             $selectedCabang = Cabang::find($cabangId);
             
-            return Inertia::render('Produk/Index', [
+            return Inertia::render('produk/Index', [
                 'produk' => $produk,
                 'cabangList' => $this->getCabangList($user),
                 'selectedCabang' => $selectedCabang,
@@ -77,7 +77,7 @@ class ProdukController extends Controller
                 return back()->with('error', 'Produk tidak ditemukan di cabang ini');
             }
             
-            return Inertia::render('Produk/Show', [
+            return Inertia::render('produk/Show', [
                 'produk' => $produk,
                 'selectedCabang' => Cabang::find($cabangId)
             ]);
