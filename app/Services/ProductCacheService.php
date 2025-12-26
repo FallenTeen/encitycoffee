@@ -48,7 +48,7 @@ class ProductCacheService
             ])
             ->whereHas('stokEtalase', function ($query) use ($cabangId) {
                 $query->where('cabang_id', $cabangId)
-                    ->where('stok', '>', 0);
+                    ->where('jumlah', '>', 0);
             })
             ->orderBy('produk.nama')
             ->get();

@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Cabang;
-use App\Models\Kategori;
+use App\Models\KategoriProduk;
 use App\Models\Produk;
 use App\Models\Shift;
 use App\Models\Transaksi;
@@ -20,8 +20,8 @@ class ComprehensivePOSTest extends TestCase
 
     private User $user;
     private Cabang $cabang;
-    private Kategori $kategori;
-    private string $token;
+    private KategoriProduk $kategori;
+    private ?string $token = null;
     private PerformanceMonitoringService $performanceService;
 
     protected function setUp(): void
@@ -41,7 +41,10 @@ class ComprehensivePOSTest extends TestCase
             'aktif' => true
         ]);
         
-        $this->kategori = Kategori::factory()->create([
+        // Attach cabang to user
+        $this->user->cabang()->attach($this->cabang->id);
+        
+        $this->kategori = KategoriProduk::factory()->create([
             'nama' => 'Kategori Test'
         ]);
 
@@ -51,7 +54,7 @@ class ComprehensivePOSTest extends TestCase
             'password' => 'password'
         ]);
 
-        $this->token = $response->json('access_token');
+        $this->token = $response->json('token');
     }
 
     /** @test */
@@ -76,7 +79,7 @@ class ComprehensivePOSTest extends TestCase
         $report['results']['login'] = [
             'status' => $loginResponse->status(),
             'response_time_ms' => $loginTime,
-            'token_generated' => !empty($loginResponse->json('access_token')),
+            'token_generated' => !empty($loginResponse->json('token')),
             'user_data' => $loginResponse->json('user') !== null
         ];
 
@@ -87,10 +90,19 @@ class ComprehensivePOSTest extends TestCase
         );
 
         // Step 2: Branch selection and data loading
+        dump('Token being used:', $this->token);
+        dump('User cabang relationship:', $this->user->cabang()->exists());
+        dump('User cabang count:', $this->user->cabang()->count());
+        dump('User cabang IDs:', $this->user->cabang()->pluck('cabang.id')->all());
+        
         $startTime = microtime(true);
         $cabangResponse = $this->withHeaders([
             'Authorization' => 'Bearer ' . $this->token,
         ])->getJson('/api/pos/cabang');
+        
+        dump('Cabang response:', $cabangResponse->json());
+        dump('Cabang response status:', $cabangResponse->status());
+        
         $cabangTime = (microtime(true) - $startTime) * 1000;
         
         $report['results']['cabang_loading'] = [
@@ -200,6 +212,10 @@ class ComprehensivePOSTest extends TestCase
         $report['end_time'] = now()->toDateTimeString();
         $report['total_time'] = array_sum(array_column($report['results'], 'response_time_ms'));
         $report['success_rate'] = $this->calculateSuccessRate($report['results']);
+
+        // Debug: Show actual results
+        dump('Test Results:', $report['results']);
+        dump('Success Rate:', $report['success_rate']);
 
         Log::info('Complete POS Workflow Test Results', $report);
 

@@ -20,7 +20,7 @@ return new class extends Migration
             $table->decimal('stok_minimum', 15, 4)->default(0);
             $table->timestamps();
 
-            $table->unique(['cabang_id', 'produk_id', 'tipe_stok']);
+            $table->unique(['cabang_id', 'produk_id']);
             $table->index(['cabang_id', 'tipe_stok']);
         });
     }

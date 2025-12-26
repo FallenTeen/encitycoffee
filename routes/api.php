@@ -309,6 +309,7 @@ Route::prefix('pos')->group(function () {
 
             Route::prefix('produk')->group(function () {
                 Route::get('/', [ProdukController::class, 'daftarProduk']);
+                Route::get('mobile', [ProdukController::class, 'mobileProduk']);
                 Route::get('{produk}', [ProdukController::class, 'tampilkanProduk']);
                 Route::get('tipe/{tipe}', [ProdukController::class, 'produkBerdasarkanTipe']);
                 Route::get('{produk}/satuan', [ProdukController::class, 'satuanProduk']);
