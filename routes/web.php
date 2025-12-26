@@ -42,7 +42,7 @@ Route::middleware('auth')->group(function () {
     // IT SUPPORT ROUTES (it_support only)
     // Prefix: /admin
     // ------------------------------------------------------------------------
-    Route::middleware('role:it_support')->prefix('admin')->name('admin.')->group(function () {
+   Route::middleware('role:it_support')->prefix('admin')->name('admin.')->group(function () {
         Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
         Route::get('/system-logs', [SystemController::class, 'logs'])->name('system.logs');
         Route::get('/users', [UserController::class, 'index'])->name('users.index');
@@ -66,7 +66,7 @@ Route::middleware('auth')->group(function () {
     // MANAGER ROUTES (manager, it_support)
     // Prefix: /manager
     // ------------------------------------------------------------------------
-    Route::middleware('role:manager,it_support')->prefix('manager')->name('manager.')->group(function () {
+     Route::middleware('role:manager,it_support')->prefix('manager')->name('manager.')->group(function () {
         Route::get('/dashboard', [ManagerController::class, 'dashboard'])->name('dashboard');
         Route::get('/laporan-cabang', [ManagerController::class, 'laporanCabang'])->name('laporan.cabang');
         Route::get('/performa-shift', [ManagerController::class, 'perfomaShift'])->name('performa.shift');
@@ -91,14 +91,17 @@ Route::middleware('auth')->group(function () {
     // CRITICAL: ALL static routes MUST come BEFORE dynamic {produk} routes
     // ------------------------------------------------------------------------
     Route::middleware('role:manager,it_support')->prefix('produk')->name('produk.')->group(function () {
-        // STATIC ROUTES (harus di atas)
+        // INDEX ROUTE - Tampilan utama (bisa pilih cabang via query ?cabang_id=1)
+        Route::get('/', [ProdukController::class, 'index'])->name('index');
+        
+        // STATIC ROUTES (harus di atas dynamic routes)
         Route::get('/create', [ProdukController::class, 'create'])->name('create');
         Route::post('/', [ProdukController::class, 'store'])->name('store');
         Route::get('/sku-suggest', [ProdukController::class, 'suggestSku'])->name('sku.suggest');
         Route::get('/check-sku', [ProdukController::class, 'checkSku'])->name('sku.check');
         
         // Cache management route
-        Route::get('/cache/clear', [ProdukController::class, 'clearCache'])->name('cache.clear');
+        Route::post('/cache/clear', [ProdukController::class, 'clearCache'])->name('cache.clear');
         
         // Kategori routes
         Route::get('/kategori', [KategoriProdukController::class, 'index'])->name('kategori.index');
@@ -118,9 +121,6 @@ Route::middleware('auth')->group(function () {
         Route::put('/{produk}', [ProdukController::class, 'update'])->name('update');
         Route::delete('/{produk}', [ProdukController::class, 'destroy'])->name('destroy');
         Route::get('/{produk}', [ProdukController::class, 'show'])->name('show');
-        
-        // INDEX ROUTE - Menggunakan query parameter ?cabang_id=1
-        Route::get('/', [ProdukController::class, 'index'])->name('index');
     });
 
     // ------------------------------------------------------------------------

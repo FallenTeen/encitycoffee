@@ -6,6 +6,8 @@ use App\Services\ProductCacheService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Inertia\Inertia;
+use App\Models\Cabang;
 
 class ProdukController extends Controller
 {
@@ -17,170 +19,205 @@ class ProdukController extends Controller
     }
     
     /**
-     * Get all products by cabang
-     * URL: /produk?cabang_id=1&search=kopi&use_cache=true
+     * Display products page
+     * URL: /produk (untuk manager/it_support akan tampil semua cabang)
      */
     public function index(Request $request)
     {
-        // Ambil cabang_id dari query parameter
-        $cabangId = $request->input('cabang_id');
-        
-        // Validasi cabang_id
-        $v = Validator::make(['cabang_id' => $cabangId], [
-            'cabang_id' => 'required|integer|exists:cabang,id'
-        ]);
-        
-        if ($v->fails()) {
-            Log::warning('Invalid cabang_id for produk index', [
-                'cabang_id' => $cabangId,
-                'errors' => $v->errors()
-            ]);
-            return response()->json([
-                'error' => 'Parameter cabang_id tidak valid',
-                'details' => $v->errors()
-            ], 422);
-        }
-        
         try {
-            $useCache = $request->boolean('use_cache', true);
-            $search = $request->input('search', '');
+            $user = auth()->user();
             
-            Log::info('Fetching produk for cabang', [
-                'cabang_id' => $cabangId,
-                'use_cache' => $useCache,
-                'search' => $search
-            ]);
-            
-            // Cari produk berdasarkan search atau ambil semua
-            if ($search) {
-                $produk = $this->productCacheService->searchProduk($cabangId, $search, $useCache);
+            // Tentukan cabang_id berdasarkan role
+            // Manager/IT Support bisa pilih cabang, role lain otomatis ambil dari user
+            if (in_array($user->role, ['manager', 'it_support'])) {
+                // Ambil dari query parameter atau cabang pertama sebagai default
+                $cabangId = $request->input('cabang_id');
+                
+                // Jika tidak ada cabang_id, ambil cabang pertama
+                if (!$cabangId) {
+                    $defaultCabang = Cabang::first();
+                    $cabangId = $defaultCabang ? $defaultCabang->id : null;
+                }
+                
+                // Ambil semua cabang untuk dropdown
+                $cabangList = Cabang::select('id', 'nama', 'kode')->get();
             } else {
-                $produk = $this->productCacheService->getProdukByCabang($cabangId, $useCache);
+                // Role lain (supervisor, kasir) gunakan cabang mereka sendiri
+                $cabangId = $user->cabang_id;
+                $cabangList = null; // Tidak perlu dropdown
             }
             
-            Log::info('Produk fetched successfully', [
-                'cabang_id' => $cabangId,
-                'count' => $produk->count(),
-                'search' => $search
-            ]);
+            // Validasi cabang_id jika ada
+            if ($cabangId) {
+                $v = Validator::make(['cabang_id' => $cabangId], [
+                    'cabang_id' => 'required|integer|exists:cabang,id'
+                ]);
+                
+                if ($v->fails()) {
+                    Log::warning('Invalid cabang_id for produk index', [
+                        'cabang_id' => $cabangId,
+                        'user_id' => $user->id,
+                        'errors' => $v->errors()
+                    ]);
+                    
+                    // Redirect ke cabang pertama jika invalid
+                    $defaultCabang = Cabang::first();
+                    return redirect()->route('produk.index', ['cabang_id' => $defaultCabang->id]);
+                }
+            }
             
-            return response()->json([
+            // Ambil data produk jika ada cabang_id
+            $produk = null;
+            $selectedCabang = null;
+            
+            if ($cabangId) {
+                $useCache = $request->boolean('use_cache', true);
+                $search = $request->input('search', '');
+                
+                Log::info('Fetching produk for cabang', [
+                    'cabang_id' => $cabangId,
+                    'use_cache' => $useCache,
+                    'search' => $search,
+                    'user_id' => $user->id
+                ]);
+                
+                // Cari produk
+                if ($search) {
+                    $produk = $this->productCacheService->searchProduk($cabangId, $search, $useCache);
+                } else {
+                    $produk = $this->productCacheService->getProdukByCabang($cabangId, $useCache);
+                }
+                
+                // Ambil info cabang yang dipilih
+                $selectedCabang = Cabang::find($cabangId);
+                
+                Log::info('Produk fetched successfully', [
+                    'cabang_id' => $cabangId,
+                    'count' => $produk ? $produk->count() : 0,
+                    'search' => $search
+                ]);
+            }
+            
+            // Render halaman Inertia
+            return Inertia::render('Produk/Index', [
                 'produk' => $produk,
-                'count' => $produk->count(),
-                'cached' => $useCache,
-                'cabang_id' => $cabangId
+                'cabangList' => $cabangList,
+                'selectedCabang' => $selectedCabang,
+                'filters' => [
+                    'search' => $request->input('search', ''),
+                    'cabang_id' => $cabangId
+                ]
             ]);
             
         } catch (\Exception $e) {
             Log::error('Error fetching produk', [
-                'cabang_id' => $cabangId,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
             
-            return response()->json([
-                'error' => 'Gagal mengambil data produk',
-                'message' => $e->getMessage()
-            ], 500);
+            return back()->with('error', 'Gagal mengambil data produk: ' . $e->getMessage());
         }
     }
     
     /**
-     * Get single product detail
-     * URL: /produk/{produk}?cabang_id=1
+     * Show product detail page
+     * URL: /produk/{produk}
      */
     public function show(Request $request, $produkId)
     {
-        // Ambil cabang_id dari query parameter
-        $cabangId = $request->input('cabang_id');
-        
-        // Validasi
-        $v = Validator::make([
-            'cabang_id' => $cabangId,
-            'produk_id' => $produkId
-        ], [
-            'cabang_id' => 'required|integer|exists:cabang,id',
-            'produk_id' => 'required|integer|exists:produk,id'
-        ]);
-        
-        if ($v->fails()) {
-            return response()->json([
-                'error' => 'Parameter tidak valid',
-                'details' => $v->errors()
-            ], 422);
-        }
-        
         try {
+            $user = auth()->user();
+            
+            // Tentukan cabang_id
+            if (in_array($user->role, ['manager', 'it_support'])) {
+                $cabangId = $request->input('cabang_id');
+                
+                // Jika tidak ada, ambil cabang pertama
+                if (!$cabangId) {
+                    $defaultCabang = Cabang::first();
+                    $cabangId = $defaultCabang ? $defaultCabang->id : null;
+                }
+            } else {
+                $cabangId = $user->cabang_id;
+            }
+            
+            // Validasi
+            $v = Validator::make([
+                'cabang_id' => $cabangId,
+                'produk_id' => $produkId
+            ], [
+                'cabang_id' => 'required|integer|exists:cabang,id',
+                'produk_id' => 'required|integer|exists:produk,id'
+            ]);
+            
+            if ($v->fails()) {
+                return back()->with('error', 'Data tidak valid');
+            }
+            
             $useCache = $request->boolean('use_cache', true);
             $produk = $this->productCacheService->getProdukById($cabangId, $produkId, $useCache);
             
             if (!$produk) {
-                return response()->json([
-                    'error' => 'Produk tidak ditemukan di cabang ini'
-                ], 404);
+                return back()->with('error', 'Produk tidak ditemukan di cabang ini');
             }
             
-            return response()->json([
+            $selectedCabang = Cabang::find($cabangId);
+            
+            return Inertia::render('Produk/Show', [
                 'produk' => $produk,
-                'cabang_id' => $cabangId
+                'selectedCabang' => $selectedCabang
             ]);
             
         } catch (\Exception $e) {
             Log::error('Error fetching produk detail', [
-                'cabang_id' => $cabangId,
                 'produk_id' => $produkId,
                 'error' => $e->getMessage()
             ]);
             
-            return response()->json([
-                'error' => 'Gagal mengambil detail produk'
-            ], 500);
+            return back()->with('error', 'Gagal mengambil detail produk');
         }
     }
     
     /**
      * Clear product cache
-     * URL: /produk/cache/clear?cabang_id=1
+     * URL: POST /produk/cache/clear
      */
     public function clearCache(Request $request)
     {
-        // Ambil cabang_id dari query parameter
-        $cabangId = $request->input('cabang_id');
-        
-        // Validasi
-        $v = Validator::make(['cabang_id' => $cabangId], [
-            'cabang_id' => 'required|integer|exists:cabang,id'
-        ]);
-        
-        if ($v->fails()) {
-            return response()->json([
-                'error' => 'Parameter cabang_id tidak valid',
-                'details' => $v->errors()
-            ], 422);
-        }
-        
         try {
+            $user = auth()->user();
+            
+            // Tentukan cabang_id
+            if (in_array($user->role, ['manager', 'it_support'])) {
+                $cabangId = $request->input('cabang_id');
+            } else {
+                $cabangId = $user->cabang_id;
+            }
+            
+            // Validasi
+            $v = Validator::make(['cabang_id' => $cabangId], [
+                'cabang_id' => 'required|integer|exists:cabang,id'
+            ]);
+            
+            if ($v->fails()) {
+                return back()->with('error', 'Parameter cabang tidak valid');
+            }
+            
             $this->productCacheService->clearCache($cabangId);
             
             Log::info('Product cache cleared manually', [
                 'cabang_id' => $cabangId,
-                'user_id' => auth()->id()
+                'user_id' => $user->id
             ]);
             
-            return response()->json([
-                'message' => 'Cache produk berhasil dibersihkan',
-                'cabang_id' => $cabangId
-            ]);
+            return back()->with('success', 'Cache produk berhasil dibersihkan');
             
         } catch (\Exception $e) {
             Log::error('Error clearing product cache', [
-                'cabang_id' => $cabangId,
                 'error' => $e->getMessage()
             ]);
             
-            return response()->json([
-                'error' => 'Gagal membersihkan cache'
-            ], 500);
+            return back()->with('error', 'Gagal membersihkan cache');
         }
     }
 }
