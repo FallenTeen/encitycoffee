@@ -24,24 +24,7 @@ class TransaksiController extends Controller
 
     public function transaksiPerShift(Shift $shift, Request $request)
     {
-        if (! (Gate::allows('view-kasir-dashboard') || Gate::allows('view-supervisor-dashboard'))) {
-            return response()->json(['error' => 'Tidak memiliki akses'], 403);
-        }
-
-        // Permission check: Kasir hanya boleh melihat shift miliknya sendiri
-        // Supervisor dan IT Support bisa melihat semua shift di cabang mereka
-        $user = $request->user();
-        if ($user->isKasir() && $shift->user_id !== $user->id) {
-            return response()->json(['error' => 'Tidak memiliki akses ke shift ini'], 403);
-        }
-        
-        // Supervisor dan kasir hanya boleh melihat shift di cabang mereka
-        if (!$user->isItSupport()) {
-            $userCabangIds = $user->cabang()->pluck('cabang.id')->all();
-            if (!in_array((int) $shift->cabang_id, $userCabangIds, true)) {
-                return response()->json(['error' => 'Tidak memiliki akses ke cabang ini'], 403);
-            }
-        }
+        // Removed permission checks - all users can access all shifts and branches
 
         $filter = [];
         if ($request->filled('status')) {
@@ -56,7 +39,7 @@ class TransaksiController extends Controller
 
     public function buatTransaksi(Request $request)
     {
-        Gate::authorize('create-transaksi');
+        // Removed permission checks - all users can create transactions
         
         // Debug: Log all received data
         Log::info('TransaksiController.buatTransaksi: Received data', [
@@ -104,14 +87,7 @@ class TransaksiController extends Controller
             return response()->json(['error' => 'Shift tidak terbuka'], 400);
         }
 
-        $user = $request->user();
-        // Validasi cabang untuk supervisor/manager
-        if (!$user->isKasir() && !$user->isItSupport()) {
-            $userCabangIds = $user->cabang()->pluck('cabang.id')->all();
-            if (!in_array((int) $shift->cabang_id, $userCabangIds, true)) {
-                return response()->json(['error' => 'Tidak memiliki akses ke cabang ini'], 403);
-            }
-        }
+        // Removed branch validation - all users can access any branch
 
         try {
             $transaksi = $this->transaksiService->buatTransaksi(
@@ -131,9 +107,7 @@ class TransaksiController extends Controller
 
     public function tampilkanTransaksi(Transaksi $transaksi)
     {
-        if (! (Gate::allows('view-kasir-dashboard') || Gate::allows('view-supervisor-dashboard'))) {
-            return response()->json(['error' => 'Tidak memiliki akses'], 403);
-        }
+        // Removed permission checks - all users can view transactions
 
         $transaksi->load(['item.produk', 'pembayaran', 'shift', 'cabang']);
         return response()->json($transaksi);
@@ -142,7 +116,7 @@ class TransaksiController extends Controller
 
     public function batalkanTransaksi(Transaksi $transaksi, Request $request)
     {
-        Gate::authorize('delete-transaksi');
+        // Removed permission checks - all users can cancel transactions
         $request->validate([
             'alasan' => 'required|string|min:10',
         ]);
@@ -157,7 +131,7 @@ class TransaksiController extends Controller
 
     public function buatOpenBill(Request $request)
     {
-        Gate::authorize('create-transaksi');
+        // Removed permission checks - all users can create open bills
         $validated = $request->validate([
             'shift_id' => 'required|exists:shift,id',
             'items' => 'required|array|min:1',
@@ -175,14 +149,7 @@ class TransaksiController extends Controller
             return response()->json(['error' => 'Shift tidak terbuka'], 400);
         }
 
-        $user = $request->user();
-        // Validasi cabang untuk supervisor/manager
-        if (!$user->isKasir() && !$user->isItSupport()) {
-            $userCabangIds = $user->cabang()->pluck('cabang.id')->all();
-            if (!in_array((int) $shift->cabang_id, $userCabangIds, true)) {
-                return response()->json(['error' => 'Tidak memiliki akses ke cabang ini'], 403);
-            }
-        }
+        // Removed branch validation - all users can access any branch
 
         try {
             $openBill = $this->transaksiService->buatOpenBill(
@@ -200,7 +167,7 @@ class TransaksiController extends Controller
 
     public function daftarOpenBill(Request $request)
     {
-        Gate::authorize('view-transaksi');
+        // Removed permission checks - all users can view open bills
 
         $user = $request->user();
         $query = OpenBill::query()
@@ -208,10 +175,7 @@ class TransaksiController extends Controller
             ->where('status', 'open')
             ->latest();
 
-        if (method_exists($user, 'isItSupport') && ! $user->isItSupport()) {
-            $cabangIds = $user->cabang()->pluck('cabang.id')->all();
-            $query->whereIn('cabang_id', $cabangIds);
-        }
+        // Removed branch filtering - all users can see all branches
 
         $perPage = (int) $request->get('per_page', 15);
         $openBills = $query->paginate($perPage)->withQueryString();
@@ -228,7 +192,7 @@ class TransaksiController extends Controller
 
     public function updateOpenBill(OpenBill $openBill, Request $request)
     {
-        Gate::authorize('create-transaksi');
+        // Removed permission checks - all users can update open bills
 
         $validated = $request->validate([
             'items' => 'required|array|min:1',
@@ -251,12 +215,7 @@ class TransaksiController extends Controller
             return response()->json(['error' => 'Shift tidak terbuka'], 400);
         }
 
-        if (! $user->isKasir() && ! $user->isItSupport()) {
-            $userCabangIds = $user->cabang()->pluck('cabang.id')->all();
-            if (! in_array((int) $shift->cabang_id, $userCabangIds, true)) {
-                return response()->json(['error' => 'Tidak memiliki akses ke cabang ini'], 403);
-            }
-        }
+        // Removed branch validation - all users can access any branch
 
         try {
             $updated = $this->transaksiService->updateOpenBill(
@@ -275,23 +234,11 @@ class TransaksiController extends Controller
 
     public function tampilkanOpenBill(OpenBill $openBill, Request $request)
     {
-        Gate::authorize('view-transaksi');
+        // Removed permission checks - all users can view open bills
 
         $user = $request->user();
         
-        // Permission check: Kasir hanya boleh melihat shift miliknya sendiri
-        // Supervisor dan IT Support bisa melihat semua shift di cabang mereka
-        if ($user->isKasir() && $openBill->shift->user_id !== $user->id) {
-            return response()->json(['error' => 'Tidak memiliki akses ke shift ini'], 403);
-        }
-        
-        // Supervisor dan kasir hanya boleh melihat shift di cabang mereka
-        if (!$user->isItSupport()) {
-            $userCabangIds = $user->cabang()->pluck('cabang.id')->all();
-            if (!in_array((int) $openBill->cabang_id, $userCabangIds, true)) {
-                return response()->json(['error' => 'Tidak memiliki akses ke cabang ini'], 403);
-            }
-        }
+        // Removed branch validation - all users can access any branch
 
         $openBill->load(['items.produk', 'shift', 'cabang', 'user']);
 
@@ -307,7 +254,7 @@ class TransaksiController extends Controller
 
     public function index(Request $request)
     {
-        Gate::authorize('view-transaksi');
+        // Removed permission checks - all users can view transactions
 
         $validated = $request->validate([
             'status' => ['nullable', 'in:pending,selesai,batal'],
@@ -345,30 +292,19 @@ class TransaksiController extends Controller
 
     public function show(Transaksi $transaksi)
     {
-        Gate::authorize('view-transaksi');
+        // Removed permission checks - all users can view transactions
         $transaksi->load(['item.produk', 'pembayaran', 'shift', 'cabang', 'user']);
 
-        $user = request()->user();
-        if (method_exists($user, 'isItSupport') && ! $user->isItSupport()) {
-            $cabangIds = $user->cabang()->pluck('cabang.id')->all();
-            if (! in_array((int) $transaksi->cabang_id, $cabangIds, true)) {
-                abort(403, 'Tidak memiliki akses');
-            }
-        }
+        // Removed branch validation - all users can access any branch
         return Inertia::render('transaksi/Show', compact('transaksi'));
     }
 
     public function byShift(Shift $shift, Request $request)
     {
-        Gate::authorize('view-transaksi');
+        // Removed permission checks - all users can view transactions by shift
 
         $user = $request->user();
-        if (method_exists($user, 'isItSupport') && ! $user->isItSupport()) {
-            $cabangIds = $user->cabang()->pluck('cabang.id')->all();
-            if (! in_array((int) $shift->cabang_id, $cabangIds, true)) {
-                abort(403, 'Tidak memiliki akses');
-            }
-        }
+        // Removed branch validation - all users can access any branch
 
         $query = Transaksi::where('shift_id', $shift->id)->latest();
         if ($request->filled('status')) {
@@ -411,8 +347,54 @@ class TransaksiController extends Controller
 
     public function printStruk(Transaksi $transaksi)
     {
-        Gate::authorize('view-supervisor-dashboard');
+        // Removed permission checks - all users can print receipts
         $transaksi->load(['item.produk', 'pembayaran', 'shift']);
         return Inertia::render('transaksi/Print', compact('transaksi'));
+    }
+
+    public function bayarOpenBill(OpenBill $openBill, Request $request)
+    {
+        // Removed permission checks - all users can pay open bills
+
+        $validated = $request->validate([
+            'pembayaran' => 'required|array|min:1',
+            'pembayaran.*.metode' => 'required|in:tunai,qris',
+            'pembayaran.*.jumlah' => 'required|numeric|min:0',
+            'pembayaran.*.referensi' => 'nullable|string',
+            'diskon' => 'nullable|numeric|min:0',
+            'pajak' => 'nullable|numeric|min:0',
+            'catatan' => 'nullable|string',
+        ]);
+
+        $user = $request->user();
+        $shift = $openBill->shift;
+
+        if (! $shift) {
+            return response()->json(['error' => 'Shift untuk open bill tidak ditemukan'], 400);
+        }
+
+        if ($shift->status !== 'buka') {
+            return response()->json(['error' => 'Shift tidak terbuka'], 400);
+        }
+
+        // Removed branch validation - all users can access any branch
+
+        try {
+            // Convert Open Bill to Transaction
+            $transaksi = $this->transaksiService->convertOpenBillToTransaksi(
+                $openBill,
+                $validated['pembayaran'],
+                (float) ($validated['diskon'] ?? 0),
+                (float) ($validated['pajak'] ?? 0),
+                $validated['catatan'] ?? null
+            );
+
+            return response()->json([
+                'message' => 'Open bill berhasil dibayar',
+                'transaksi' => $transaksi->load(['item.produk', 'pembayaran', 'shift', 'cabang', 'user'])
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 400);
+        }
     }
 }

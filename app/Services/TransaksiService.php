@@ -434,4 +434,52 @@ class TransaksiService
 
         return $query->paginate($perPage);
     }
+
+    public function convertOpenBillToTransaksi(
+        OpenBill $openBill,
+        array $pembayaran,
+        float $diskon = 0,
+        float $pajak = 0,
+        ?string $catatan = null
+    ) {
+        // Validasi awal
+        $shift = $openBill->shift;
+        if ($shift->status !== 'buka') {
+            throw new \Exception('Shift tidak dalam status buka');
+        }
+        if (empty($pembayaran)) {
+            throw new \InvalidArgumentException('Pembayaran tidak boleh kosong');
+        }
+
+        DB::beginTransaction();
+        try {
+            // Ambil semua item dari open bill
+            $items = $openBill->items()->with('produk')->get()->map(function ($item) {
+                return [
+                    'produk_id' => $item->produk_id,
+                    'jumlah' => $item->jumlah,
+                    'catatan' => $item->catatan,
+                ];
+            })->toArray();
+
+            // Buat transaksi baru menggunakan method existing
+            $transaksi = $this->buatTransaksi(
+                $shift,
+                $items,
+                $pembayaran,
+                $diskon,
+                $pajak,
+                $catatan ?? $openBill->catatan
+            );
+
+            // Update status open bill menjadi selesai
+            $openBill->update(['status' => 'selesai']);
+
+            DB::commit();
+            return $transaksi;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
 }
