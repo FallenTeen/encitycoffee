@@ -103,15 +103,31 @@ class ProdukController extends Controller
                 'last_produk_id' => $items->last()?->id,
             ]);
 
+            $lastPage = $total > 0 ? (int) ceil($total / $perPage) : 1;
             $produks = [
                 'data' => $items,
                 'total' => $total,
                 'current_page' => $page,
                 'per_page' => $perPage,
-                'last_page' => $total > 0 ? (int) ceil($total / $perPage) : 1,
+                'last_page' => $lastPage,
                 'from' => $total > 0 ? $offset + 1 : null,
                 'to' => $total > 0 ? min($offset + $perPage, $total) : null,
+                'prev_page_url' => $page > 1 ? route('produk.index', array_merge($request->query(), ['page' => $page - 1])) : null,
+                'next_page_url' => $page < $lastPage ? route('produk.index', array_merge($request->query(), ['page' => $page + 1])) : null,
             ];
+
+            // DEBUG: Log what will be sent to frontend
+            Log::info('PRODUK INDEX - Sending to Frontend', [
+                'produks_structure' => [
+                    'data_count' => count($produks['data']),
+                    'total' => $produks['total'],
+                    'current_page' => $produks['current_page'],
+                    'last_page' => $produks['last_page'],
+                ],
+                'kategori_list_count' => KategoriProduk::select('id','nama')->get()->count(),
+                'selected_cabang_id' => $selectedCabang?->id,
+                'can_manage' => $this->canManageProduk($user),
+            ]);
 
             return Inertia::render('produk/Index', [
                 'produks' => $produks,
