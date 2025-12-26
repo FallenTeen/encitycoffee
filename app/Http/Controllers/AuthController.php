@@ -63,6 +63,11 @@ class AuthController extends Controller
             $user->tokens()->delete();
             $token = $user->createToken('pos-token')->plainTextToken;
 
+            // Load cabang relationship for mobile app - only active cabangs
+            $user->load(['cabang' => function($query) {
+                $query->where('aktif', true);
+            }]);
+
             return response()->json([
                 'message' => 'Login berhasil',
                 'user' => $user,
