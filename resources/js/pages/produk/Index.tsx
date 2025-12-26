@@ -11,7 +11,10 @@ import {
 } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
 import { Head, Link, router, useForm } from '@inertiajs/react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import ProdukCard from '@/components/produk/ProdukCard';
+import { Grid3X3, List } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 interface KategoriOption {
     id: number;
@@ -49,13 +52,22 @@ interface Props {
     produks: ProdukPaginator;
     kategori_list: KategoriOption[];
     filter_aktif: FilterAktif;
+    cabangList?: Array<{id: number, nama: string, kode: string}>;
+    selectedCabang?: {id: number, nama: string, kode: string} | null;
+    cacheInfo?: {has_cache: boolean, cache_key: string, ttl: number};
+    canManageProduk?: boolean;
 }
 
 export default function ProdukIndex({
     produks,
     kategori_list,
     filter_aktif,
+    cabangList,
+    selectedCabang,
+    cacheInfo,
+    canManageProduk = false,
 }: Props) {
+    const [viewMode, setViewMode] = useState<'table' | 'card'>('table');
     const aktifValue = filter_aktif?.aktif;
     const { data, setData, get, processing, errors } = useForm({
         pencarian: filter_aktif?.pencarian ?? '',

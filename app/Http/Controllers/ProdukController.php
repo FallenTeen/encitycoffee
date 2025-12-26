@@ -48,7 +48,9 @@ class ProdukController extends Controller
                     'cabang_id' => $cabangId,
                     'kategori_id' => $request->input('kategori_id', '')
                 ],
-                'kategoriList' => KategoriProduk::all()
+                'kategoriList' => KategoriProduk::all(),
+                'cacheInfo' => $this->productCacheService->getCacheStats($cabangId),
+                'canManageProduk' => $this->canManageProduk($user)
             ]);
             
         } catch (\Exception $e) {
@@ -219,21 +221,57 @@ class ProdukController extends Controller
             // manager/supervisor can only access their assigned cabang
             $cabangId = $request->input('cabang_id');
             
+            // Get assigned cabang IDs for this user
+            $assignedCabangIds = $user->cabang->pluck('id')->all();
+            
+            if (empty($assignedCabangIds)) {
+                Log::warning('User has no assigned cabang', ['user_id' => $user->id, 'role' => $user->role]);
+                return null;
+            }
+            
             if ($cabangId) {
                 // Verify the requested cabang is in their assigned cabang list
-                $assignedCabangIds = $user->cabang->pluck('id')->all();
                 if (!in_array((int)$cabangId, $assignedCabangIds)) {
+                    Log::warning('Unauthorized cabang access attempt', [
+                        'user_id' => $user->id,
+                        'role' => $user->role,
+                        'requested_cabang_id' => $cabangId,
+                        'assigned_cabang_ids' => $assignedCabangIds
+                    ]);
                     return null; // Return null to indicate unauthorized access
                 }
                 return $cabangId;
             }
             
             // If no cabang_id specified, use the first assigned cabang
-            $assignedCabang = $user->cabang->first();
-            return $assignedCabang ? $assignedCabang->id : null;
+            return $assignedCabangIds[0];
         }
         
-        return $user->cabang_id;
+        // For kasir role, check if they have cabang assignment
+        if ($user->role === 'kasir') {
+            $assignedCabangIds = $user->cabang->pluck('id')->all();
+            if (empty($assignedCabangIds)) {
+                Log::warning('Kasir has no assigned cabang', ['user_id' => $user->id]);
+                return null;
+            }
+            
+            $cabangId = $request->input('cabang_id');
+            if ($cabangId) {
+                if (!in_array((int)$cabangId, $assignedCabangIds)) {
+                    Log::warning('Kasir trying to access unauthorized cabang', [
+                        'user_id' => $user->id,
+                        'requested_cabang_id' => $cabangId,
+                        'assigned_cabang_ids' => $assignedCabangIds
+                    ]);
+                    return null;
+                }
+                return $cabangId;
+            }
+            
+            return $assignedCabangIds[0];
+        }
+        
+        return null;
     }
     
     private function getCabangList($user)
@@ -274,6 +312,278 @@ class ProdukController extends Controller
         }
         
         return $produk;
+    }
+    
+    public function create(Request $request)
+    {
+        try {
+            $user = auth()->user();
+            
+            // Check authorization
+            if (!$this->canManageProduk($user)) {
+                return back()->with('error', 'Anda tidak memiliki akses untuk menambah produk');
+            }
+            
+            $cabangId = $this->getCabangId($request, $user);
+            
+            return Inertia::render('produk/Create', [
+                'kategoriList' => KategoriProduk::all(),
+                'cabangList' => $this->getCabangList($user),
+                'selectedCabang' => $cabangId ? Cabang::find($cabangId) : null
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Error loading create produk form', ['error' => $e->getMessage()]);
+            return back()->with('error', 'Gagal memuat form tambah produk');
+        }
+    }
+    
+    public function store(Request $request)
+    {
+        try {
+            $user = auth()->user();
+            
+            // Check authorization
+            if (!$this->canManageProduk($user)) {
+                return back()->with('error', 'Anda tidak memiliki akses untuk menambah produk');
+            }
+            
+            $validator = Validator::make($request->all(), [
+                'sku' => 'required|string|max:50|unique:produk',
+                'nama' => 'required|string|max:255',
+                'deskripsi' => 'nullable|string',
+                'kategori_id' => 'required|exists:kategori_produk,id',
+                'tipe' => 'required|in:beans,minuman,snack',
+                'satuan_dasar' => 'required|string|max:50',
+                'harga_modal' => 'required|numeric|min:0',
+                'harga_jual' => 'required|numeric|min:0',
+                'aktif' => 'boolean',
+                'perlu_kalibrasi' => 'boolean',
+                'stok_etalase' => 'nullable|array',
+                'stok_etalase.*.cabang_id' => 'required_with:stok_etalase|exists:cabang,id',
+                'stok_etalase.*.jumlah' => 'required_with:stok_etalase|numeric|min:0',
+                'stok_etalase.*.stok_minimum' => 'required_with:stok_etalase|numeric|min:0',
+            ]);
+            
+            if ($validator->fails()) {
+                return back()->withErrors($validator)->withInput();
+            }
+            
+            // Validate cabang access for manager/supervisor
+            if (in_array($user->role, ['manager', 'supervisor']) && $request->has('stok_etalase')) {
+                $assignedCabangIds = $user->cabang->pluck('id')->all();
+                foreach ($request->input('stok_etalase') as $stok) {
+                    if (!in_array($stok['cabang_id'], $assignedCabangIds)) {
+                        return back()->with('error', 'Anda tidak memiliki akses untuk menambah stok di cabang tersebut');
+                    }
+                }
+            }
+            
+            $produk = Produk::create($validator->validated());
+            
+            // Create stok etalase if provided
+            if ($request->has('stok_etalase')) {
+                foreach ($request->input('stok_etalase') as $stok) {
+                    $produk->stokEtalase()->create($stok);
+                }
+            }
+            
+            // Clear cache for affected cabang
+            if ($request->has('stok_etalase')) {
+                foreach ($request->input('stok_etalase') as $stok) {
+                    $this->productCacheService->clearCache($stok['cabang_id']);
+                }
+            }
+            
+            Log::info('Produk created successfully', [
+                'produk_id' => $produk->id,
+                'user_id' => $user->id,
+                'sku' => $produk->sku
+            ]);
+            
+            return redirect()->route('produk.index')->with('success', 'Produk berhasil ditambahkan');
+            
+        } catch (\Exception $e) {
+            Log::error('Error creating produk', ['error' => $e->getMessage()]);
+            return back()->with('error', 'Gagal menambahkan produk')->withInput();
+        }
+    }
+    
+    public function edit(Request $request, $id)
+    {
+        try {
+            $user = auth()->user();
+            
+            // Check authorization
+            if (!$this->canManageProduk($user)) {
+                return back()->with('error', 'Anda tidak memiliki akses untuk mengedit produk');
+            }
+            
+            $produk = Produk::with(['stokEtalase', 'kategori'])->findOrFail($id);
+            
+            // For manager/supervisor, check if they have access to this produk's cabang
+            if (in_array($user->role, ['manager', 'supervisor'])) {
+                $assignedCabangIds = $user->cabang->pluck('id')->all();
+                $produkCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
+                
+                if (!array_intersect($assignedCabangIds, $produkCabangIds)) {
+                    return back()->with('error', 'Anda tidak memiliki akses untuk mengedit produk ini');
+                }
+            }
+            
+            return Inertia::render('produk/Edit', [
+                'produk' => $produk,
+                'kategoriList' => KategoriProduk::all(),
+                'cabangList' => $this->getCabangList($user)
+            ]);
+            
+        } catch (\Exception $e) {
+            Log::error('Error loading edit produk form', ['error' => $e->getMessage()]);
+            return back()->with('error', 'Gagal memuat form edit produk');
+        }
+    }
+    
+    public function update(Request $request, $id)
+    {
+        try {
+            $user = auth()->user();
+            
+            // Check authorization
+            if (!$this->canManageProduk($user)) {
+                return back()->with('error', 'Anda tidak memiliki akses untuk mengedit produk');
+            }
+            
+            $produk = Produk::with(['stokEtalase'])->findOrFail($id);
+            
+            // For manager/supervisor, check if they have access to this produk's cabang
+            if (in_array($user->role, ['manager', 'supervisor'])) {
+                $assignedCabangIds = $user->cabang->pluck('id')->all();
+                $produkCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
+                
+                if (!array_intersect($assignedCabangIds, $produkCabangIds)) {
+                    return back()->with('error', 'Anda tidak memiliki akses untuk mengedit produk ini');
+                }
+            }
+            
+            $validator = Validator::make($request->all(), [
+                'sku' => 'required|string|max:50|unique:produk,sku,' . $id,
+                'nama' => 'required|string|max:255',
+                'deskripsi' => 'nullable|string',
+                'kategori_id' => 'required|exists:kategori_produk,id',
+                'tipe' => 'required|in:beans,minuman,snack',
+                'satuan_dasar' => 'required|string|max:50',
+                'harga_modal' => 'required|numeric|min:0',
+                'harga_jual' => 'required|numeric|min:0',
+                'aktif' => 'boolean',
+                'perlu_kalibrasi' => 'boolean',
+                'stok_etalase' => 'nullable|array',
+                'stok_etalase.*.cabang_id' => 'required_with:stok_etalase|exists:cabang,id',
+                'stok_etalase.*.jumlah' => 'required_with:stok_etalase|numeric|min:0',
+                'stok_etalase.*.stok_minimum' => 'required_with:stok_etalase|numeric|min:0',
+            ]);
+            
+            if ($validator->fails()) {
+                return back()->withErrors($validator)->withInput();
+            }
+            
+            // Validate cabang access for manager/supervisor
+            if (in_array($user->role, ['manager', 'supervisor']) && $request->has('stok_etalase')) {
+                $assignedCabangIds = $user->cabang->pluck('id')->all();
+                foreach ($request->input('stok_etalase') as $stok) {
+                    if (!in_array($stok['cabang_id'], $assignedCabangIds)) {
+                        return back()->with('error', 'Anda tidak memiliki akses untuk mengedit stok di cabang tersebut');
+                    }
+                }
+            }
+            
+            $produk->update($validator->validated());
+            
+            // Update stok etalase
+            if ($request->has('stok_etalase')) {
+                // Get affected cabang IDs before update
+                $affectedCabangIds = array_merge(
+                    $produk->stokEtalase->pluck('cabang_id')->all(),
+                    array_column($request->input('stok_etalase'), 'cabang_id')
+                );
+                
+                // Delete existing stok etalase
+                $produk->stokEtalase()->delete();
+                
+                // Create new stok etalase
+                foreach ($request->input('stok_etalase') as $stok) {
+                    $produk->stokEtalase()->create($stok);
+                }
+                
+                // Clear cache for affected cabang
+                foreach (array_unique($affectedCabangIds) as $cabangId) {
+                    $this->productCacheService->clearCache($cabangId);
+                }
+            }
+            
+            Log::info('Produk updated successfully', [
+                'produk_id' => $produk->id,
+                'user_id' => $user->id,
+                'sku' => $produk->sku
+            ]);
+            
+            return redirect()->route('produk.index')->with('success', 'Produk berhasil diupdate');
+            
+        } catch (\Exception $e) {
+            Log::error('Error updating produk', ['error' => $e->getMessage()]);
+            return back()->with('error', 'Gagal mengupdate produk')->withInput();
+        }
+    }
+    
+    public function destroy($id)
+    {
+        try {
+            $user = auth()->user();
+            
+            // Check authorization
+            if (!$this->canManageProduk($user)) {
+                return back()->with('error', 'Anda tidak memiliki akses untuk menghapus produk');
+            }
+            
+            $produk = Produk::with(['stokEtalase'])->findOrFail($id);
+            
+            // For manager/supervisor, check if they have access to this produk's cabang
+            if (in_array($user->role, ['manager', 'supervisor'])) {
+                $assignedCabangIds = $user->cabang->pluck('id')->all();
+                $produkCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
+                
+                if (!array_intersect($assignedCabangIds, $produkCabangIds)) {
+                    return back()->with('error', 'Anda tidak memiliki akses untuk menghapus produk ini');
+                }
+            }
+            
+            // Get affected cabang IDs before deletion
+            $affectedCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
+            
+            // Soft delete the produk
+            $produk->delete();
+            
+            // Clear cache for affected cabang
+            foreach ($affectedCabangIds as $cabangId) {
+                $this->productCacheService->clearCache($cabangId);
+            }
+            
+            Log::info('Produk deleted successfully', [
+                'produk_id' => $id,
+                'user_id' => $user->id,
+                'sku' => $produk->sku
+            ]);
+            
+            return redirect()->route('produk.index')->with('success', 'Produk berhasil dihapus');
+            
+        } catch (\Exception $e) {
+            Log::error('Error deleting produk', ['error' => $e->getMessage()]);
+            return back()->with('error', 'Gagal menghapus produk');
+        }
+    }
+    
+    private function canManageProduk($user)
+    {
+        return in_array($user->role, ['it_support', 'manager', 'supervisor']);
     }
     
     private function getProdukForApi($cabangId, $search = '', $kategoriId = '', $tipe = '')

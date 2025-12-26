@@ -77,8 +77,13 @@ class EnsureRole
         }
 
         $cabangId = $request->integer('cabang_id');
-        if ($cabangId > 0 && ! in_array($cabangId, $allowedCabangIds, true)) {
-            abort(403, 'Tidak memiliki akses ke cabang ini');
+        if ($cabangId > 0) {
+            // Check if cabang exists first
+            $cabang = \App\Models\Cabang::find($cabangId);
+            if ($cabang && ! in_array($cabangId, $allowedCabangIds, true)) {
+                abort(403, 'Tidak memiliki akses ke cabang ini');
+            }
+            // If cabang doesn't exist, let the controller handle it with 400 error
         }
 
         $cabangIds = $request->input('cabang_ids');

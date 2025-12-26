@@ -5,8 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 interface SupervisorProps {
   user: { name: string };
   problematic: number;
-  kasDifference: number;
+  kasDifference?: number | null;
   pendingHandovers: number;
+}
+
+function formatCurrency(value?: number | null) {
+  const n = typeof value === 'number' ? value : 0;
+  return n.toLocaleString('id-ID');
 }
 
 export default function Supervisor({ problematic, kasDifference, pendingHandovers }: SupervisorProps) {
@@ -32,7 +37,7 @@ export default function Supervisor({ problematic, kasDifference, pendingHandover
               </CardHeader>
               <CardContent>
                   <div className="text-2xl font-semibold">
-                      Rp {kasDifference.toLocaleString('id-ID')}
+                      Rp {formatCurrency(kasDifference)}
                   </div>
               </CardContent>
           </Card>

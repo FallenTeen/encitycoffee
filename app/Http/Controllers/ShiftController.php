@@ -55,7 +55,7 @@ class ShiftController extends Controller
     public function bukaShift(Request $request)
     {
         $v = Validator::make($request->all(), [
-            'cabang_id' => 'required|integer|exists:cabang,id',
+            'cabang_id' => 'required|integer',
             'saldo_awal' => 'required|numeric|min:0|max:999999999.99',
         ]);
 

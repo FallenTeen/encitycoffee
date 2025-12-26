@@ -86,7 +86,12 @@ class AuthController extends Controller
     {
         // ❗ If API logout → Delete Sanctum token
         if ($request->expectsJson()) {
-            $request->user()->currentAccessToken()->delete();
+            // Delete all tokens for this user to ensure complete logout
+            $user = $request->user();
+            Log::info('API logout called', ['user_id' => $user->id, 'token_count_before' => $user->tokens()->count()]);
+            $user->tokens()->delete();
+            Log::info('Tokens deleted after logout', ['user_id' => $user->id, 'token_count_after' => $user->tokens()->count()]);
+            
             return response()->json(['message' => 'Logout berhasil']);
         }
 
@@ -100,8 +105,10 @@ class AuthController extends Controller
 
     public function me(Request $request)
     {
+        $user = $request->user();
+        Log::info('API me endpoint called', ['user_id' => $user?->id, 'has_user' => $user !== null]);
         return response()->json([
-            'user' => $request->user(),
+            'user' => $user,
         ]);
     }
 }
