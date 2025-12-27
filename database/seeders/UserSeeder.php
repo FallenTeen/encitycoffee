@@ -51,16 +51,16 @@ class UserSeeder extends Seeder
 
         $kasir1 = User::create([
             'name'     => 'Kasir 1.1',
-            'email'    => 'kasir1.1@coffeshop.com',
-            'password' => Hash::make('password'),
+            'email'    => '1@168.com',
+            'password' => Hash::make('1'),
             'role'     => 'kasir',
             'aktif'    => true,
         ]);
 
         $kasir2 = User::create([
             'name'     => 'Kasir 2.1',
-            'email'    => 'kasir2.1@coffeshop.com',
-            'password' => Hash::make('password'),
+            'email'    => '2@168.com',
+            'password' => Hash::make('2'),
             'role'     => 'kasir',
             'aktif'    => true,
         ]);
