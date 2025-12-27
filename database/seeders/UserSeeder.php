@@ -11,40 +11,40 @@ class UserSeeder extends Seeder
     {
         $itSupport = User::create([
             'name'     => 'IT Support',
-            'email'    => 'it@coffeshop.com',
-            'password' => Hash::make('password'),
+            'email'    => 'it@168.com',
+            'password' => Hash::make('111111'),
             'role'     => 'it_support',
             'aktif'    => true,
         ]);
 
         $manager1 = User::create([
             'name'     => 'Manager 1',
-            'email'    => 'manager1@coffeshop.com',
-            'password' => Hash::make('password'),
+            'email'    => 'man1@168.com',
+            'password' => Hash::make('111111'),
             'role'     => 'manager',
             'aktif'    => true,
         ]);
 
         $manager2 = User::create([
             'name'     => 'Manager 2',
-            'email'    => 'manager2@coffeshop.com',
-            'password' => Hash::make('password'),
+            'email'    => 'man2@168.com',
+            'password' => Hash::make('111111'),
             'role'     => 'manager',
             'aktif'    => true,
         ]);
 
         $spv1 = User::create([
             'name'     => 'Supervisor 1.1',
-            'email'    => 'spv1.1@coffeshop.com',
-            'password' => Hash::make('password'),
+            'email'    => 'spv1@168.com',
+            'password' => Hash::make('111111'),
             'role'     => 'supervisor',
             'aktif'    => true,
         ]);
 
         $spv2 = User::create([
             'name'     => 'Supervisor 2.1',
-            'email'    => 'spv2.1@coffeshop.com',
-            'password' => Hash::make('password'),
+            'email'    => 'spv2@168.com',
+            'password' => Hash::make('111111'),
             'role'     => 'supervisor',
             'aktif'    => true,
         ]);
@@ -52,7 +52,7 @@ class UserSeeder extends Seeder
         $kasir1 = User::create([
             'name'     => 'Kasir 1.1',
             'email'    => '1@168.com',
-            'password' => Hash::make('1'),
+            'password' => Hash::make('111111'),
             'role'     => 'kasir',
             'aktif'    => true,
         ]);
@@ -60,7 +60,7 @@ class UserSeeder extends Seeder
         $kasir2 = User::create([
             'name'     => 'Kasir 2.1',
             'email'    => '2@168.com',
-            'password' => Hash::make('2'),
+            'password' => Hash::make('111111'),
             'role'     => 'kasir',
             'aktif'    => true,
         ]);
