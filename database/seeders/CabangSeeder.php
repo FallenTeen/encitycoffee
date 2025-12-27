@@ -25,10 +25,10 @@ class CabangSeeder extends Seeder
             'aktif'   => true,
         ]);
 
-        $manager1 = User::where('email', 'manager1@coffeshop.com')->first();
-        $spv1     = User::where('email', 'spv1.1@coffeshop.com')->first();
-        $kasir1   = User::where('email', 'kasir1.1@coffeshop.com')->first();
-        $kasir2   = User::where('email', 'kasir2.1@coffeshop.com')->first();
+        $manager1 = User::where('email', 'man1@168.com')->first();
+        $spv1     = User::where('email', 'spv1@168.com')->first();
+        $kasir1   = User::where('email', '1@168.com')->first();
+        $kasir2   = User::where('email', '2@168.com')->first();
 
         if ($manager1) {
             $manager1->cabang()->syncWithoutDetaching([$cabang1->id]);
