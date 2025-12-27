@@ -11,15 +11,15 @@ class CabangSeeder extends Seeder
     {
         $cabang1 = Cabang::create([
             'kode'    => 'CBG-001',
-            'nama'    => 'Cabang Purwokerto',
-            'alamat'  => 'Jl. Contoh No. 1, Purwokerto',
-            'telepon' => '0281-000000',
+            'nama'    => 'Li Liu Ba',
+            'alamat'  => 'Jl. Kampus, Brubahan, Grendeng',
+            'telepon' => '08',
             'aktif'   => true,
         ]);
 
         $cabang2 = Cabang::create([
             'kode'    => 'CBG-002',
-            'nama'    => 'Cabang Ajibarang',
+            'nama'    => 'Ajibarang',
             'alamat'  => 'Jl. Contoh No. 2, Ajibarang',
             'telepon' => '0281-000001',
             'aktif'   => true,
