@@ -15,6 +15,7 @@ class OpenBill extends Model
         'shift_id',
         'cabang_id',
         'user_id',
+        'nama_pelanggan',
         'nomor_open_bill',
         'subtotal',
         'diskon',
@@ -51,4 +52,3 @@ class OpenBill extends Model
         return $this->hasMany(OpenBillItem::class);
     }
 }
-

@@ -32,7 +32,8 @@ class TransaksiService
         array $pembayaran,
         float $diskon = 0,
         float $pajak = 0,
-        ?string $catatan = null
+        ?string $catatan = null,
+        ?string $namaPelanggan = null
     ) {
         // Validasi awal sesuai spesifikasi
         if ($shift->status !== 'buka') {
@@ -76,6 +77,7 @@ class TransaksiService
                 'shift_id' => $shift->id,
                 'cabang_id' => $shift->cabang_id,
                 'user_id' => $shift->user_id,
+                'nama_pelanggan' => $namaPelanggan,
                 'nomor_invoice' => $nomorInvoice,
                 'subtotal' => $subtotal,
                 'diskon' => $diskon,
@@ -156,7 +158,8 @@ class TransaksiService
         array $items,
         float $diskon = 0,
         float $pajak = 0,
-        ?string $catatan = null
+        ?string $catatan = null,
+        ?string $namaPelanggan = null
     ) {
         if ($shift->status !== 'buka') {
             throw new \Exception('Shift tidak dalam status buka');
@@ -192,6 +195,7 @@ class TransaksiService
                 'shift_id' => $shift->id,
                 'cabang_id' => $shift->cabang_id,
                 'user_id' => $shift->user_id,
+                'nama_pelanggan' => $namaPelanggan,
                 'nomor_open_bill' => $nomorOpenBill,
                 'subtotal' => $subtotal,
                 'diskon' => $diskon,
@@ -225,7 +229,8 @@ class TransaksiService
         array $items,
         float $diskon = 0,
         float $pajak = 0,
-        ?string $catatan = null
+        ?string $catatan = null,
+        ?string $namaPelanggan = null
     ) {
         $shift = $openBill->shift;
         if (! $shift || $shift->status !== 'buka') {
@@ -263,6 +268,7 @@ class TransaksiService
                 'total' => $total,
                 'status' => 'open',
                 'catatan' => $catatan,
+                'nama_pelanggan' => $namaPelanggan,
             ]);
 
             $openBill->items()->delete();
@@ -469,7 +475,8 @@ class TransaksiService
                 $pembayaran,
                 $diskon,
                 $pajak,
-                $catatan ?? $openBill->catatan
+                $catatan ?? $openBill->catatan,
+                $openBill->nama_pelanggan
             );
 
             // Update status open bill menjadi selesai

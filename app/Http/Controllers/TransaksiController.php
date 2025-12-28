@@ -51,6 +51,7 @@ class TransaksiController extends Controller
         
         $validated = $request->validate([
             'shift_id' => 'required|exists:shift,id',
+            'nama_pelanggan' => 'nullable|string|max:255',
             'items' => 'required|array|min:1',
             'items.*.produk_id' => 'required|exists:produk,id',
             'items.*.jumlah' => 'required|integer|min:1',
@@ -96,7 +97,8 @@ class TransaksiController extends Controller
                 $validated['pembayaran'],
                 (float) ($validated['diskon'] ?? 0),
                 (float) ($validated['pajak'] ?? 0),
-                $validated['catatan'] ?? null
+                $validated['catatan'] ?? null,
+                $validated['nama_pelanggan'] ?? null
             );
             return response()->json($transaksi);
         } catch (\Exception $e) {
@@ -134,6 +136,7 @@ class TransaksiController extends Controller
         // Removed permission checks - all users can create open bills
         $validated = $request->validate([
             'shift_id' => 'required|exists:shift,id',
+            'nama_pelanggan' => 'nullable|string|max:255',
             'items' => 'required|array|min:1',
             'items.*.produk_id' => 'required|exists:produk,id',
             'items.*.jumlah' => 'required|integer|min:1',
@@ -157,7 +160,8 @@ class TransaksiController extends Controller
                 $validated['items'],
                 (float) ($validated['diskon'] ?? 0),
                 (float) ($validated['pajak'] ?? 0),
-                $validated['catatan'] ?? null
+                $validated['catatan'] ?? null,
+                $validated['nama_pelanggan'] ?? null
             );
             return response()->json($openBill);
         } catch (\Exception $e) {
@@ -195,6 +199,7 @@ class TransaksiController extends Controller
         // Removed permission checks - all users can update open bills
 
         $validated = $request->validate([
+            'nama_pelanggan' => 'nullable|string|max:255',
             'items' => 'required|array|min:1',
             'items.*.produk_id' => 'required|exists:produk,id',
             'items.*.jumlah' => 'required|integer|min:1',
@@ -223,7 +228,8 @@ class TransaksiController extends Controller
                 $validated['items'],
                 (float) ($validated['diskon'] ?? 0),
                 (float) ($validated['pajak'] ?? 0),
-                $validated['catatan'] ?? null
+                $validated['catatan'] ?? null,
+                $validated['nama_pelanggan'] ?? null
             );
 
             return response()->json($updated);

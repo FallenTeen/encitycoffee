@@ -15,6 +15,7 @@ class Transaksi extends Model
         'shift_id',
         'cabang_id',
         'user_id',
+        'nama_pelanggan',
         'nomor_invoice',
         'subtotal',
         'diskon',
