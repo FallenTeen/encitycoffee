@@ -728,23 +728,32 @@ class LaporanController extends Controller
 
     public function ringkasanShift(Shift $shift, Request $request)
     {
-        $totalTransaksi = Transaksi::where('shift_id', $shift->id)
+        $transaksi = Transaksi::where('shift_id', $shift->id)
             ->where('status', 'selesai')
-            ->count();
+            ->with('pembayaran')
+            ->get();
 
-        $totalPendapatanTunai = DB::table('pembayaran')
-            ->join('transaksi', 'pembayaran.transaksi_id', '=', 'transaksi.id')
-            ->where('transaksi.shift_id', $shift->id)
-            ->where('transaksi.status', 'selesai')
-            ->where('pembayaran.metode_pembayaran', 'tunai')
-            ->sum('pembayaran.jumlah');
+        $totalTransaksi = $transaksi->count();
 
-        $totalPendapatanQris = DB::table('pembayaran')
-            ->join('transaksi', 'pembayaran.transaksi_id', '=', 'transaksi.id')
-            ->where('transaksi.shift_id', $shift->id)
-            ->where('transaksi.status', 'selesai')
-            ->where('pembayaran.metode_pembayaran', 'qris')
-            ->sum('pembayaran.jumlah');
+        $totalPendapatanTunai = 0.0;
+        $totalPendapatanQris = 0.0;
+
+        foreach ($transaksi as $t) {
+            $total = (float) ($t->total ?? 0);
+            if ($total <= 0) {
+                continue;
+            }
+
+            $totalQris = (float) $t->pembayaran
+                ->where('metode_pembayaran', 'qris')
+                ->sum('jumlah');
+
+            $pendapatanQris = min($totalQris, $total);
+            $pendapatanTunai = max(0.0, $total - $pendapatanQris);
+
+            $totalPendapatanTunai += $pendapatanTunai;
+            $totalPendapatanQris += $pendapatanQris;
+        }
 
         return response()->json([
             'keuangan' => [

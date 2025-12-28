@@ -6,7 +6,7 @@ export default function TransaksiPrint({ transaksi }: any) {
     <AppLayout title={`Print Struk #${transaksi?.id ?? ''}`}>
       <Head title={`Print Struk #${transaksi?.id ?? ''}`} />
       <div className="space-y-6">
-        <h1 className="text-xl font-semibold">Struk Transaksi</h1>
+        <h1 className="text-xl font-semibold">Li Liu Ba</h1>
         <div className="rounded-md border p-4">
           <p>ID: {transaksi?.id}</p>
           <p>Shift: {transaksi?.shift?.id}</p>
