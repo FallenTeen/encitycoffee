@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\ProductCacheService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Inertia\Inertia;
@@ -550,6 +551,7 @@ class ProdukController extends Controller
                 'stok_etalase.*.cabang_id' => 'required_with:stok_etalase|exists:cabang,id',
                 'stok_etalase.*.jumlah' => 'required_with:stok_etalase|numeric|min:0',
                 'stok_etalase.*.stok_minimum' => 'required_with:stok_etalase|numeric|min:0',
+                'image' => 'nullable|image|max:2048',
             ]);
 
             if ($validator->fails()) {
@@ -570,7 +572,14 @@ class ProdukController extends Controller
                 }
             }
 
-            $produk = Produk::create($validator->validated());
+            $data = $validator->validated();
+
+            if ($request->hasFile('image')) {
+                $path = $request->file('image')->store('produk', 'public');
+                $data['image_path'] = $path;
+            }
+
+            $produk = Produk::create($data);
 
             // Create stok etalase if provided
             if ($request->has('stok_etalase')) {
@@ -761,6 +770,8 @@ class ProdukController extends Controller
                 'stok_etalase.*.cabang_id' => 'required_with:stok_etalase|exists:cabang,id',
                 'stok_etalase.*.jumlah' => 'required_with:stok_etalase|numeric|min:0',
                 'stok_etalase.*.stok_minimum' => 'required_with:stok_etalase|numeric|min:0',
+                'image' => 'nullable|image|max:2048',
+                'hapus_gambar' => 'boolean',
             ]);
 
             if ($validator->fails()) {
@@ -782,7 +793,22 @@ class ProdukController extends Controller
                 }
             }
 
-            $produk->update($validator->validated());
+            $data = $validator->validated();
+
+            if ($request->boolean('hapus_gambar')) {
+                if ($produk->image_path) {
+                    Storage::disk('public')->delete($produk->image_path);
+                }
+                $data['image_path'] = null;
+            } elseif ($request->hasFile('image')) {
+                if ($produk->image_path) {
+                    Storage::disk('public')->delete($produk->image_path);
+                }
+                $path = $request->file('image')->store('produk', 'public');
+                $data['image_path'] = $path;
+            }
+
+            $produk->update($data);
 
             // Update stok etalase
             if ($request->has('stok_etalase')) {
