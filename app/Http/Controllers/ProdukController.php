@@ -950,6 +950,8 @@ class ProdukController extends Controller
         }
 
         return $produk->map(function ($item) {
+            $imagePath = $item->image_path;
+
             return [
                 'id' => $item->id,
                 'sku' => $item->sku,
@@ -958,7 +960,8 @@ class ProdukController extends Controller
                 'harga_jual' => $item->harga_jual,
                 'tipe' => $item->tipe,
                 'kategori_id' => $item->kategori_id,
-                'image_path' => $item->image_path,
+                'image_path' => $imagePath,
+                'image_url' => $imagePath ? url('storage/' . ltrim($imagePath, '/')) : null,
                 'stok_etalase' => $item->stokEtalase->first() ? [
                     'jumlah' => $item->stokEtalase->first()->jumlah,
                     'stok_minimum' => $item->stokEtalase->first()->stok_minimum
