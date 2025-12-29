@@ -575,7 +575,7 @@ class ProdukController extends Controller
             $data = $validator->validated();
 
             if ($request->hasFile('image')) {
-                $path = $request->file('image')->store('produk', 'public');
+                $path = $request->file('image')->store('foto-produk', 'public');
                 $data['image_path'] = $path;
             }
 
@@ -804,7 +804,7 @@ class ProdukController extends Controller
                 if ($produk->image_path) {
                     Storage::disk('public')->delete($produk->image_path);
                 }
-                $path = $request->file('image')->store('produk', 'public');
+                $path = $request->file('image')->store('foto-produk', 'public');
                 $data['image_path'] = $path;
             }
 
