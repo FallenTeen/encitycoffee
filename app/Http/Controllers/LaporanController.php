@@ -60,8 +60,12 @@ class LaporanController extends Controller
         }
         if (!empty($validated['status'])) {
             $status = $validated['status'];
-            if ($status === 'open') $status = 'buka';
-            if ($status === 'closed') $status = 'tutup';
+            if ($status === 'open') {
+                $status = 'buka';
+            }
+            if ($status === 'closed') {
+                $status = 'tutup';
+            }
             $query->where('status', $status);
         }
 
@@ -112,6 +116,128 @@ class LaporanController extends Controller
             'shift' => $shift,
             'statistik_ringkasan' => $statistikRingkasan,
             'filter_aktif' => $filterAktif,
+        ]);
+    }
+
+    public function transaksi(Request $request)
+    {
+        Gate::authorize('view-laporan');
+
+        $user = Auth::user();
+        $cabangIds = $this->tentukanCabangIds($user);
+
+        $validated = $request->validate([
+            'tanggal_mulai' => 'nullable|date',
+            'tanggal_selesai' => 'nullable|date|after_or_equal:tanggal_mulai',
+            'cabang_id' => ['nullable', 'integer', Rule::in($cabangIds)],
+            'shift_id' => ['nullable', 'integer'],
+            'user_id' => ['nullable', 'integer'],
+            'status' => ['nullable', 'string'],
+        ]);
+
+        $tanggalMulai = $validated['tanggal_mulai'] ?? null;
+        $tanggalSelesai = $validated['tanggal_selesai'] ?? null;
+        if (!$tanggalMulai && !$tanggalSelesai) {
+            $tanggalMulai = Carbon::now()->subDays(30)->toDateString();
+            $tanggalSelesai = Carbon::now()->toDateString();
+        }
+
+        $query = Transaksi::with(['cabang', 'shift', 'user'])
+            ->whereIn('cabang_id', $cabangIds)
+            ->orderByDesc('waktu_selesai');
+
+        if ($tanggalMulai && $tanggalSelesai) {
+            $akhirHari = Carbon::parse($tanggalSelesai)->endOfDay()->toDateTimeString();
+            $query->whereBetween('waktu_selesai', [$tanggalMulai, $akhirHari]);
+        } elseif ($tanggalMulai) {
+            $query->whereDate('waktu_selesai', $tanggalMulai);
+        }
+
+        if (!empty($validated['cabang_id'])) {
+            $query->where('cabang_id', (int) $validated['cabang_id']);
+        }
+        if (!empty($validated['shift_id'])) {
+            $query->where('shift_id', (int) $validated['shift_id']);
+        }
+        if (!empty($validated['user_id'])) {
+            $query->where('user_id', (int) $validated['user_id']);
+        }
+        if (!empty($validated['status'])) {
+            $query->where('status', $validated['status']);
+        }
+
+        $statRow = (clone $query)
+            ->selectRaw('COUNT(*) as total_transaksi, COALESCE(SUM(total), 0) as total_nilai')
+            ->first();
+
+        $transaksi = $query->paginate(20)->through(function (Transaksi $t) {
+            return [
+                'id' => $t->id,
+                'nomor_invoice' => $t->nomor_invoice,
+                'waktu_selesai' => $t->waktu_selesai,
+                'status' => $t->status,
+                'total' => (float) ($t->total ?? 0),
+                'cabang' => $t->cabang ? [
+                    'id' => $t->cabang->id,
+                    'nama' => $t->cabang->nama,
+                    'kode' => $t->cabang->kode ?? null,
+                ] : null,
+                'shift' => $t->shift ? [
+                    'id' => $t->shift->id,
+                    'status' => $t->shift->status,
+                    'nama_kasir' => $t->shift->nama_kasir,
+                ] : null,
+                'kasir' => $t->user ? [
+                    'id' => $t->user->id,
+                    'name' => $t->user->name,
+                    'email' => $t->user->email,
+                ] : null,
+            ];
+        });
+
+        $statistik = [
+            'total_transaksi' => (int) ($statRow->total_transaksi ?? 0),
+            'total_nilai' => (float) ($statRow->total_nilai ?? 0),
+        ];
+
+        $filterAktif = array_merge($validated, [
+            'tanggal_mulai' => $tanggalMulai,
+            'tanggal_selesai' => $tanggalSelesai,
+        ]);
+
+        $cabangOptions = Cabang::whereIn('id', $cabangIds)
+            ->orderBy('nama')
+            ->get(['id', 'nama', 'kode']);
+
+        $kasirOptions = User::role('kasir')
+            ->aktif()
+            ->when(!empty($cabangIds), fn($q) => $q->whereHas('cabang', fn($qq) => $qq->whereIn('cabang.id', $cabangIds)))
+            ->orderBy('name')
+            ->get(['id', 'name', 'email']);
+
+        $shiftOptions = Shift::whereIn('cabang_id', $cabangIds)
+            ->orderByDesc('waktu_buka')
+            ->limit(100)
+            ->get(['id', 'cabang_id', 'waktu_buka', 'waktu_tutup', 'status', 'nama_kasir']);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'transaksi' => $transaksi,
+                'statistik' => $statistik,
+                'filter_aktif' => $filterAktif,
+                'cabang_options' => $cabangOptions,
+                'kasir_options' => $kasirOptions,
+                'shift_options' => $shiftOptions,
+            ]);
+        }
+
+        return Inertia::render('laporan/Transaksi', [
+            'transaksi' => $transaksi,
+            'statistik' => $statistik,
+            'filter_aktif' => $filterAktif,
+            'cabang_options' => $cabangOptions,
+            'kasir_options' => $kasirOptions,
+            'shift_options' => $shiftOptions,
         ]);
     }
     public function detailShift(Shift $shift)

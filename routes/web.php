@@ -145,6 +145,7 @@ Route::middleware('auth')->group(function () {
     // ------------------------------------------------------------------------
     Route::middleware('role:supervisor,manager,it_support')->prefix('laporan')->name('laporan.')->group(function () {
         Route::get('/shift', [LaporanController::class, 'shift'])->name('shift');
+        Route::get('/transaksi', [LaporanController::class, 'transaksi'])->name('transaksi');
         Route::get('/harian', [LaporanController::class, 'harian'])->name('harian');
         Route::get('/penjualan-produk', [LaporanController::class, 'penjualanProduk'])->name('penjualan-produk');
         Route::get('/pendapatan-kategori', [LaporanController::class, 'pendapatanKategori'])->name('pendapatan-kategori');
