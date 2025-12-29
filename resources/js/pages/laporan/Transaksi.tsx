@@ -87,6 +87,19 @@ export default function LaporanTransaksi({
                                 ))}
                             </select>
                         </div>
+                        <div>
+                            <div className="text-xs text-muted-foreground mb-1">Status</div>
+                            <select
+                                name="status"
+                                defaultValue={filter_aktif?.status ?? ''}
+                                className="w-full border rounded px-2 py-1 text-sm"
+                            >
+                                <option value="">Semua Status</option>
+                                <option value="selesai">Selesai</option>
+                                <option value="pending">Pending</option>
+                                <option value="batal">Batal</option>
+                            </select>
+                        </div>
                         <div className="flex flex-col gap-2">
                             <div className="grid grid-cols-2 gap-2">
                                 <div>
@@ -198,4 +211,3 @@ export default function LaporanTransaksi({
         </AppLayout>
     );
 }
-
