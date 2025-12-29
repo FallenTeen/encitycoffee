@@ -230,6 +230,103 @@ class MobileTransaksiTest extends TestCase
     }
 
     /**
+     * Test two different users can share a shift and access its transactions
+     */
+    public function test_two_cashiers_share_shift_and_can_access_summary()
+    {
+        Log::info('Testing two cashiers shared shift and access summary', [
+            'shift_id' => $this->shift['id'],
+        ]);
+
+        $secondUser = User::create([
+            'name' => 'Kasir Kedua',
+            'email' => '2@168.com',
+            'password' => Hash::make('password123'),
+            'role' => 'kasir',
+            'aktif' => true,
+        ]);
+
+        $secondUser->cabang()->attach($this->cabang->id);
+
+        $loginResponse = $this->postJson('/api/pos/auth/login', [
+            'email' => '2@168.com',
+            'password' => 'password123',
+        ]);
+
+        $secondToken = $loginResponse->json('token');
+
+        $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token,
+        ])->postJson('/api/pos/transaksi', [
+            'shift_id' => $this->shift['id'],
+            'items' => [
+                [
+                    'produk_id' => $this->produk->id,
+                    'jumlah' => 1,
+                ],
+            ],
+            'pembayaran' => [
+                [
+                    'metode' => 'tunai',
+                    'jumlah' => 75000,
+                ],
+            ],
+        ])->assertStatus(200);
+
+        $this->withHeaders([
+            'Authorization' => 'Bearer ' . $secondToken,
+        ])->postJson('/api/pos/transaksi', [
+            'shift_id' => $this->shift['id'],
+            'items' => [
+                [
+                    'produk_id' => $this->produk->id,
+                    'jumlah' => 1,
+                ],
+            ],
+            'pembayaran' => [
+                [
+                    'metode' => 'tunai',
+                    'jumlah' => 75000,
+                ],
+            ],
+        ])->assertStatus(200);
+
+        $this->assertDatabaseCount('transaksi', 2);
+
+        $summaryResponseFirst = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token,
+        ])->getJson('/api/pos/laporan/shift/' . $this->shift['id'] . '/ringkasan');
+
+        $summaryResponseSecond = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $secondToken,
+        ])->getJson('/api/pos/laporan/shift/' . $this->shift['id'] . '/ringkasan');
+
+        $summaryResponseFirst->assertStatus(200)
+            ->assertJsonFragment([
+                'shift_id' => (int) $this->shift['id'],
+                'total_transaksi' => 2,
+            ]);
+
+        $summaryResponseSecond->assertStatus(200)
+            ->assertJsonFragment([
+                'shift_id' => (int) $this->shift['id'],
+                'total_transaksi' => 2,
+            ]);
+
+        $dataFirst = $summaryResponseFirst->json();
+        $dataSecond = $summaryResponseSecond->json();
+
+        $this->assertEquals(2, $dataFirst['keuangan']['total_transaksi']);
+        $this->assertEquals(2, $dataSecond['keuangan']['total_transaksi']);
+        $this->assertEquals(150000.0, $dataFirst['keuangan']['total_pendapatan_tunai']);
+        $this->assertEquals(150000.0, $dataSecond['keuangan']['total_pendapatan_tunai']);
+
+        Log::info('Two cashiers shared shift summary accessible for both users', [
+            'shift_id' => $this->shift['id'],
+        ]);
+    }
+
+    /**
      * Test transaction with multiple items
      */
     public function test_transaction_with_multiple_items()
@@ -481,11 +578,11 @@ class MobileTransaksiTest extends TestCase
     }
 
     /**
-     * Test transaction with another user's shift
+     * Test transaction with another user's shift (shared access allowed)
      */
     public function test_transaction_with_other_user_shift()
     {
-        Log::info('Testing transaction with other user shift');
+        Log::info('Testing transaction with other user shift (shared access)');
 
         // Create another user and shift
         $otherUser = User::create([
@@ -506,7 +603,6 @@ class MobileTransaksiTest extends TestCase
             'waktu_buka' => now()
         ]);
 
-        // Try to create transaction with other user's shift
         $response = $this->withHeaders([
             'Authorization' => 'Bearer ' . $this->token
         ])->postJson('/api/pos/transaksi', [
@@ -527,15 +623,17 @@ class MobileTransaksiTest extends TestCase
             ],
             'diskon' => 0,
             'pajak' => 0,
-            'catatan' => 'Should fail due to unauthorized shift'
+            'catatan' => 'Shared shift access by other user'
         ]);
 
-        $response->assertStatus(403)
-                ->assertJson([
-                    'error' => 'Tidak memiliki akses'
-                ]);
+        $response->assertStatus(200);
 
-        Log::info('Transaction with other user shift correctly rejected');
+        $this->assertDatabaseHas('transaksi', [
+            'shift_id' => $otherShift->id,
+            'status' => 'selesai',
+        ]);
+
+        Log::info('Transaction with other user shift allowed for shared access');
     }
 
     /**

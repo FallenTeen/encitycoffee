@@ -41,7 +41,29 @@ class ShiftController extends Controller
     {
         $user = $request->user();
 
-        $shift = Shift::where('user_id', $user->id)->where('status', 'buka')->first();
+        $nama = trim((string) ($user->name ?? ''));
+        $email = trim((string) ($user->email ?? ''));
+
+        $shift = Shift::where('status', 'buka')
+            ->where(function ($query) use ($user, $nama, $email) {
+                $query->where('user_id', $user->id);
+
+                if ($nama !== '' || $email !== '') {
+                    $query->orWhere(function ($q) use ($nama, $email) {
+                        $q->whereNotNull('nama_kasir');
+                        $q->where(function ($qq) use ($nama, $email) {
+                            if ($nama !== '') {
+                                $qq->orWhere('nama_kasir', 'like', '%' . $nama . '%');
+                            }
+                            if ($email !== '') {
+                                $qq->orWhere('nama_kasir', 'like', '%' . $email . '%');
+                            }
+                        });
+                    });
+                }
+            })
+            ->orderByDesc('waktu_buka')
+            ->first();
 
         if (! $shift) {
             return response()->json(['error' => 'Tidak ada shift aktif'], 404);

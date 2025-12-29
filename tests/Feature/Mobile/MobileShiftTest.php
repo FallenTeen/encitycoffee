@@ -308,6 +308,46 @@ class MobileShiftTest extends TestCase
 
         $response->assertStatus(401);
 
-        Log::info('Unauthorized access correctly rejected');
+
+        Log::info('Unauthorized shift access correctly rejected');
+    }
+
+    public function test_second_cashier_in_nama_kasir_sees_same_active_shift()
+    {
+        $secondUser = User::create([
+            'name' => 'Kasir Kedua',
+            'email' => '2@168.com',
+            'password' => Hash::make('password123'),
+            'role' => 'kasir',
+            'aktif' => true,
+        ]);
+
+        $secondUser->cabang()->attach($this->cabang->id);
+
+        $openResponse = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token,
+        ])->postJson('/api/pos/shift/buka', [
+            'cabang_id' => $this->cabang->id,
+            'saldo_awal' => 500000,
+            'nama_kasir' => 'Kasir Test, Kasir Kedua, 2@168.com',
+        ]);
+
+        $openResponse->assertStatus(200);
+
+        $shiftId = $openResponse->json('shift.id');
+
+        $loginResponse = $this->postJson('/api/pos/auth/login', [
+            'email' => '2@168.com',
+            'password' => 'password123',
+        ]);
+
+        $secondToken = $loginResponse->json('token');
+
+        $activeResponse = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $secondToken,
+        ])->getJson('/api/pos/shift/aktif');
+
+        $activeResponse->assertStatus(200)
+            ->assertJsonPath('shift.id', $shiftId);
     }
 }
