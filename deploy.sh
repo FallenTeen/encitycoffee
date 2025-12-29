@@ -110,9 +110,27 @@ fi
 # Reset to remote branch
 echo ""
 print_info "Resetting to origin/$BRANCH..."
+
+# Backup deploy.sh if it was modified locally
+if git diff --name-only | grep -q "deploy.sh"; then
+    print_warning "deploy.sh has local changes, backing up..."
+    cp deploy.sh deploy.sh.backup
+    RESTORE_DEPLOY=true
+else
+    RESTORE_DEPLOY=false
+fi
+
 if git reset --hard "origin/$BRANCH"; then
     NEW_COMMIT=$(git rev-parse HEAD)
     print_success "Reset completed. New commit: $NEW_COMMIT"
+    
+    # Restore deploy.sh if it was backed up
+    if [ "$RESTORE_DEPLOY" = true ] && [ -f deploy.sh.backup ]; then
+        print_info "Restoring local deploy.sh changes..."
+        mv deploy.sh.backup deploy.sh
+        chmod +x deploy.sh
+        print_success "deploy.sh restored"
+    fi
 else
     print_error "Git reset failed!"
     exit 1

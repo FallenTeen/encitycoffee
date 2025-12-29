@@ -301,6 +301,48 @@ Route::prefix('pos')->group(function () {
                 Route::get('/', [ShiftController::class, 'daftar']);
             });
 
+            Route::get('kasir', function (Request $request) {
+                $user = $request->user();
+                $cabangIds = $user->cabang()->pluck('cabang.id')->all();
+
+                $cabangId = $request->integer('cabang_id');
+                if ($cabangId !== null && ! in_array($cabangId, $cabangIds, true)) {
+                    return response()->json([
+                        'success' => false,
+                        'data' => [],
+                        'error' => 'Cabang tidak valid untuk user ini',
+                    ], 403);
+                }
+
+                $query = User::query()
+                    ->where('role', 'kasir')
+                    ->whereHas('cabang', fn ($q) => $q->whereIn('cabang.id', $cabangIds))
+                    ->whereDoesntHave('cabang', fn ($q) => $q->whereNotIn('cabang.id', $cabangIds));
+
+                if ($cabangId !== null) {
+                    $query->whereHas('cabang', fn ($q) => $q->where('cabang.id', $cabangId));
+                }
+
+                $kasirs = $query
+                    ->orderBy('name')
+                    ->get(['id', 'name', 'email', 'role', 'aktif'])
+                    ->map(function (User $kasir) {
+                        return [
+                            'id' => (int) $kasir->id,
+                            'name' => (string) $kasir->name,
+                            'email' => (string) $kasir->email,
+                            'role' => (string) $kasir->role,
+                            'aktif' => (bool) $kasir->aktif,
+                        ];
+                    })
+                    ->values();
+
+                return response()->json([
+                    'success' => true,
+                    'data' => $kasirs,
+                ]);
+            });
+
             Route::prefix('kalibrasi')->group(function () {
                 Route::post('/', [KalibrasiController::class, 'simpan']);
                 Route::put('{kalibrasi}/pilih', [KalibrasiController::class, 'pilih']);
