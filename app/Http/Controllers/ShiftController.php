@@ -208,13 +208,12 @@ class ShiftController extends Controller
 
         DB::beginTransaction();
         try {
-            $total_tunai = (float) $shift->transaksi()
+            $transaksiSelesai = $shift->transaksi()
                 ->where('status', 'selesai')
-                ->sum('total_tunai');
+                ->get();
 
-            $total_qris = (float) $shift->transaksi()
-                ->where('status', 'selesai')
-                ->sum('total_qris');
+            $total_tunai = (float) $transaksiSelesai->sum('total_tunai');
+            $total_qris = (float) $transaksiSelesai->sum('total_qris');
 
             $saldo_diharapkan = $shift->saldo_awal + $total_tunai;
             $selisih = $request->saldo_akhir - $saldo_diharapkan;
