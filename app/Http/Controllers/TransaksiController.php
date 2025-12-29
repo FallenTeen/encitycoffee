@@ -257,6 +257,23 @@ class TransaksiController extends Controller
         ]);
     }
 
+    public function hapusOpenBill(OpenBill $openBill, Request $request)
+    {
+        $shift = $openBill->shift;
+
+        if ($shift && $shift->status === 'tutup') {
+            return response()->json(['error' => 'Tidak bisa menghapus open bill dari shift yang sudah ditutup'], 400);
+        }
+
+        if ($openBill->status !== 'open') {
+            return response()->json(['error' => 'Open bill sudah tidak aktif'], 400);
+        }
+
+        $openBill->update(['status' => 'batal']);
+
+        return response()->json(['message' => 'Open bill berhasil dibatalkan']);
+    }
+
 
     public function index(Request $request)
     {

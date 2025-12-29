@@ -325,6 +325,7 @@ Route::prefix('pos')->group(function () {
                 Route::get('open-bill/{openBill}', [TransaksiController::class, 'tampilkanOpenBill']);
                 Route::put('open-bill/{openBill}', [TransaksiController::class, 'updateOpenBill']);
                 Route::post('open-bill/{openBill}/bayar', [TransaksiController::class, 'bayarOpenBill']);
+                Route::delete('open-bill/{openBill}', [TransaksiController::class, 'hapusOpenBill']);
             });
 
             Route::prefix('laporan')->group(function () {
