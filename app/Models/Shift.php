@@ -25,6 +25,7 @@ class Shift extends Model
         'waktu_buka',
         'waktu_tutup',
         'status',
+        'nama_kasir',
         'catatan',
         'audit_log',
     ];

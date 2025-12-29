@@ -161,6 +161,75 @@ class MobileTransaksiTest extends TestCase
     }
 
     /**
+     * Test shared record shift summary aggregates all transactions in a shift
+     */
+    public function test_shared_record_shift_summary_aggregates_transactions()
+    {
+        Log::info('Testing shared record shift summary aggregation', [
+            'shift_id' => $this->shift['id'],
+        ]);
+
+        // First transaction
+        $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token
+        ])->postJson('/api/pos/transaksi', [
+            'shift_id' => $this->shift['id'],
+            'items' => [
+                [
+                    'produk_id' => $this->produk->id,
+                    'jumlah' => 1,
+                ]
+            ],
+            'pembayaran' => [
+                [
+                    'metode' => 'tunai',
+                    'jumlah' => 75000,
+                ]
+            ],
+        ])->assertStatus(200);
+
+        // Second transaction
+        $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token
+        ])->postJson('/api/pos/transaksi', [
+            'shift_id' => $this->shift['id'],
+            'items' => [
+                [
+                    'produk_id' => $this->produk->id,
+                    'jumlah' => 2,
+                ]
+            ],
+            'pembayaran' => [
+                [
+                    'metode' => 'tunai',
+                    'jumlah' => 150000,
+                ]
+            ],
+        ])->assertStatus(200);
+
+        // Call POS mobile shift summary endpoint
+        $summaryResponse = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token
+        ])->getJson('/api/pos/laporan/shift/' . $this->shift['id'] . '/ringkasan');
+
+        $summaryResponse->assertStatus(200)
+            ->assertJsonFragment([
+                'shift_id' => (int) $this->shift['id'],
+                'total_transaksi' => 2,
+            ]);
+
+        $data = $summaryResponse->json();
+        $this->assertEquals(2, $data['keuangan']['total_transaksi']);
+        $this->assertEquals(225000.0, $data['keuangan']['total_pendapatan_tunai']);
+
+        Log::info('Shared record shift summary aggregation successful', [
+            'shift_id' => $this->shift['id'],
+            'total_transaksi' => $data['keuangan']['total_transaksi'],
+            'total_pendapatan_tunai' => $data['keuangan']['total_pendapatan_tunai'],
+        ]);
+    }
+
+    /**
      * Test transaction with multiple items
      */
     public function test_transaction_with_multiple_items()

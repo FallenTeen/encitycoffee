@@ -57,6 +57,7 @@ class ShiftController extends Controller
         $v = Validator::make($request->all(), [
             'cabang_id' => 'required|integer',
             'saldo_awal' => 'required|numeric|min:0|max:999999999.99',
+            'nama_kasir' => 'nullable|string|max:255',
         ]);
 
         if ($v->fails()) {
@@ -95,19 +96,23 @@ class ShiftController extends Controller
                 throw new \InvalidArgumentException('Saldo awal harus berupa angka positif');
             }
 
+            $namaKasir = $request->input('nama_kasir');
+
             $shift = Shift::create([
                 'user_id' => $user->id,
                 'cabang_id' => $cabang->id,
                 'saldo_awal' => number_format($saldoAwal, 2, '.', ''),
                 'waktu_buka' => Carbon::now(),
                 'status' => 'buka',
+                'nama_kasir' => $namaKasir !== null && $namaKasir !== '' ? $namaKasir : $user->name,
                 'audit_log' => [[
                     'action' => 'buka_shift',
                     'user_id' => $user->id,
                     'timestamp' => Carbon::now()->toDateTimeString(),
                     'data' => [
                         'saldo_awal' => $saldoAwal,
-                        'cabang_id' => $cabang->id
+                        'cabang_id' => $cabang->id,
+                        'nama_kasir' => $namaKasir ?? $user->name,
                     ]
                 ]]
             ]);

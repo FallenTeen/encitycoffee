@@ -65,7 +65,8 @@ class MobileShiftTest extends TestCase
             'Authorization' => 'Bearer ' . $this->token
         ])->postJson('/api/pos/shift/buka', [
             'cabang_id' => $this->cabang->id,
-            'saldo_awal' => 500000
+            'saldo_awal' => 500000,
+            'nama_kasir' => 'Kasir A, Kasir B'
         ]);
 
         $response->assertStatus(200)
@@ -78,10 +79,34 @@ class MobileShiftTest extends TestCase
             'user_id' => $this->user->id,
             'cabang_id' => $this->cabang->id,
             'saldo_awal' => 500000,
-            'status' => 'buka'
+            'status' => 'buka',
+            'nama_kasir' => 'Kasir A, Kasir B',
         ]);
 
         Log::info('Shift opened successfully', ['shift_id' => $response->json('shift.id')]);
+    }
+
+    /**
+     * Test shift opening without nama_kasir uses user name as default
+     */
+    public function test_shift_opening_without_nama_kasir_uses_user_name()
+    {
+        $response = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token
+        ])->postJson('/api/pos/shift/buka', [
+            'cabang_id' => $this->cabang->id,
+            'saldo_awal' => 250000,
+        ]);
+
+        $response->assertStatus(200);
+
+        $this->assertDatabaseHas('shift', [
+            'user_id' => $this->user->id,
+            'cabang_id' => $this->cabang->id,
+            'saldo_awal' => 250000,
+            'status' => 'buka',
+            'nama_kasir' => $this->user->name,
+        ]);
     }
 
     /**
