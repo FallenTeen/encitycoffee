@@ -2,8 +2,10 @@ import { Head } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
 
 export default function ShiftDetail({ shift, statistik, produk_terjual, kalibrasi_detail, timeline, perbandingan, jam_tersibuk, rekomendasi }: any) {
+    const kasirList = shift?.nama_kasir_list ?? [];
+
     return (
-        <AppLayout breadcrumbs={[{ title: 'Detail Shift', href: `/laporan/shift/${shift?.id ?? ''}` }]}> 
+        <AppLayout breadcrumbs={[{ title: 'Detail Shift', href: `/laporan/shift/${shift?.id ?? ''}` }]}>
             <Head title="Detail Shift" />
             <div className="space-y-6">
                 <h1 className="text-xl font-semibold">Detail Shift #{shift?.id}</h1>
@@ -25,22 +27,40 @@ export default function ShiftDetail({ shift, statistik, produk_terjual, kalibras
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="bg-muted p-4 rounded">
+                        <div className="text-sm text-muted-foreground mb-1">Cabang</div>
+                        <div className="font-medium">{shift?.cabang?.nama ?? '-'}</div>
+                        <div className="text-xs text-muted-foreground">
+                            {shift?.cabang?.kode ?? ''}
+                        </div>
+                        <div className="mt-3 text-sm text-muted-foreground mb-1">Kasir</div>
+                        <ul className="list-disc list-inside space-y-0.5">
+                            {kasirList.length === 0 && shift?.nama_kasir && (
+                                <li>{shift.nama_kasir}</li>
+                            )}
+                            {kasirList.map((n: string, i: number) => (
+                                <li key={i}>{n}</li>
+                            ))}
+                        </ul>
+                    </div>
+                    <div className="bg-muted p-4 rounded">
                         <div className="text-sm text-muted-foreground mb-2">Perbandingan</div>
                         <pre className="text-sm">{JSON.stringify(perbandingan, null, 2)}</pre>
                     </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="bg-muted p-4 rounded">
                         <div className="text-sm text-muted-foreground mb-2">Jam Tersibuk</div>
                         <pre className="text-sm">{JSON.stringify(jam_tersibuk, null, 2)}</pre>
                     </div>
-                </div>
-
-                <div className="bg-muted p-4 rounded">
-                    <div className="text-sm text-muted-foreground mb-2">Rekomendasi</div>
-                    <ul className="list-disc pl-6">
-                        {(rekomendasi || []).map((r: string, i: number) => (
-                            <li key={i}>{r}</li>
-                        ))}
-                    </ul>
+                    <div className="bg-muted p-4 rounded">
+                        <div className="text-sm text-muted-foreground mb-2">Rekomendasi</div>
+                        <ul className="list-disc pl-6">
+                            {(rekomendasi || []).map((r: string, i: number) => (
+                                <li key={i}>{r}</li>
+                            ))}
+                        </ul>
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

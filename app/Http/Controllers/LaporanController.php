@@ -79,6 +79,12 @@ class LaporanController extends Controller
                 'waktu_buka' => $s->waktu_buka,
                 'waktu_tutup' => $s->waktu_tutup,
                 'status' => $s->status,
+                'nama_kasir' => $s->nama_kasir,
+                'nama_kasir_list' => collect(preg_split('/,/', (string) $s->nama_kasir))
+                    ->map(fn ($n) => trim((string) $n))
+                    ->filter(fn ($n) => $n !== '')
+                    ->values()
+                    ->all(),
                 'total_transaksi' => $totalTransaksi,
                 'total_penjualan' => $totalPenjualan,
                 'akurasi_kas' => (float) ($s->selisih ?? 0.0),
@@ -261,7 +267,20 @@ class LaporanController extends Controller
         }
 
         return Inertia::render('laporan/ShiftDetail', [
-            'shift' => $shift,
+            'shift' => [
+                'id' => $shift->id,
+                'user' => $shift->user,
+                'cabang' => $shift->cabang,
+                'waktu_buka' => $shift->waktu_buka,
+                'waktu_tutup' => $shift->waktu_tutup,
+                'status' => $shift->status,
+                'nama_kasir' => $shift->nama_kasir,
+                'nama_kasir_list' => collect(preg_split('/,/', (string) $shift->nama_kasir))
+                    ->map(fn ($n) => trim((string) $n))
+                    ->filter(fn ($n) => $n !== '')
+                    ->values()
+                    ->all(),
+            ],
             'statistik' => $statistik,
             'produk_terjual' => $produkTerjual,
             'kalibrasi_detail' => $kalibrasiDetail,

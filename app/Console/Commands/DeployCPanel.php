@@ -29,7 +29,7 @@ class DeployCPanel extends Command
      */
     public function handle()
     {
-        $this->info('🚀 Starting deployment process...');
+        $this->info('Starting deployment process...');
         $this->newLine();
 
         // Step 1: Check git status
@@ -53,7 +53,7 @@ class DeployCPanel extends Command
         if (!$this->option('manual')) {
             if (!$this->triggerWebhook()) {
                 $this->newLine();
-                $this->warn('⚠️  Webhook failed. Please deploy manually:');
+                $this->warn('Webhook failed. Please deploy manually:');
                 $this->showManualInstructions();
                 return Command::FAILURE;
             }
@@ -62,8 +62,8 @@ class DeployCPanel extends Command
         }
 
         $this->newLine();
-        $this->info('✅ Deployment completed successfully!');
-        $this->info('🌐 Visit: ' . config('app.url'));
+        $this->info('Deployment completed successfully!');
+        $this->info('Visit: ' . config('app.url'));
         
         return Command::SUCCESS;
     }
@@ -73,17 +73,17 @@ class DeployCPanel extends Command
      */
     protected function checkGitStatus(): bool
     {
-        $this->info('📋 Checking git status...');
+        $this->info('Checking git status...');
         
         $result = Process::run('git status --porcelain');
         
         if ($result->failed()) {
-            $this->error('❌ Failed to check git status');
+            $this->error('Failed to check git status');
             return false;
         }
 
         if (empty($result->output())) {
-            $this->warn('⚠️  No changes detected. Nothing to deploy.');
+            $this->warn('No changes detected. Nothing to deploy.');
             return $this->confirm('Do you want to continue anyway?');
         }
 
@@ -96,8 +96,8 @@ class DeployCPanel extends Command
      */
     protected function runNpmBuild(): bool
     {
-        $this->info('🔨 Running npm build...');
-        $this->warn('💡 Make sure to close VSCode, browser dev server, and all terminals first!');
+        $this->info('Running npm build...');
+        $this->warn('Make sure to close VSCode, browser dev server, and all terminals first!');
         $this->newLine();
         
         // Kill any running dev servers
@@ -108,10 +108,10 @@ class DeployCPanel extends Command
         $result = Process::timeout(300)->run('npm run build');
         
         if ($result->failed()) {
-            $this->error('❌ npm build failed');
+            $this->error(' npm build failed');
             $this->error($result->errorOutput());
             $this->newLine();
-            $this->warn('💡 Tips to fix:');
+            $this->warn('  Tips to fix:');
             $this->line('   1. Close VSCode completely');
             $this->line('   2. Close all browser tabs with localhost:5173');
             $this->line('   3. Close all terminals/cmd windows');
