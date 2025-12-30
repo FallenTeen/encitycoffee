@@ -24,6 +24,8 @@ interface Produk {
   kategori_id: number;
   sku: string;
   nama: string;
+  kelompok_nama?: string | null;
+  varian?: string | null;
   deskripsi?: string | null;
   image_path?: string | null;
   tipe: string;
@@ -48,6 +50,8 @@ export default function ProdukEdit({ produk, kategori, tipe_options, satuan_opti
     kategori_id: produk?.kategori_id ? String(produk.kategori_id) : '',
     sku: produk?.sku ?? '',
     nama: produk?.nama ?? '',
+    kelompok_nama: produk?.kelompok_nama ?? '',
+    varian: produk?.varian ?? '',
     deskripsi: produk?.deskripsi ?? '',
     image: null as File | null,
     hapus_gambar: false,
@@ -258,6 +262,28 @@ export default function ProdukEdit({ produk, kategori, tipe_options, satuan_opti
                   }}
                 />
                 <InputError message={errors.nama as string} />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="kelompok_nama">Kelompok Nama</Label>
+                <Input
+                  id="kelompok_nama"
+                  value={data.kelompok_nama}
+                  onChange={(e) => setData('kelompok_nama', e.target.value)}
+                  placeholder="Contoh: Americano"
+                />
+                <InputError message={errors.kelompok_nama as string} />
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="varian">Varian</Label>
+                <Input
+                  id="varian"
+                  value={data.varian}
+                  onChange={(e) => setData('varian', e.target.value)}
+                  placeholder="Contoh: Hot, Ice"
+                />
+                <InputError message={errors.varian as string} />
               </div>
 
               <div className="space-y-1">

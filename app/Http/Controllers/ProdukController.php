@@ -539,6 +539,8 @@ class ProdukController extends Controller
             $validator = Validator::make($request->all(), [
                 'sku' => 'required|string|max:50|unique:produk',
                 'nama' => 'required|string|max:255',
+                'kelompok_nama' => 'nullable|string|max:255',
+                'varian' => 'nullable|string|max:50',
                 'deskripsi' => 'nullable|string',
                 'kategori_id' => 'required|exists:kategori_produk,id',
                 'tipe' => 'required|in:beans,minuman,snack',
@@ -758,6 +760,8 @@ class ProdukController extends Controller
             $validator = Validator::make($request->all(), [
                 'sku' => 'required|string|max:50|unique:produk,sku,' . $id,
                 'nama' => 'required|string|max:255',
+                'kelompok_nama' => 'nullable|string|max:255',
+                'varian' => 'nullable|string|max:50',
                 'deskripsi' => 'nullable|string',
                 'kategori_id' => 'required|exists:kategori_produk,id',
                 'tipe' => 'required|in:beans,minuman,snack',
@@ -956,6 +960,8 @@ class ProdukController extends Controller
                 'id' => $item->id,
                 'sku' => $item->sku,
                 'nama' => $item->nama,
+                'kelompok_nama' => $item->kelompok_nama,
+                'varian' => $item->varian,
                 'deskripsi' => $item->deskripsi,
                 'harga_jual' => $item->harga_jual,
                 'tipe' => $item->tipe,

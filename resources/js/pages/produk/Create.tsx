@@ -24,6 +24,8 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
     kategori_id: '',
     sku: '',
     nama: '',
+    kelompok_nama: '',
+    varian: '',
     deskripsi: '',
     image: null as File | null,
     tipe: '',
@@ -205,6 +207,28 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
                 placeholder="Nama produk"
               />
               <InputError message={errors.nama as string} />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="kelompok_nama">Kelompok Nama</Label>
+              <Input
+                id="kelompok_nama"
+                value={data.kelompok_nama}
+                onChange={(e) => setData('kelompok_nama', e.target.value)}
+                placeholder="Contoh: Americano"
+              />
+              <InputError message={errors.kelompok_nama as string} />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="varian">Varian</Label>
+              <Input
+                id="varian"
+                value={data.varian}
+                onChange={(e) => setData('varian', e.target.value)}
+                placeholder="Contoh: Hot, Ice"
+              />
+              <InputError message={errors.varian as string} />
             </div>
 
             <div className="space-y-1">

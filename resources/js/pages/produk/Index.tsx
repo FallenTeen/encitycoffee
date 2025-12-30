@@ -25,6 +25,8 @@ interface ProdukItem {
     id: number;
     sku: string;
     nama: string;
+    kelompok_nama?: string | null;
+    varian?: string | null;
     tipe: string;
     harga_jual: number | string;
     aktif: boolean;
@@ -293,7 +295,9 @@ export default function ProdukIndex({
                                             {p.sku}
                                         </td>
                                         <td className="px-4 py-2 font-medium">
-                                            {p.nama}
+                                            {p.varian
+                                                ? `${p.varian} ${p.kelompok_nama || p.nama}`
+                                                : p.nama}
                                         </td>
                                         <td className="px-4 py-2">
                                             {p.kategori?.nama ?? '-'}

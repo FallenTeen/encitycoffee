@@ -7,6 +7,8 @@ interface ProdukItem {
     id: number;
     sku: string;
     nama: string;
+    kelompok_nama?: string | null;
+    varian?: string | null;
     tipe: string;
     harga_jual: number | string;
     aktif: boolean;
@@ -72,7 +74,11 @@ export default function ProdukCard({ produk, canManageProduk = false, formatHarg
                                 </div>
                             )}
                             <div className="min-w-0">
-                                <h3 className="font-semibold text-sm truncate">{produk.nama}</h3>
+                                <h3 className="font-semibold text-sm truncate">
+                                    {produk.varian
+                                        ? `${produk.varian} ${produk.kelompok_nama || produk.nama}`
+                                        : produk.nama}
+                                </h3>
                                 <p className="text-xs text-muted-foreground font-mono">{produk.sku}</p>
                             </div>
                         </div>

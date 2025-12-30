@@ -15,6 +15,8 @@ class Produk extends Model
         'kategori_id',
         'sku',
         'nama',
+        'kelompok_nama',
+        'varian',
         'deskripsi',
         'image_path',
         'tipe',
