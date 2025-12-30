@@ -203,6 +203,9 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
                   if (!skuLabel) {
                     setSkuLabel(value);
                   }
+                  if (!data.kelompok_nama) {
+                    setData('kelompok_nama', value);
+                  }
                 }}
                 placeholder="Nama produk"
               />

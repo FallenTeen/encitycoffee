@@ -259,6 +259,9 @@ export default function ProdukEdit({ produk, kategori, tipe_options, satuan_opti
                     if (!skuLabel) {
                       setSkuLabel(value);
                     }
+                    if (!data.kelompok_nama) {
+                      setData('kelompok_nama', value);
+                    }
                   }}
                 />
                 <InputError message={errors.nama as string} />
