@@ -539,7 +539,7 @@ class ProdukController extends Controller
             $validator = Validator::make($request->all(), [
                 'sku' => 'required|string|max:50|unique:produk',
                 'nama' => 'required|string|max:255',
-                'kelompok_nama' => 'nullable|string|max:255',
+                'kelompok_nama' => 'required|string|max:255',
                 'varian' => 'nullable|string|max:50',
                 'deskripsi' => 'nullable|string',
                 'kategori_id' => 'required|exists:kategori_produk,id',
@@ -575,6 +575,10 @@ class ProdukController extends Controller
             }
 
             $data = $validator->validated();
+
+            if (empty($data['kelompok_nama'])) {
+                $data['kelompok_nama'] = $data['nama'];
+            }
 
             if ($request->hasFile('image')) {
                 $path = $request->file('image')->store('foto-produk', 'public');
@@ -760,7 +764,7 @@ class ProdukController extends Controller
             $validator = Validator::make($request->all(), [
                 'sku' => 'required|string|max:50|unique:produk,sku,' . $id,
                 'nama' => 'required|string|max:255',
-                'kelompok_nama' => 'nullable|string|max:255',
+                'kelompok_nama' => 'required|string|max:255',
                 'varian' => 'nullable|string|max:50',
                 'deskripsi' => 'nullable|string',
                 'kategori_id' => 'required|exists:kategori_produk,id',
@@ -798,6 +802,10 @@ class ProdukController extends Controller
             }
 
             $data = $validator->validated();
+
+            if (empty($data['kelompok_nama'])) {
+                $data['kelompok_nama'] = $data['nama'];
+            }
 
             if ($request->boolean('hapus_gambar')) {
                 if ($produk->image_path) {

@@ -6,6 +6,7 @@ use App\Models\Produk;
 use App\Models\KategoriProduk;
 use App\Models\StokEtalase;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Str;
 
 class ProdukSeeder extends Seeder
 {
@@ -16,35 +17,43 @@ class ProdukSeeder extends Seeder
         // ========================================
         $katBeans = KategoriProduk::where('slug', 'kopi-beans')->first();
         if ($katBeans) {
-            Produk::updateOrCreate(
-                ['sku' => 'BEAN-ARB-001'],
+            $beansItems = [
                 [
-                    'kategori_id' => $katBeans->id,
+                    'sku' => 'BEAN-ARB-001',
                     'nama' => 'Arabica Beans',
                     'deskripsi' => 'Biji kopi Arabica premium',
-                    'tipe' => 'beans',
-                    'satuan_dasar' => 'gram',
                     'harga_modal' => 80000,
                     'harga_jual' => 100000,
-                    'aktif' => true,
-                    'perlu_kalibrasi' => false,
-                ]
-            );
-
-            Produk::updateOrCreate(
-                ['sku' => 'BEAN-ROB-001'],
+                ],
                 [
-                    'kategori_id' => $katBeans->id,
+                    'sku' => 'BEAN-ROB-001',
                     'nama' => 'Robusta Beans',
                     'deskripsi' => 'Biji kopi Robusta pilihan',
-                    'tipe' => 'beans',
-                    'satuan_dasar' => 'gram',
                     'harga_modal' => 60000,
                     'harga_jual' => 75000,
-                    'aktif' => true,
-                    'perlu_kalibrasi' => false,
-                ]
-            );
+                ],
+            ];
+
+            foreach ($beansItems as $item) {
+                $kelompokNama = $item['nama'];
+
+                Produk::updateOrCreate(
+                    ['sku' => $item['sku']],
+                    [
+                        'kategori_id' => $katBeans->id,
+                        'nama' => $item['nama'],
+                        'kelompok_nama' => $kelompokNama,
+                        'varian' => null,
+                        'deskripsi' => $item['deskripsi'],
+                        'tipe' => 'beans',
+                        'satuan_dasar' => 'gram',
+                        'harga_modal' => $item['harga_modal'],
+                        'harga_jual' => $item['harga_jual'],
+                        'aktif' => true,
+                        'perlu_kalibrasi' => false,
+                    ]
+                );
+            }
         }
 
         // ========================================
@@ -337,11 +346,37 @@ class ProdukSeeder extends Seeder
         ];
 
         foreach ($menuItems as $item) {
+            $nama = $item['nama'];
+            $kelompokNama = $nama;
+            $varian = null;
+
+            if (Str::startsWith($kelompokNama, ['Iced ', 'Ice '])) {
+                $kelompokNama = preg_replace('/^(Iced |Ice )/i', '', $kelompokNama);
+                $varian = 'Ice';
+            } elseif (Str::startsWith($kelompokNama, 'Es ')) {
+                $kelompokNama = preg_replace('/^Es /i', '', $kelompokNama);
+                $varian = 'Ice';
+            } elseif (Str::endsWith($kelompokNama, [' Ice', ' ice'])) {
+                $kelompokNama = preg_replace('/\s+Ice$/i', '', $kelompokNama);
+                $varian = 'Ice';
+            } elseif (Str::endsWith($kelompokNama, [' Hot', ' hot'])) {
+                $kelompokNama = preg_replace('/\s+Hot$/i', '', $kelompokNama);
+                $varian = 'Hot';
+            }
+
+            if ($varian === null && Str::contains(Str::upper($item['sku']), '-ICE-')) {
+                $varian = 'Ice';
+            } elseif ($varian === null && Str::contains(Str::upper($item['sku']), '-HOT-')) {
+                $varian = 'Hot';
+            }
+
             Produk::updateOrCreate(
                 ['sku' => $item['sku']],
                 [
                     'kategori_id' => $katMinuman->id,
-                    'nama' => $item['nama'],
+                    'nama' => $nama,
+                    'kelompok_nama' => $kelompokNama,
+                    'varian' => $varian,
                     'deskripsi' => $item['deskripsi'],
                     'tipe' => 'minuman',
                     'satuan_dasar' => 'pcs',
