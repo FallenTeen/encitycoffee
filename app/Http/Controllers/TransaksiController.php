@@ -174,10 +174,27 @@ class TransaksiController extends Controller
         // Removed permission checks - all users can view open bills
 
         $user = $request->user();
+        $status = $request->string('status')->toString();
+
         $query = OpenBill::query()
             ->with(['cabang:id,kode,nama', 'shift:id,status', 'user:id,name'])
-            ->where('status', 'open')
             ->latest();
+
+        if ($request->expectsJson()) {
+            $query->where('status', 'open');
+        } else {
+            if (in_array($status, ['open', 'closed', 'batal'], true)) {
+                $query->where('status', $status);
+            } elseif ($status === 'all' || $status === '') {
+                $status = $status === '' ? 'open' : $status;
+                if ($status === 'open') {
+                    $query->where('status', 'open');
+                }
+            } else {
+                $status = 'open';
+                $query->where('status', 'open');
+            }
+        }
 
         // Removed branch filtering - all users can see all branches
 
@@ -191,6 +208,7 @@ class TransaksiController extends Controller
         return Inertia::render('transaksi/OpenBillIndex', [
             'open_bills' => $openBills,
             'per_page' => $perPage,
+            'status' => $status,
         ]);
     }
 

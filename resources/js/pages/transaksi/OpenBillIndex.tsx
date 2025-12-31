@@ -23,6 +23,7 @@ interface Props {
     next_page_url: string | null;
   };
   per_page: number;
+  status?: string;
 }
 
 function formatCurrency(value: string | number | undefined | null) {
@@ -37,7 +38,9 @@ function formatDateTime(value?: string | null) {
   return d.toLocaleString('id-ID');
 }
 
-export default function OpenBillIndex({ open_bills, per_page }: Props) {
+export default function OpenBillIndex({ open_bills, per_page, status }: Props) {
+  const currentStatus = (status || 'open').toLowerCase();
+
   return (
     <AppLayout breadcrumbs={[{ title: 'Bill', href: '/transaksi/open-bill' }]}>
       <Head title="Bill" />
@@ -46,6 +49,29 @@ export default function OpenBillIndex({ open_bills, per_page }: Props) {
           <div>
             <h1 className="text-xl font-semibold">Daftar Bill</h1>
             <div className="text-sm text-muted-foreground">Total: {open_bills?.total ?? 0}</div>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              asChild
+              variant={currentStatus === 'open' ? 'default' : 'outline'}
+              size="sm"
+            >
+              <Link href="/transaksi/open-bill?status=open">Open</Link>
+            </Button>
+            <Button
+              asChild
+              variant={currentStatus === 'closed' ? 'default' : 'outline'}
+              size="sm"
+            >
+              <Link href="/transaksi/open-bill?status=closed">Closed</Link>
+            </Button>
+            <Button
+              asChild
+              variant={currentStatus === 'batal' ? 'default' : 'outline'}
+              size="sm"
+            >
+              <Link href="/transaksi/open-bill?status=batal">Cancel</Link>
+            </Button>
           </div>
         </div>
 
