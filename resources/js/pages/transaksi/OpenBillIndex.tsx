@@ -1,6 +1,5 @@
 import AppLayout from '@/layouts/app-layout';
 import { Button } from '@/components/ui/button';
-import transaksi from '@/routes/transaksi';
 import { Head, Link } from '@inertiajs/react';
 
 interface OpenBillItem {
@@ -40,7 +39,7 @@ function formatDateTime(value?: string | null) {
 
 export default function OpenBillIndex({ open_bills, per_page }: Props) {
   return (
-    <AppLayout breadcrumbs={[{ title: 'Bill', href: transaksi.openBill.index().url }]}>
+    <AppLayout breadcrumbs={[{ title: 'Bill', href: '/transaksi/open-bill' }]}>
       <Head title="Bill" />
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -78,7 +77,7 @@ export default function OpenBillIndex({ open_bills, per_page }: Props) {
                     </td>
                     <td className="py-2 px-4">{formatDateTime(ob.created_at)}</td>
                     <td className="py-2 px-4">
-                      <Link href={transaksi.openBill.show(ob.id)} className="text-primary underline">
+                      <Link href={`/transaksi/open-bill/${ob.id}`} className="text-primary underline">
                         Detail
                       </Link>
                     </td>
@@ -100,10 +99,10 @@ export default function OpenBillIndex({ open_bills, per_page }: Props) {
             </div>
             <div className="flex gap-2">
               <Button asChild variant="secondary" disabled={!open_bills?.prev_page_url}>
-                <Link href={open_bills?.prev_page_url ?? transaksi.openBill.index().url}>Sebelumnya</Link>
+                <Link href={open_bills?.prev_page_url ?? '/transaksi/open-bill'}>Sebelumnya</Link>
               </Button>
               <Button asChild variant="secondary" disabled={!open_bills?.next_page_url}>
-                <Link href={open_bills?.next_page_url ?? transaksi.openBill.index().url}>Berikutnya</Link>
+                <Link href={open_bills?.next_page_url ?? '/transaksi/open-bill'}>Berikutnya</Link>
               </Button>
             </div>
           </div>

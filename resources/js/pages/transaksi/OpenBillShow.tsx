@@ -1,6 +1,5 @@
 import { Head, Link } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
-import transaksi from '@/routes/transaksi';
 import { Button } from '@/components/ui/button';
 
 interface OpenBillShowProps {
@@ -36,7 +35,7 @@ export default function OpenBillShow({ open_bill }: OpenBillShowProps) {
   return (
     <AppLayout
       breadcrumbs={[
-        { title: 'Bill', href: transaksi.openBill.index().url },
+        { title: 'Bill', href: '/transaksi/open-bill' },
         { title: open_bill?.nomor_open_bill ?? `OB-${open_bill?.id ?? ''}`, href: `/transaksi/open-bill/${open_bill?.id ?? ''}` },
       ]}
     >
@@ -111,7 +110,7 @@ export default function OpenBillShow({ open_bill }: OpenBillShowProps) {
           </div>
           <div className="flex gap-2">
             <Button asChild variant="outline">
-              <Link href={transaksi.openBill.index().url}>Kembali</Link>
+              <Link href="/transaksi/open-bill">Kembali</Link>
             </Button>
           </div>
         </div>

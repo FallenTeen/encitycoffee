@@ -2,7 +2,6 @@ import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
-import transaksi from '@/routes/transaksi';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 
 interface Props {
@@ -46,7 +45,7 @@ export default function TransaksiIndex({ transaksis, filter_aktif }: Props) {
   });
 
   return (
-    <AppLayout breadcrumbs={[{ title: 'Transaksi', href: transaksi.index().url }]}>
+    <AppLayout breadcrumbs={[{ title: 'Transaksi', href: '/transaksi' }]}>
       <Head title="Transaksi" />
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -61,7 +60,7 @@ export default function TransaksiIndex({ transaksis, filter_aktif }: Props) {
             className="grid grid-cols-1 gap-4 md:grid-cols-4"
             onSubmit={(e) => {
               e.preventDefault();
-              get(transaksi.index().url, { preserveScroll: true, preserveState: true, replace: true });
+              get('/transaksi', { preserveScroll: true, preserveState: true, replace: true });
             }}
           >
             <div className="space-y-1">
@@ -105,7 +104,7 @@ export default function TransaksiIndex({ transaksis, filter_aktif }: Props) {
                 variant="secondary"
                 onClick={() => {
                   setData({ status: '', per_page: '15' });
-                  router.get(transaksi.index().url, {}, { preserveScroll: true, replace: true });
+                  router.get('/transaksi', {}, { preserveScroll: true, replace: true });
                 }}
               >
                 Reset
@@ -142,7 +141,7 @@ export default function TransaksiIndex({ transaksis, filter_aktif }: Props) {
                     </td>
                     <td className="py-2 px-4">{formatDateTime(t.created_at)}</td>
                     <td className="py-2 px-4">
-                      <Link href={transaksi.show(t.id)} className="text-primary underline">
+                      <Link href={`/transaksi/${t.id}/show`} className="text-primary underline">
                         Detail
                       </Link>
                     </td>
@@ -164,10 +163,10 @@ export default function TransaksiIndex({ transaksis, filter_aktif }: Props) {
             </div>
             <div className="flex gap-2">
               <Button asChild variant="secondary" disabled={!transaksis?.prev_page_url}>
-                <Link href={transaksis?.prev_page_url ?? transaksi.index()}>Sebelumnya</Link>
+                <Link href={transaksis?.prev_page_url ?? '/transaksi'}>Sebelumnya</Link>
               </Button>
               <Button asChild variant="secondary" disabled={!transaksis?.next_page_url}>
-                <Link href={transaksis?.next_page_url ?? transaksi.index()}>Berikutnya</Link>
+                <Link href={transaksis?.next_page_url ?? '/transaksi'}>Berikutnya</Link>
               </Button>
             </div>
           </div>

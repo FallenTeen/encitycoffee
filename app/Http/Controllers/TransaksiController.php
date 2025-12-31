@@ -212,6 +212,10 @@ class TransaksiController extends Controller
         $user = $request->user();
         $shift = $openBill->shift;
 
+        if ($openBill->status !== 'open') {
+            return response()->json(['error' => 'Open bill sudah tidak aktif'], 400);
+        }
+
         if (! $shift) {
             return response()->json(['error' => 'Shift untuk open bill tidak ditemukan'], 400);
         }
@@ -398,6 +402,10 @@ class TransaksiController extends Controller
 
         if ($shift->status !== 'buka') {
             return response()->json(['error' => 'Shift tidak terbuka'], 400);
+        }
+
+        if ($openBill->status !== 'open') {
+            return response()->json(['error' => 'Open bill sudah tidak aktif'], 400);
         }
 
         // Removed branch validation - all users can access any branch

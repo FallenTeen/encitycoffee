@@ -232,6 +232,10 @@ class TransaksiService
         ?string $catatan = null,
         ?string $namaPelanggan = null
     ) {
+        if ($openBill->status !== 'open') {
+            throw new \Exception('Open bill sudah tidak aktif');
+        }
+
         $shift = $openBill->shift;
         if (! $shift || $shift->status !== 'buka') {
             throw new \Exception('Shift tidak dalam status buka');
@@ -453,6 +457,9 @@ class TransaksiService
         if ($shift->status !== 'buka') {
             throw new \Exception('Shift tidak dalam status buka');
         }
+        if ($openBill->status !== 'open') {
+            throw new \Exception('Open bill sudah tidak aktif');
+        }
         if (empty($pembayaran)) {
             throw new \InvalidArgumentException('Pembayaran tidak boleh kosong');
         }
@@ -479,8 +486,8 @@ class TransaksiService
                 $openBill->nama_pelanggan
             );
 
-            // Update status open bill menjadi selesai
-            $openBill->update(['status' => 'selesai']);
+            // Update status open bill menjadi closed
+            $openBill->update(['status' => 'closed']);
 
             DB::commit();
             return $transaksi;
