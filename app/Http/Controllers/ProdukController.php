@@ -253,10 +253,11 @@ class ProdukController extends Controller
 
             $search = $request->input('search', '');
             $kategoriId = $request->input('kategori_id', '');
+            $base = $request->input('base', '');
             $perPage = $request->input('per_page', 20);
             $page = $request->input('page', 1);
 
-            $produk = $this->getProdukForApi($cabangId, $search, $kategoriId);
+            $produk = $this->getProdukForApi($cabangId, $search, $kategoriId, '', $base);
 
             $total = $produk->count();
             $offset = ($page - 1) * $perPage;
@@ -319,9 +320,10 @@ class ProdukController extends Controller
             $search = $request->input('search', '');
             $kategoriId = $request->input('kategori_id', '');
             $tipe = $request->input('tipe', '');
+            $base = $request->input('base', '');
             $perPage = $request->input('per_page', 20);
 
-            $produk = $this->getProdukForApi($cabangId, $search, $kategoriId, $tipe);
+            $produk = $this->getProdukForApi($cabangId, $search, $kategoriId, $tipe, $base);
 
             // Apply pagination
             $total = $produk->count();
@@ -945,7 +947,7 @@ class ProdukController extends Controller
         return in_array($user->role, ['it_support', 'manager', 'supervisor']);
     }
 
-    private function getProdukForApi($cabangId, $search = '', $kategoriId = '', $tipe = '')
+    private function getProdukForApi($cabangId, $search = '', $kategoriId = '', $tipe = '', $base = '')
     {
         if ($search) {
             $produk = $this->productCacheService->searchProduk($cabangId, $search);
@@ -961,6 +963,10 @@ class ProdukController extends Controller
             $produk = $produk->where('tipe', $tipe);
         }
 
+        if ($base) {
+            $produk = $produk->where('base', $base);
+        }
+
         return $produk->map(function ($item) {
             $imagePath = $item->image_path;
 
@@ -973,6 +979,7 @@ class ProdukController extends Controller
                 'deskripsi' => $item->deskripsi,
                 'harga_jual' => $item->harga_jual,
                 'tipe' => $item->tipe,
+                'base' => $item->base,
                 'kategori_id' => $item->kategori_id,
                 'image_path' => $imagePath,
                 'image_url' => $imagePath ? url('storage/' . ltrim($imagePath, '/')) : null,

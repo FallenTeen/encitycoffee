@@ -20,6 +20,7 @@ class Produk extends Model
         'deskripsi',
         'image_path',
         'tipe',
+        'base',
         'satuan_dasar',
         'harga_modal',
         'harga_jual',

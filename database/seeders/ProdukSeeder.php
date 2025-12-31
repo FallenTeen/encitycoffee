@@ -46,6 +46,7 @@ class ProdukSeeder extends Seeder
                         'varian' => null,
                         'deskripsi' => $item['deskripsi'],
                         'tipe' => 'beans',
+                        'base' => null,
                         'satuan_dasar' => 'gram',
                         'harga_modal' => $item['harga_modal'],
                         'harga_jual' => $item['harga_jual'],
@@ -349,6 +350,7 @@ class ProdukSeeder extends Seeder
             $nama = $item['nama'];
             $kelompokNama = $nama;
             $varian = null;
+            $base = null;
 
             if (Str::startsWith($kelompokNama, ['Iced ', 'Ice '])) {
                 $kelompokNama = preg_replace('/^(Iced |Ice )/i', '', $kelompokNama);
@@ -370,6 +372,18 @@ class ProdukSeeder extends Seeder
                 $varian = 'Hot';
             }
 
+            $lowerText = Str::lower($nama . ' ' . ($item['deskripsi'] ?? ''));
+
+            if (Str::contains($lowerText, ['matcha', 'chocolate', 'cokelat', 'milk'])) {
+                $base = 'milk';
+            } elseif (Str::contains($lowerText, ['tea', 'teh'])) {
+                $base = 'tea';
+            } elseif (Str::contains($lowerText, ['kopi', 'coffee', 'espresso', 'americano', 'latte', 'v60', 'tubruk', 'pour over', 'shaker'])) {
+                $base = 'coffee';
+            } else {
+                $base = 'others';
+            }
+
             Produk::updateOrCreate(
                 ['sku' => $item['sku']],
                 [
@@ -379,6 +393,7 @@ class ProdukSeeder extends Seeder
                     'varian' => $varian,
                     'deskripsi' => $item['deskripsi'],
                     'tipe' => 'minuman',
+                    'base' => $base,
                     'satuan_dasar' => 'pcs',
                     'harga_modal' => max(0, $item['harga_jual'] - 5000),
                     'harga_jual' => $item['harga_jual'],
