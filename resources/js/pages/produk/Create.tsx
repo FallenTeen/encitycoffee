@@ -246,9 +246,30 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
                   id="varian"
                   value={data.varian}
                   onChange={(e) => setData('varian', e.target.value)}
-                  placeholder="Contoh: Hot, Ice"
+                  placeholder="Contoh: Ice, Hot"
                 />
                 <InputError message={errors.varian as string} />
+                {data.tipe === 'minuman' && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-muted-foreground">
+                    <span>Pilih cepat:</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={data.varian === 'Ice' ? 'default' : 'outline'}
+                      onClick={() => setData('varian', data.varian === 'Ice' ? '' : 'Ice')}
+                    >
+                      ICE
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={data.varian === 'Hot' ? 'default' : 'outline'}
+                      onClick={() => setData('varian', data.varian === 'Hot' ? '' : 'Hot')}
+                    >
+                      HOT
+                    </Button>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1">
