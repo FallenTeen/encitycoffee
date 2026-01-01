@@ -54,6 +54,7 @@ class ProductCacheService
                 'produk.kategori_id',
                 'produk.harga_modal',
                 'produk.satuan_dasar',
+                'produk.aktif',
                 'produk.perlu_kalibrasi'
             ])
             ->orderBy('produk.nama')
@@ -109,6 +110,7 @@ class ProductCacheService
                 'produk.kategori_id',
                 'produk.harga_modal',
                 'produk.satuan_dasar',
+                'produk.aktif',
                 'produk.perlu_kalibrasi'
             ])
             ->orderBy('produk.nama')
