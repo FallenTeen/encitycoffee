@@ -70,6 +70,7 @@ export default function ProdukIndex({
     canManageProduk = false,
 }: Props) {
     const [viewMode, setViewMode] = useState<'table' | 'card'>('table');
+    const [togglingId, setTogglingId] = useState<number | null>(null);
     const aktifValue = filter_aktif?.aktif;
     const { data, setData, get, processing, errors } = useForm({
         pencarian: filter_aktif?.pencarian ?? '',
@@ -309,9 +310,48 @@ export default function ProdukIndex({
                                             {formatHarga(p.harga_jual)}
                                         </td>
                                         <td className="px-4 py-2">
-                                            <span className="inline-flex items-center rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                                                {p.aktif ? 'Aktif' : 'Nonaktif'}
-                                            </span>
+                                            {canManageProduk ? (
+                                                <button
+                                                    type="button"
+                                                    className={`inline-flex items-center rounded px-2 py-0.5 text-xs ${
+                                                        p.aktif
+                                                            ? 'bg-green-100 text-green-800'
+                                                            : 'bg-red-100 text-red-800'
+                                                    } ${togglingId === p.id ? 'opacity-70 cursor-not-allowed' : ''}`}
+                                                    disabled={togglingId === p.id}
+                                                    onClick={() => {
+                                                        const ok = window.confirm(
+                                                            `Ubah status produk ${p.nama}?`,
+                                                        );
+                                                        if (!ok) return;
+                                                        setTogglingId(p.id);
+                                                        router.post(
+                                                            `/produk/${p.id}/toggle-aktif`,
+                                                            {},
+                                                            {
+                                                                preserveScroll: true,
+                                                                preserveState: true,
+                                                                onFinish: () =>
+                                                                    setTogglingId(
+                                                                        null,
+                                                                    ),
+                                                            },
+                                                        );
+                                                    }}
+                                                >
+                                                    {togglingId === p.id
+                                                        ? 'Menyimpan...'
+                                                        : p.aktif
+                                                            ? 'Aktif'
+                                                            : 'Nonaktif'}
+                                                </button>
+                                            ) : (
+                                                <span className="inline-flex items-center rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                                                    {p.aktif
+                                                        ? 'Aktif'
+                                                        : 'Nonaktif'}
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="px-4 py-2">
                                             <div className="flex items-center gap-3">

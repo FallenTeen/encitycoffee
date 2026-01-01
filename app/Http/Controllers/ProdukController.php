@@ -287,6 +287,41 @@ class ProdukController extends Controller
         }
     }
 
+    public function toggleAktif(Request $request, $id)
+    {
+        try {
+            $user = auth()->user();
+
+            if (!$this->canManageProduk($user)) {
+                return back()->with('error', 'Anda tidak memiliki akses untuk mengubah status produk');
+            }
+
+            $produk = Produk::with(['stokEtalase'])->findOrFail($id);
+
+            if (in_array($user->role, ['manager', 'supervisor'])) {
+                $assignedCabangIds = $user->cabang->pluck('id')->all();
+                $produkCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
+
+                if (!array_intersect($assignedCabangIds, $produkCabangIds)) {
+                    return back()->with('error', 'Anda tidak memiliki akses untuk mengubah status produk ini');
+                }
+            }
+
+            $produk->aktif = ! $produk->aktif;
+            $produk->save();
+
+            $affectedCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
+            foreach (array_unique($affectedCabangIds) as $cabangId) {
+                $this->productCacheService->clearCache($cabangId);
+            }
+
+            return back()->with('success', 'Status produk berhasil diperbarui');
+        } catch (\Exception $e) {
+            Log::error('Error toggling produk status', ['error' => $e->getMessage(), 'produk_id' => $id]);
+            return back()->with('error', 'Gagal mengubah status produk');
+        }
+    }
+
     public function mobileProduk(Request $request)
     {
         try {
@@ -444,6 +479,7 @@ class ProdukController extends Controller
         $useCache = $request->boolean('use_cache', true);
         $search = $request->input('search', '');
         $kategoriId = $request->input('kategori_id', '');
+        $aktif = $request->input('aktif', null);
 
         if ($search) {
             $produk = $this->productCacheService->searchProduk($cabangId, $search, $useCache);
@@ -453,6 +489,14 @@ class ProdukController extends Controller
 
         if ($kategoriId) {
             $produk = $produk->where('kategori_id', $kategoriId);
+        }
+
+        if ($aktif !== null && $aktif !== '') {
+            if ($aktif === '1' || $aktif === 1 || $aktif === true || $aktif === 'true') {
+                $produk = $produk->where('aktif', true);
+            } elseif ($aktif === '0' || $aktif === 0 || $aktif === false || $aktif === 'false') {
+                $produk = $produk->where('aktif', false);
+            }
         }
 
         return $produk;
@@ -967,6 +1011,8 @@ class ProdukController extends Controller
             $produk = $produk->where('base', $base);
         }
 
+        $produk = $produk->where('aktif', true);
+
         return $produk->map(function ($item) {
             $imagePath = $item->image_path;
 
@@ -981,6 +1027,7 @@ class ProdukController extends Controller
                 'tipe' => $item->tipe,
                 'base' => $item->base,
                 'kategori_id' => $item->kategori_id,
+                'aktif' => $item->aktif,
                 'image_path' => $imagePath,
                 'image_url' => $imagePath ? url('storage/' . ltrim($imagePath, '/')) : null,
                 'stok_etalase' => $item->stokEtalase->first() ? [

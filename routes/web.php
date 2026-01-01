@@ -115,6 +115,8 @@ Route::middleware('auth')->group(function () {
         // Satuan routes
         Route::delete('/satuan/{satuan}', [ProdukController::class, 'deleteSatuan'])->name('satuan.delete');
         Route::post('/{produk}/satuan', [ProdukController::class, 'addSatuan'])->name('satuan.store');
+
+        Route::post('/{produk}/toggle-aktif', [ProdukController::class, 'toggleAktif'])->name('toggle-aktif');
         
         // DYNAMIC ROUTES (harus di bawah semua static routes)
         Route::get('/{produk}/edit', [ProdukController::class, 'edit'])->name('edit');
