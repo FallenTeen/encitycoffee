@@ -29,9 +29,26 @@ php artisan route:cache 2>&1 || true
 php artisan view:cache 2>&1 || true
 
 echo "📁 Syncing public folder..."
+
+# Backup webhook.php if exists
+WEBHOOK_BACKUP="/tmp/webhook_$(date +%s).php"
+if [ -f "$PUBLIC_PATH/webhook.php" ]; then
+    cp "$PUBLIC_PATH/webhook.php" "$WEBHOOK_BACKUP"
+    echo "  ↳ Backed up webhook.php"
+fi
+
+# Clear and sync public folder
 rm -rf $PUBLIC_PATH/*
 cp -r $APP_PATH/public/* $PUBLIC_PATH/
 cp $APP_PATH/public/.htaccess $PUBLIC_PATH/ 2>/dev/null || true
+
+# Restore webhook.php
+if [ -f "$WEBHOOK_BACKUP" ]; then
+    cp "$WEBHOOK_BACKUP" "$PUBLIC_PATH/webhook.php"
+    chmod 644 "$PUBLIC_PATH/webhook.php"
+    rm "$WEBHOOK_BACKUP"
+    echo "  ↳ Restored webhook.php"
+fi
 
 # Fix index.php path
 cat > $PUBLIC_PATH/index.php << 'INDEXEOF'
