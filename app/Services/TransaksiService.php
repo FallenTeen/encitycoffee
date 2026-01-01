@@ -274,6 +274,15 @@ class TransaksiService
                 'catatan' => $catatan,
                 'nama_pelanggan' => $namaPelanggan,
             ]);
+            $openBill->addAuditLog('content_update', [
+                'subtotal' => $subtotal,
+                'diskon' => $diskon,
+                'pajak' => $pajak,
+                'total' => $total,
+                'catatan' => $catatan,
+                'nama_pelanggan' => $namaPelanggan,
+                'items_count' => count($itemOpenBill),
+            ]);
 
             $openBill->items()->delete();
 
@@ -488,6 +497,14 @@ class TransaksiService
 
             // Update status open bill menjadi closed
             $openBill->update(['status' => 'closed']);
+            $openBill->addAuditLog('status_update', [
+                'from' => 'open',
+                'to' => 'closed',
+                'transaksi_id' => $transaksi->id ?? null,
+                'diskon' => $diskon,
+                'pajak' => $pajak,
+                'pembayaran' => $pembayaran,
+            ]);
 
             DB::commit();
             return $transaksi;

@@ -40,6 +40,11 @@ class ShiftService
                 'waktu_buka' => Carbon::now(),
                 'status' => 'buka',
             ]);
+            $shift->addAuditLog('open', [
+                'saldo_awal' => $saldoAwal,
+                'cabang_id' => $cabang->id,
+                'user_id' => $user->id,
+            ]);
 
             DB::commit();
             return $shift;
@@ -86,6 +91,15 @@ class ShiftService
                 'total_qris' => $totalQris,
                 'waktu_tutup' => Carbon::now(),
                 'status' => 'tutup',
+                'catatan' => $catatan,
+            ]);
+            $shift->addAuditLog('close', [
+                'saldo_awal' => $shift->saldo_awal,
+                'saldo_akhir' => $saldoAkhir,
+                'saldo_diharapkan' => $saldoDiharapkan,
+                'selisih' => $selisih,
+                'total_tunai' => $totalTunai,
+                'total_qris' => $totalQris,
                 'catatan' => $catatan,
             ]);
 

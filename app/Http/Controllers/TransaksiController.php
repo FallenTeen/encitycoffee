@@ -292,6 +292,10 @@ class TransaksiController extends Controller
         }
 
         $openBill->update(['status' => 'batal']);
+        $openBill->addAuditLog('status_update', [
+            'from' => 'open',
+            'to' => 'batal',
+        ]);
 
         return response()->json(['message' => 'Open bill berhasil dibatalkan']);
     }
