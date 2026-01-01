@@ -310,48 +310,58 @@ export default function ProdukIndex({
                                             {formatHarga(p.harga_jual)}
                                         </td>
                                         <td className="px-4 py-2">
-                                            {canManageProduk ? (
-                                                <button
-                                                    type="button"
-                                                    className={`inline-flex items-center rounded px-2 py-0.5 text-xs ${
-                                                        p.aktif
-                                                            ? 'bg-green-100 text-green-800'
-                                                            : 'bg-red-100 text-red-800'
-                                                    } ${togglingId === p.id ? 'opacity-70 cursor-not-allowed' : ''}`}
-                                                    disabled={togglingId === p.id}
-                                                    onClick={() => {
-                                                        const ok = window.confirm(
-                                                            `Ubah status produk ${p.nama}?`,
-                                                        );
-                                                        if (!ok) return;
-                                                        setTogglingId(p.id);
-                                                        router.post(
-                                                            `/produk/${p.id}/toggle-aktif`,
-                                                            {},
-                                                            {
-                                                                preserveScroll: true,
-                                                                preserveState: true,
-                                                                onFinish: () =>
-                                                                    setTogglingId(
-                                                                        null,
-                                                                    ),
-                                                            },
-                                                        );
-                                                    }}
-                                                >
-                                                    {togglingId === p.id
-                                                        ? 'Menyimpan...'
-                                                        : p.aktif
-                                                            ? 'Aktif'
-                                                            : 'Nonaktif'}
-                                                </button>
-                                            ) : (
-                                                <span className="inline-flex items-center rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                                                    {p.aktif
+                                            <button
+                                                type="button"
+                                                className={`inline-flex items-center rounded px-2 py-0.5 text-xs ${
+                                                    p.aktif
+                                                        ? 'bg-red-100 text-red-800'
+                                                        : 'bg-green-100 text-green-800'
+                                                } ${
+                                                    togglingId === p.id ||
+                                                    !canManageProduk
+                                                        ? 'opacity-70 cursor-not-allowed'
+                                                        : 'cursor-pointer'
+                                                }`}
+                                                disabled={
+                                                    togglingId === p.id ||
+                                                    !canManageProduk
+                                                }
+                                                title={`Status saat ini: ${
+                                                    p.aktif
                                                         ? 'Aktif'
-                                                        : 'Nonaktif'}
-                                                </span>
-                                            )}
+                                                        : 'Nonaktif'
+                                                }`}
+                                                onClick={() => {
+                                                    if (!canManageProduk) {
+                                                        return;
+                                                    }
+                                                    const ok = window.confirm(
+                                                        p.aktif
+                                                            ? `Nonaktifkan produk ${p.nama}?`
+                                                            : `Aktifkan produk ${p.nama}?`,
+                                                    );
+                                                    if (!ok) return;
+                                                    setTogglingId(p.id);
+                                                    router.post(
+                                                        `/produk/${p.id}/toggle-aktif`,
+                                                        {},
+                                                        {
+                                                            preserveScroll: true,
+                                                            preserveState: true,
+                                                            onFinish: () =>
+                                                                setTogglingId(
+                                                                    null,
+                                                                ),
+                                                        },
+                                                    );
+                                                }}
+                                            >
+                                                {togglingId === p.id
+                                                    ? 'Menyimpan...'
+                                                    : p.aktif
+                                                        ? 'Nonaktifkan'
+                                                        : 'Aktifkan'}
+                                            </button>
                                         </td>
                                         <td className="px-4 py-2">
                                             <div className="flex items-center gap-3">
