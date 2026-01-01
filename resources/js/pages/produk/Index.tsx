@@ -310,58 +310,78 @@ export default function ProdukIndex({
                                             {formatHarga(p.harga_jual)}
                                         </td>
                                         <td className="px-4 py-2">
-                                            <button
-                                                type="button"
-                                                className={`inline-flex items-center rounded px-2 py-0.5 text-xs ${
-                                                    p.aktif
-                                                        ? 'bg-red-100 text-red-800'
-                                                        : 'bg-green-100 text-green-800'
-                                                } ${
-                                                    togglingId === p.id ||
-                                                    !canManageProduk
-                                                        ? 'opacity-70 cursor-not-allowed'
-                                                        : 'cursor-pointer'
-                                                }`}
-                                                disabled={
-                                                    togglingId === p.id ||
-                                                    !canManageProduk
-                                                }
-                                                title={`Status saat ini: ${
-                                                    p.aktif
-                                                        ? 'Aktif'
-                                                        : 'Nonaktif'
-                                                }`}
-                                                onClick={() => {
-                                                    if (!canManageProduk) {
-                                                        return;
-                                                    }
-                                                    const ok = window.confirm(
+                                            <div className="flex items-center gap-2">
+                                                <span
+                                                    className={`text-xs ${
                                                         p.aktif
-                                                            ? `Nonaktifkan produk ${p.nama}?`
-                                                            : `Aktifkan produk ${p.nama}?`,
-                                                    );
-                                                    if (!ok) return;
-                                                    setTogglingId(p.id);
-                                                    router.post(
-                                                        `/produk/${p.id}/toggle-aktif`,
-                                                        {},
-                                                        {
-                                                            preserveScroll: true,
-                                                            preserveState: true,
-                                                            onFinish: () =>
-                                                                setTogglingId(
-                                                                    null,
-                                                                ),
-                                                        },
-                                                    );
-                                                }}
-                                            >
-                                                {togglingId === p.id
-                                                    ? 'Menyimpan...'
-                                                    : p.aktif
-                                                        ? 'Nonaktifkan'
-                                                        : 'Aktifkan'}
-                                            </button>
+                                                            ? 'text-green-700'
+                                                            : 'text-red-700'
+                                                    }`}
+                                                >
+                                                    {p.aktif
+                                                        ? 'Aktif'
+                                                        : 'Nonaktif'}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    className={`relative inline-flex h-5 w-9 items-center rounded-full border transition-colors ${
+                                                        p.aktif
+                                                            ? 'bg-green-500 border-green-500'
+                                                            : 'bg-gray-300 border-gray-300'
+                                                    } ${
+                                                        togglingId === p.id ||
+                                                        !canManageProduk
+                                                            ? 'opacity-60 cursor-not-allowed'
+                                                            : 'cursor-pointer'
+                                                    }`}
+                                                    disabled={
+                                                        togglingId === p.id ||
+                                                        !canManageProduk
+                                                    }
+                                                    aria-pressed={p.aktif}
+                                                    aria-label={
+                                                        p.aktif
+                                                            ? 'Nonaktifkan produk'
+                                                            : 'Aktifkan produk'
+                                                    }
+                                                    onClick={() => {
+                                                        if (!canManageProduk) {
+                                                            return;
+                                                        }
+                                                        const ok =
+                                                            window.confirm(
+                                                                p.aktif
+                                                                    ? `Nonaktifkan produk ${p.nama}?`
+                                                                    : `Aktifkan produk ${p.nama}?`,
+                                                            );
+                                                        if (!ok) return;
+                                                        setTogglingId(p.id);
+                                                        router.post(
+                                                            `/produk/${p.id}/toggle-aktif`,
+                                                            {},
+                                                            {
+                                                                preserveScroll:
+                                                                    true,
+                                                                preserveState:
+                                                                    true,
+                                                                onFinish:
+                                                                    () =>
+                                                                        setTogglingId(
+                                                                            null,
+                                                                        ),
+                                                            },
+                                                        );
+                                                    }}
+                                                >
+                                                    <span
+                                                        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                                                            p.aktif
+                                                                ? 'translate-x-4'
+                                                                : 'translate-x-1'
+                                                        }`}
+                                                    />
+                                                </button>
+                                            </div>
                                         </td>
                                         <td className="px-4 py-2">
                                             <div className="flex items-center gap-3">
