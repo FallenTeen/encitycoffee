@@ -31,6 +31,7 @@ interface ProdukItem {
     harga_jual: number | string;
     aktif: boolean;
     image_path?: string | null;
+    satuan_dasar: string;
     kategori?: { id: number; nama: string };
 }
 
@@ -44,10 +45,11 @@ interface ProdukPaginator {
 }
 
 interface FilterAktif {
+    cabang_id?: number | string | null;
     kategori_id?: number | string | null;
     tipe?: string | null;
     aktif?: boolean | string | null;
-    pencarian?: string | null;
+    search?: string | null;
 }
 
 interface Props {
@@ -73,7 +75,10 @@ export default function ProdukIndex({
     const [togglingId, setTogglingId] = useState<number | null>(null);
     const aktifValue = filter_aktif?.aktif;
     const { data, setData, get, processing, errors } = useForm({
-        pencarian: filter_aktif?.pencarian ?? '',
+        search: filter_aktif?.search ?? '',
+        cabang_id: filter_aktif?.cabang_id
+            ? String(filter_aktif.cabang_id)
+            : '',
         kategori_id: filter_aktif?.kategori_id
             ? String(filter_aktif.kategori_id)
             : '',
@@ -121,10 +126,17 @@ export default function ProdukIndex({
                         <div className="text-sm text-muted-foreground">
                             Total: {produks?.total ?? 0}
                         </div>
+                        {selectedCabang && (
+                            <div className="text-xs text-muted-foreground">
+                                Cabang: {selectedCabang.nama} ({selectedCabang.kode})
+                            </div>
+                        )}
                     </div>
-                    <Button asChild>
-                        <Link href="/produk/create">Tambah Produk</Link>
-                    </Button>
+                    {canManageProduk && (
+                        <Button asChild>
+                            <Link href="/produk/create">Tambah Produk</Link>
+                        </Button>
+                    )}
                 </div>
 
                 <div className="rounded-md border p-4">
@@ -139,14 +151,40 @@ export default function ProdukIndex({
                             <Label htmlFor="pencarian">Cari</Label>
                             <Input
                                 id="pencarian"
-                                value={data.pencarian}
+                                value={data.search}
                                 onChange={(e) =>
-                                    setData('pencarian', e.target.value)
+                                    setData('search', e.target.value)
                                 }
                                 placeholder="Nama atau SKU"
                             />
-                            <InputError message={errors.pencarian as string} />
+                            <InputError message={errors.search as string} />
                         </div>
+
+                        {cabangList && cabangList.length > 0 && (
+                            <div className="space-y-1">
+                                <Label>Cabang</Label>
+                                <Select
+                                    value={data.cabang_id}
+                                    onValueChange={(value) =>
+                                        setData('cabang_id', value)
+                                    }
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Pilih cabang" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {cabangList.map((cabang) => (
+                                            <SelectItem
+                                                key={cabang.id}
+                                                value={String(cabang.id)}
+                                            >
+                                                {cabang.nama} ({cabang.kode})
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        )}
 
                         <div className="space-y-1">
                             <Label>Kategori</Label>
@@ -240,14 +278,17 @@ export default function ProdukIndex({
                                 variant="secondary"
                                 onClick={() => {
                                     setData({
-                                        pencarian: '',
+                                        ...data,
+                                        search: '',
                                         kategori_id: '',
                                         tipe: '',
                                         aktif: '',
                                     });
                                     router.get(
                                         '/produk',
-                                        {},
+                                        data.cabang_id
+                                            ? { cabang_id: data.cabang_id }
+                                            : {},
                                         { preserveScroll: true, replace: true },
                                     );
                                 }}
@@ -265,10 +306,12 @@ export default function ProdukIndex({
                                 <tr className="border-b text-left">
                                     <th className="px-4 py-2">Gambar</th>
                                     <th className="px-4 py-2">SKU</th>
-                                    <th className="px-4 py-2">Nama</th>
-                                    <th className="px-4 py-2">Kategori</th>
-                                    <th className="px-4 py-2">Tipe</th>
-                                    <th className="px-4 py-2">Harga Jual</th>
+                                    <th className="px-4 py-2">Nama Produk</th>
+                                    <th className="px-4 py-2">
+                                        Kategori (Makanan/Minuman)
+                                    </th>
+                                    <th className="px-4 py-2">Harga</th>
+                                    <th className="px-4 py-2">Satuan Dasar</th>
                                     <th className="px-4 py-2">Status</th>
                                     <th className="px-4 py-2">Aksi</th>
                                 </tr>
@@ -301,13 +344,15 @@ export default function ProdukIndex({
                                                 : p.nama}
                                         </td>
                                         <td className="px-4 py-2">
-                                            {p.kategori?.nama ?? '-'}
-                                        </td>
-                                        <td className="px-4 py-2 capitalize">
-                                            {p.tipe}
+                                            {p.tipe === 'minuman'
+                                                ? 'Minuman'
+                                                : 'Makanan'}
                                         </td>
                                         <td className="px-4 py-2">
                                             {formatHarga(p.harga_jual)}
+                                        </td>
+                                        <td className="px-4 py-2">
+                                            {p.satuan_dasar}
                                         </td>
                                         <td className="px-4 py-2">
                                             <div className="flex items-center gap-2">
@@ -391,31 +436,37 @@ export default function ProdukIndex({
                                                 >
                                                     Detail
                                                 </Link>
-                                                <Link
-                                                    href={`/produk/${p.id}/edit`}
-                                                    className="text-primary underline"
-                                                >
-                                                    Edit
-                                                </Link>
-                                                <button
-                                                    type="button"
-                                                    className="text-destructive underline"
-                                                    onClick={() => {
-                                                        const ok =
-                                                            window.confirm(
-                                                                `Hapus produk ${p.nama}?`,
-                                                            );
-                                                        if (!ok) return;
-                                                        router.delete(
-                                                            `/produk/${p.id}`,
-                                                            {
-                                                                preserveScroll: true,
-                                                            },
-                                                        );
-                                                    }}
-                                                >
-                                                    Hapus
-                                                </button>
+                                                {canManageProduk && (
+                                                    <>
+                                                        <Link
+                                                            href={`/produk/${p.id}/edit`}
+                                                            className="text-primary underline"
+                                                        >
+                                                            Edit
+                                                        </Link>
+                                                        <button
+                                                            type="button"
+                                                            className="text-destructive underline"
+                                                            onClick={() => {
+                                                                const ok =
+                                                                    window.confirm(
+                                                                        `Hapus produk ${p.nama}?`,
+                                                                    );
+                                                                if (!ok)
+                                                                    return;
+                                                                router.delete(
+                                                                    `/produk/${p.id}`,
+                                                                    {
+                                                                        preserveScroll:
+                                                                            true,
+                                                                    },
+                                                                );
+                                                            }}
+                                                        >
+                                                            Hapus
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -423,7 +474,7 @@ export default function ProdukIndex({
                                 {(produks?.data ?? []).length === 0 && (
                                     <tr>
                                         <td
-                                            colSpan={7}
+                                            colSpan={8}
                                             className="px-4 py-8 text-center text-muted-foreground"
                                         >
                                             Belum ada data produk.

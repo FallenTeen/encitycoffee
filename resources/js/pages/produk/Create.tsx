@@ -47,6 +47,8 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
   const [skuStatus, setSkuStatus] = useState<'idle' | 'checking' | 'taken' | 'available'>('idle');
   const [skuLabel, setSkuLabel] = useState('');
   const skuCheckTimeout = useRef<number | null>(null);
+  const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
+  const [satuanMode, setSatuanMode] = useState<'gram' | 'liter' | 'custom' | ''>('');
 
   const checkSkuAvailability = (value: string) => {
     if (!value) {
@@ -127,6 +129,61 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
               className="grid grid-cols-1 gap-4 md:grid-cols-2"
               onSubmit={(e) => {
                 e.preventDefault();
+
+                const nextErrors: Record<string, string> = {};
+                const kategoriMenuValue =
+                  data.tipe === 'minuman' ? 'minuman' : data.tipe ? 'makanan' : '';
+
+                if (!data.sku.trim()) {
+                  nextErrors.sku = 'SKU wajib diisi';
+                }
+
+                if (!data.nama.trim()) {
+                  nextErrors.nama = 'Nama produk wajib diisi';
+                }
+
+                if (!data.kategori_id) {
+                  nextErrors.kategori_id = 'Kategori wajib dipilih';
+                }
+
+                if (!kategoriMenuValue) {
+                  nextErrors.kategori_menu = 'Kategori menu wajib dipilih';
+                }
+
+                if (!data.satuan_dasar.trim()) {
+                  nextErrors.satuan_dasar = 'Satuan dasar wajib diisi';
+                }
+
+                const hargaModal = Number(data.harga_modal);
+                if (
+                  !data.harga_modal ||
+                  Number.isNaN(hargaModal) ||
+                  hargaModal < 0
+                ) {
+                  nextErrors.harga_modal =
+                    'Harga modal harus berupa angka dan tidak boleh negatif';
+                }
+
+                const hargaJual = Number(data.harga_jual);
+                if (
+                  !data.harga_jual ||
+                  Number.isNaN(hargaJual) ||
+                  hargaJual < 0
+                ) {
+                  nextErrors.harga_jual =
+                    'Harga jual harus berupa angka dan tidak boleh negatif';
+                }
+
+                if (skuStatus === 'taken') {
+                  nextErrors.sku = 'SKU ini sudah dipakai';
+                }
+
+                if (Object.keys(nextErrors).length > 0) {
+                  setClientErrors(nextErrors);
+                  return;
+                }
+
+                setClientErrors({});
                 post('/produk');
               }}
             >
@@ -147,7 +204,9 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
                     ))}
                   </SelectContent>
                 </Select>
-                <InputError message={errors.kategori_id as string} />
+                <InputError
+                  message={clientErrors.kategori_id || (errors.kategori_id as string)}
+                />
               </div>
 
               <div className="space-y-1">
@@ -186,7 +245,9 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <InputError message={errors.sku as string} />
+                <InputError
+                  message={clientErrors.sku || (errors.sku as string)}
+                />
                 <div className="mt-2 space-y-1 text-xs">
                   <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-2">
                     <span>Label untuk generator:</span>
@@ -226,7 +287,9 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
                   }}
                   placeholder="Nama produk"
                 />
-                <InputError message={errors.nama as string} />
+                <InputError
+                  message={clientErrors.nama || (errors.nama as string)}
+                />
               </div>
 
               <div className="space-y-1">
@@ -270,6 +333,35 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
                     </Button>
                   </div>
                 )}
+              </div>
+
+              <div className="space-y-1">
+                <Label>Kategori Menu</Label>
+                <Select
+                  value={
+                    data.tipe === 'minuman'
+                      ? 'minuman'
+                      : data.tipe
+                      ? 'makanan'
+                      : ''
+                  }
+                  onValueChange={(value) => {
+                    if (value === 'minuman') {
+                      setData('tipe', 'minuman');
+                    } else if (value === 'makanan') {
+                      setData('tipe', 'snack');
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih kategori menu" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="makanan">Makanan</SelectItem>
+                    <SelectItem value="minuman">Minuman</SelectItem>
+                  </SelectContent>
+                </Select>
+                <InputError message={clientErrors.kategori_menu} />
               </div>
 
               <div className="space-y-1">
@@ -324,21 +416,54 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
               <div className="space-y-1">
                 <Label htmlFor="satuan_dasar">Satuan Dasar</Label>
                 <Select
-                  value={data.satuan_dasar}
-                  onValueChange={(value) => setData('satuan_dasar', value)}
+                  value={
+                    satuanMode ||
+                    (data.satuan_dasar === 'gram' ||
+                    data.satuan_dasar === 'liter'
+                      ? (data.satuan_dasar as 'gram' | 'liter')
+                      : data.satuan_dasar
+                      ? 'custom'
+                      : '')
+                  }
+                  onValueChange={(value) => {
+                    if (value === 'gram' || value === 'liter') {
+                      setSatuanMode(value);
+                      setData('satuan_dasar', value);
+                    } else if (value === 'custom') {
+                      setSatuanMode('custom');
+                      setData('satuan_dasar', data.satuan_dasar || '');
+                    } else {
+                      setSatuanMode('');
+                      setData('satuan_dasar', '');
+                    }
+                  }}
                 >
                   <SelectTrigger id="satuan_dasar">
                     <SelectValue placeholder="Pilih satuan" />
                   </SelectTrigger>
                   <SelectContent>
-                    {(satuan_options ?? []).map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="gram">Gram</SelectItem>
+                    <SelectItem value="liter">Liter</SelectItem>
+                    <SelectItem value="custom">Input manual</SelectItem>
                   </SelectContent>
                 </Select>
-                <InputError message={errors.satuan_dasar as string} />
+                {satuanMode === 'custom' && (
+                  <div className="pt-2">
+                    <Input
+                      value={data.satuan_dasar}
+                      onChange={(e) =>
+                        setData('satuan_dasar', e.target.value)
+                      }
+                      placeholder="Contoh: pcs, botol"
+                    />
+                  </div>
+                )}
+                <InputError
+                  message={
+                    clientErrors.satuan_dasar ||
+                    (errors.satuan_dasar as string)
+                  }
+                />
               </div>
 
               <div className="space-y-1">
@@ -351,7 +476,12 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
                   onChange={(e) => setData('harga_modal', e.target.value)}
                   placeholder="Contoh: 25000"
                 />
-                <InputError message={errors.harga_modal as string} />
+                <InputError
+                  message={
+                    clientErrors.harga_modal ||
+                    (errors.harga_modal as string)
+                  }
+                />
               </div>
 
               <div className="space-y-1">
@@ -364,7 +494,12 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
                   onChange={(e) => setData('harga_jual', e.target.value)}
                   placeholder="Contoh: 35000"
                 />
-                <InputError message={errors.harga_jual as string} />
+                <InputError
+                  message={
+                    clientErrors.harga_jual ||
+                    (errors.harga_jual as string)
+                  }
+                />
               </div>
 
               <div className="space-y-1">

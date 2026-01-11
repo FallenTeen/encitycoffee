@@ -67,7 +67,7 @@ class ProdukController extends Controller
                     'produks' => $produks,
                     'cabangList' => $this->getCabangList($user),
                     'selectedCabang' => null,
-                    'filter_aktif' => ['pencarian' => '', 'cabang_id' => null, 'kategori_id' => null, 'tipe' => null, 'aktif' => null],
+                    'filter_aktif' => ['search' => '', 'cabang_id' => null, 'kategori_id' => null, 'tipe' => null, 'aktif' => null],
                     'kategori_list' => KategoriProduk::select('id','nama')->get(),
                     'cacheInfo' => null,
                     'canManageProduk' => $this->canManageProduk($user),
@@ -135,7 +135,7 @@ class ProdukController extends Controller
                 'cabangList' => $this->getCabangList($user),
                 'selectedCabang' => $selectedCabang,
                 'filter_aktif' => [
-                    'pencarian' => $request->input('search', ''),
+                    'search' => $request->input('search', ''),
                     'cabang_id' => $cabangId,
                     'kategori_id' => $request->input('kategori_id', ''),
                     'tipe' => $request->input('tipe', ''),
@@ -480,6 +480,7 @@ class ProdukController extends Controller
         $search = $request->input('search', '');
         $kategoriId = $request->input('kategori_id', '');
         $aktif = $request->input('aktif', null);
+        $tipe = $request->input('tipe', '');
 
         if ($search) {
             $produk = $this->productCacheService->searchProduk($cabangId, $search, $useCache);
@@ -489,6 +490,10 @@ class ProdukController extends Controller
 
         if ($kategoriId) {
             $produk = $produk->where('kategori_id', $kategoriId);
+        }
+
+        if ($tipe) {
+            $produk = $produk->where('tipe', $tipe);
         }
 
         if ($aktif !== null && $aktif !== '') {
