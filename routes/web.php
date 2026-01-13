@@ -27,9 +27,7 @@ Route::get('/', function () {
         return redirect()->route('dashboard');
     }
 
-    return Inertia::render('welcome', [
-        'canRegister' => true,
-    ]);
+    return redirect()->route('login');
 })->name('home');
 
 // ============================================================================
@@ -153,8 +151,8 @@ Route::middleware('auth')->group(function () {
         Route::get('/pendapatan-kategori', [LaporanController::class, 'pendapatanKategori'])->name('pendapatan-kategori');
         Route::get('/stok', [LaporanController::class, 'stok'])->name('stok');
         Route::get('/kinerja-kasir', [LaporanController::class, 'kinerjaKasir'])->name('kinerja-kasir');
-        Route::post('/export-pdf', [LaporanController::class, 'exportPdf'])->name('export.pdf');
-        Route::post('/export-excel', [LaporanController::class, 'exportExcel'])->name('export.excel');
+        Route::match(['get', 'post'], '/export-pdf', [LaporanController::class, 'exportPdf'])->name('export.pdf');
+        Route::match(['get', 'post'], '/export-excel', [LaporanController::class, 'exportExcel'])->name('export.excel');
         Route::get('/shift/{shift}', [LaporanController::class, 'detailShift'])->name('shift.detail');
     });
 

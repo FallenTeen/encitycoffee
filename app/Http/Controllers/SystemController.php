@@ -19,6 +19,7 @@ class SystemController extends Controller
     }
     public function logs(Request $request)
     {
+        abort(404);
 
         abort_unless(Gate::allows('view-admin-dashboard'), 403);
 

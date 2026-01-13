@@ -1083,24 +1083,28 @@ class LaporanController extends Controller
             'tipe' => 'nullable|string',
         ]);
 
-        switch ($validated['jenis']) {
-            case 'penjualan_produk':
-                $data = $this->penjualanProduk($request->merge(['expectsJson' => true]));
-                break;
-            case 'stok':
-                $data = $this->stok($request->merge(['expectsJson' => true]));
-                break;
-            case 'kinerja_kasir':
-                $data = $this->kinerjaKasir($request->merge(['expectsJson' => true]));
-                break;
-            default:
-                $data = null;
+        $jenis = $validated['jenis'];
+
+        if ($jenis === 'penjualan_produk') {
+            $response = $this->penjualanProduk($request->merge(['expectsJson' => true]));
+        } elseif ($jenis === 'stok') {
+            $response = $this->stok($request->merge(['expectsJson' => true]));
+        } else {
+            $response = $this->kinerjaKasir($request->merge(['expectsJson' => true]));
         }
 
-        return response()->json([
-            'status' => 'not_implemented',
-            'reason' => 'pdf_library_missing',
-            'preview' => optional($data)->getData(true) ?? null,
+        $payload = method_exists($response, 'getData')
+            ? $response->getData(true)
+            : [];
+
+        $html = view('exports.laporan-generic', [
+            'jenis' => $jenis,
+            'data' => $payload,
+            'generated_at' => now()->toDateTimeString(),
+        ])->render();
+
+        return response($html, 200, [
+            'Content-Type' => 'text/html; charset=UTF-8',
         ]);
     }
 
@@ -1117,24 +1121,82 @@ class LaporanController extends Controller
             'tipe' => 'nullable|string',
         ]);
 
-        switch ($validated['jenis']) {
-            case 'penjualan_produk':
-                $data = $this->penjualanProduk($request->merge(['expectsJson' => true]));
-                break;
-            case 'stok':
-                $data = $this->stok($request->merge(['expectsJson' => true]));
-                break;
-            case 'kinerja_kasir':
-                $data = $this->kinerjaKasir($request->merge(['expectsJson' => true]));
-                break;
-            default:
-                $data = null;
+        $jenis = $validated['jenis'];
+
+        if ($jenis === 'penjualan_produk') {
+            $response = $this->penjualanProduk($request->merge(['expectsJson' => true]));
+            $payload = method_exists($response, 'getData') ? $response->getData(true) : [];
+            $rows = $payload['top_produk'] ?? [];
+            $filename = 'laporan_penjualan_produk.csv';
+            $header = ['Produk', 'Total Terjual', 'Pendapatan', 'Rata-rata/Transaksi', 'Kontribusi %'];
+            $extract = function ($row) {
+                return [
+                    $row['nama'] ?? '',
+                    $row['total_terjual'] ?? 0,
+                    $row['pendapatan'] ?? 0,
+                    $row['rata_rata_per_transaksi'] ?? 0,
+                    $row['kontribusi_persen'] ?? 0,
+                ];
+            };
+        } elseif ($jenis === 'stok') {
+            $response = $this->stok($request->merge(['expectsJson' => true]));
+            $payload = method_exists($response, 'getData') ? $response->getData(true) : [];
+            $ringkasan = $payload['data'] ?? [];
+            $rows = $ringkasan['per_cabang'] ?? [];
+            $filename = 'laporan_stok.csv';
+            $header = ['Cabang', 'Nilai Inventori', 'Jumlah Stok Rendah'];
+            $extract = function ($row) {
+                return [
+                    $row['cabang'] ?? '',
+                    $row['nilai_inventori'] ?? 0,
+                    $row['stok_rendah_count'] ?? 0,
+                ];
+            };
+        } else {
+            $response = $this->kinerjaKasir($request->merge(['expectsJson' => true]));
+            $payload = method_exists($response, 'getData') ? $response->getData(true) : [];
+            $data = $payload['data'] ?? [];
+            $rows = $data['kinerja'] ?? $data ?? [];
+            $filename = 'laporan_kinerja_kasir.csv';
+            $header = [
+                'Kasir',
+                'Total Shift',
+                'Total Transaksi',
+                'Total Penjualan',
+                'Jam Kerja',
+                'Rata-rata/Shift',
+                'Penjualan Per Jam',
+                'Total Selisih',
+            ];
+            $extract = function ($row) {
+                return [
+                    $row['name'] ?? '',
+                    $row['total_shift'] ?? 0,
+                    $row['total_transaksi'] ?? 0,
+                    $row['total_penjualan'] ?? 0,
+                    $row['jam_kerja'] ?? 0,
+                    $row['rata_rata_per_shift'] ?? 0,
+                    $row['penjualan_per_jam'] ?? 0,
+                    $row['selisih_total'] ?? 0,
+                ];
+            };
         }
 
-        return response()->json([
-            'status' => 'not_implemented',
-            'reason' => 'excel_library_missing',
-            'preview' => optional($data)->getData(true) ?? null,
+        $handle = fopen('php://temp', 'r+');
+        fputcsv($handle, $header);
+        foreach ($rows as $row) {
+            $normalized = is_object($row) ? (array) $row : $row;
+            fputcsv($handle, $extract($normalized));
+        }
+        rewind($handle);
+        $csv = stream_get_contents($handle) ?: '';
+        fclose($handle);
+
+        $disposition = 'attachment; filename="'.$filename.'"';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => $disposition,
         ]);
     }
 

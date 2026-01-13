@@ -55,7 +55,6 @@ function getMainNavItems(role?: string): NavGroup[] {
                 { title: 'Dashboard', href: admin.dashboard(), icon: LayoutDashboard },
                 { title: 'Cabang', href: admin.cabang.index(), icon: Building },
                 { title: 'Pengguna', href: admin.users.index(), icon: Users },
-                { title: 'System Logs', href: admin.system.logs(), icon: FileText },
             ],
         });
         groups.push({
