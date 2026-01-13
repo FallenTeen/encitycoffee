@@ -72,7 +72,7 @@ export default function LaporanShift({ shift, statistik_ringkasan, filter_aktif 
         tanggal_selesai: filter_aktif?.tanggal_selesai ?? '',
         cabang_id: filter_aktif?.cabang_id ? String(filter_aktif.cabang_id) : '',
         user_id: filter_aktif?.user_id ? String(filter_aktif.user_id) : '',
-        status: filter_aktif?.status ?? '',
+        status: filter_aktif?.status || 'all',
     });
 
     const submit = () => {
@@ -106,7 +106,7 @@ export default function LaporanShift({ shift, statistik_ringkasan, filter_aktif 
                                 tanggal_selesai: '',
                                 cabang_id: '',
                                 user_id: '',
-                                status: '',
+                                status: 'all',
                             } as any);
                         }}
                     >
@@ -154,7 +154,7 @@ export default function LaporanShift({ shift, statistik_ringkasan, filter_aktif 
                                         <SelectValue placeholder="Semua status" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="">Semua status</SelectItem>
+                                        <SelectItem value="all">Semua status</SelectItem>
                                         <SelectItem value="buka">Buka</SelectItem>
                                         <SelectItem value="tutup">Tutup</SelectItem>
                                     </SelectContent>

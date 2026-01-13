@@ -72,7 +72,7 @@ export default function PendapatanKategoriPage({
   const { data, setData, get, processing, errors } = useForm({
     tanggal_mulai: filter_aktif?.tanggal_mulai ?? '',
     tanggal_selesai: filter_aktif?.tanggal_selesai ?? '',
-    kategori_id: filter_aktif?.kategori_id ? String(filter_aktif.kategori_id) : '',
+    kategori_id: filter_aktif?.kategori_id ? String(filter_aktif.kategori_id) : 'all',
     harga_min:
       filter_aktif?.harga_min !== undefined && filter_aktif?.harga_min !== null
         ? String(filter_aktif.harga_min)
@@ -146,7 +146,7 @@ export default function PendapatanKategoriPage({
               setData({
                 tanggal_mulai: '',
                 tanggal_selesai: '',
-                kategori_id: '',
+                kategori_id: 'all',
                 harga_min: '',
                 harga_max: '',
               });
@@ -198,7 +198,7 @@ export default function PendapatanKategoriPage({
                     <SelectValue placeholder="Semua kategori" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Semua kategori</SelectItem>
+                    <SelectItem value="all">Semua kategori</SelectItem>
                     {(kategori_options ?? []).map((k) => (
                       <SelectItem key={k.id} value={String(k.id)}>
                         {k.nama}

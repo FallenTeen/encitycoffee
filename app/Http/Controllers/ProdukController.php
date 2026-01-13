@@ -590,7 +590,7 @@ class ProdukController extends Controller
             $validator = Validator::make($request->all(), [
                 'sku' => 'required|string|max:50|unique:produk',
                 'nama' => 'required|string|max:255',
-                'kelompok_nama' => 'required|string|max:255',
+                'kelompok_nama' => 'nullable|string|max:255',
                 'varian' => 'nullable|string|max:50',
                 'deskripsi' => 'nullable|string',
                 'kategori_id' => 'required|exists:kategori_produk,id',
@@ -629,6 +629,10 @@ class ProdukController extends Controller
 
             if (empty($data['kelompok_nama'])) {
                 $data['kelompok_nama'] = $data['nama'];
+            }
+
+            if (isset($data['satuan_dasar'])) {
+                $data['satuan_dasar'] = strtolower(trim($data['satuan_dasar']));
             }
 
             if ($request->hasFile('image')) {
@@ -815,7 +819,7 @@ class ProdukController extends Controller
             $validator = Validator::make($request->all(), [
                 'sku' => 'required|string|max:50|unique:produk,sku,' . $id,
                 'nama' => 'required|string|max:255',
-                'kelompok_nama' => 'required|string|max:255',
+                'kelompok_nama' => 'nullable|string|max:255',
                 'varian' => 'nullable|string|max:50',
                 'deskripsi' => 'nullable|string',
                 'kategori_id' => 'required|exists:kategori_produk,id',
@@ -856,6 +860,10 @@ class ProdukController extends Controller
 
             if (empty($data['kelompok_nama'])) {
                 $data['kelompok_nama'] = $data['nama'];
+            }
+
+            if (isset($data['satuan_dasar'])) {
+                $data['satuan_dasar'] = strtolower(trim($data['satuan_dasar']));
             }
 
             if ($request->boolean('hapus_gambar')) {

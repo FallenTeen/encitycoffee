@@ -33,6 +33,7 @@ interface ProdukItem {
     image_path?: string | null;
     satuan_dasar: string;
     kategori?: { id: number; nama: string };
+    stok_etalase?: Array<{ jumlah: number | string; stok_minimum?: number | string }>;
 }
 
 interface ProdukPaginator {
@@ -304,14 +305,11 @@ export default function ProdukIndex({
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="border-b text-left">
-                                    <th className="px-4 py-2">Gambar</th>
-                                    <th className="px-4 py-2">SKU</th>
+                                    <th className="px-4 py-2">ID Produk</th>
                                     <th className="px-4 py-2">Nama Produk</th>
-                                    <th className="px-4 py-2">
-                                        Kategori (Makanan/Minuman)
-                                    </th>
+                                    <th className="px-4 py-2">Kategori</th>
                                     <th className="px-4 py-2">Harga</th>
-                                    <th className="px-4 py-2">Satuan Dasar</th>
+                                    <th className="px-4 py-2">Stok</th>
                                     <th className="px-4 py-2">Status</th>
                                     <th className="px-4 py-2">Aksi</th>
                                 </tr>
@@ -323,36 +321,40 @@ export default function ProdukIndex({
                                         className="border-b last:border-0"
                                     >
                                         <td className="px-4 py-2">
-                                            {p.image_path ? (
-                                                <img
-                                                    src={`/storage/${p.image_path}`}
-                                                    alt={p.nama}
-                                                    className="h-12 w-12 rounded object-cover"
-                                                />
-                                            ) : (
-                                                <div className="flex h-12 w-12 items-center justify-center rounded bg-muted text-xs text-muted-foreground">
-                                                    No img
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td className="px-4 py-2 font-mono text-xs">
-                                            {p.sku}
+                                            <span className="font-mono text-xs">
+                                                {p.id}
+                                            </span>
                                         </td>
                                         <td className="px-4 py-2 font-medium">
-                                            {p.varian
-                                                ? `${p.varian} ${p.kelompok_nama || p.nama}`
-                                                : p.nama}
+                                            <div>
+                                                {p.varian
+                                                    ? `${p.varian} ${p.kelompok_nama || p.nama}`
+                                                    : p.nama}
+                                            </div>
+                                            <div className="text-xs text-muted-foreground">
+                                                SKU: {p.sku}
+                                            </div>
                                         </td>
                                         <td className="px-4 py-2">
-                                            {p.tipe === 'minuman'
-                                                ? 'Minuman'
-                                                : 'Makanan'}
+                                            <div>
+                                                {p.tipe === 'minuman'
+                                                    ? 'Minuman'
+                                                    : 'Makanan'}
+                                            </div>
+                                            {p.kategori?.nama && (
+                                                <div className="text-xs text-muted-foreground">
+                                                    {p.kategori.nama}
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="px-4 py-2">
                                             {formatHarga(p.harga_jual)}
                                         </td>
                                         <td className="px-4 py-2">
-                                            {p.satuan_dasar}
+                                            {p.stok_etalase &&
+                                            p.stok_etalase.length > 0
+                                                ? p.stok_etalase[0].jumlah
+                                                : '-'}
                                         </td>
                                         <td className="px-4 py-2">
                                             <div className="flex items-center gap-2">
@@ -474,7 +476,7 @@ export default function ProdukIndex({
                                 {(produks?.data ?? []).length === 0 && (
                                     <tr>
                                         <td
-                                            colSpan={8}
+                                            colSpan={7}
                                             className="px-4 py-8 text-center text-muted-foreground"
                                         >
                                             Belum ada data produk.

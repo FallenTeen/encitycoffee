@@ -458,6 +458,9 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
                     />
                   </div>
                 )}
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Pilih Gram untuk bahan baku, Liter untuk minuman, atau input manual seperti pcs/botol.
+                </p>
                 <InputError
                   message={
                     clientErrors.satuan_dasar ||

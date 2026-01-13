@@ -58,7 +58,7 @@ class LaporanController extends Controller
         if (!empty($validated['user_id'])) {
             $query->where('user_id', (int) $validated['user_id']);
         }
-        if (!empty($validated['status'])) {
+        if (!empty($validated['status']) && $validated['status'] !== 'all') {
             $status = $validated['status'];
             if ($status === 'open') {
                 $status = 'buka';
