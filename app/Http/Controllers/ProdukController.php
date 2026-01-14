@@ -140,6 +140,9 @@ class ProdukController extends Controller
                     'kategori_id' => $request->input('kategori_id', ''),
                     'tipe' => $request->input('tipe', ''),
                     'aktif' => $request->input('aktif', null),
+                    'sort_by' => $request->input('sort_by', ''),
+                    'sort_dir' => $request->input('sort_dir', ''),
+                    'per_page' => $perPage,
                 ],
                 'kategori_list' => KategoriProduk::select('id', 'nama')->get(),
                 'cacheInfo' => $this->productCacheService->getCacheStats($cabangId),
@@ -476,6 +479,8 @@ class ProdukController extends Controller
         $kategoriId = $request->input('kategori_id', '');
         $aktif = $request->input('aktif', null);
         $tipe = $request->input('tipe', '');
+        $sortBy = $request->input('sort_by', '');
+        $sortDir = $request->input('sort_dir', 'asc');
 
         if ($search) {
             $produk = $this->productCacheService->searchProduk($cabangId, $search, $useCache);
@@ -497,6 +502,17 @@ class ProdukController extends Controller
             } elseif ($aktif === '0' || $aktif === 0 || $aktif === false || $aktif === 'false') {
                 $produk = $produk->where('aktif', false);
             }
+        }
+
+        // Apply sorting
+        if ($sortBy && in_array($sortBy, ['nama', 'sku', 'harga_jual'])) {
+            $produk = $produk->sortBy($sortBy, SORT_REGULAR, $sortDir === 'desc');
+        } elseif ($sortBy === 'kategori') {
+            $produk = $produk->sortBy('kategori.nama', SORT_REGULAR, $sortDir === 'desc');
+        } elseif ($sortBy === 'stok') {
+            $produk = $produk->sortBy(function ($item) {
+                return $item->stokEtalase->first()?->jumlah ?? 0;
+            }, SORT_REGULAR, $sortDir === 'desc');
         }
 
         return $produk;
@@ -1070,6 +1086,7 @@ class ProdukController extends Controller
             $varian = $request->input('varian', '');
             $kategoriId = $request->input('kategori_id');
 
+            // Get prefix based on tipe
             $prefix = match ($tipe) {
                 'beans' => 'BNS',
                 'minuman' => 'BEV',
@@ -1077,26 +1094,34 @@ class ProdukController extends Controller
                 default => 'PRD'
             };
 
+            // Get label from nama (first 3 letters or abbreviation)
             $label = '';
             if ($nama) {
+                // Remove common words and get abbreviation
                 $cleanName = preg_replace('/\b(kopi|coffee|teh|tea|susu|milk)\b/i', '', $nama);
                 $cleanName = trim($cleanName);
 
+                // Create abbreviation from words
                 $words = preg_split('/[\s\-_]+/', $cleanName);
                 if (count($words) > 1) {
+                    // Multi-word: take first letter of each word
                     $label = strtoupper(substr(implode('', array_map(fn($w) => substr($w, 0, 1), $words)), 0, 3));
                 } else {
+                    // Single word: take first 3 letters
                     $label = strtoupper(substr($cleanName, 0, 3));
                 }
             }
 
+            // Add varian if exists
             $varianPart = '';
             if ($varian) {
                 $varianPart = '-' . strtoupper(substr($varian, 0, 3));
             }
 
+            // Find next available number
             $basePattern = $prefix . ($label ? "-{$label}" : '') . $varianPart;
 
+            // Get the highest existing number for this pattern
             $lastProduct = Produk::where('sku', 'like', $basePattern . '-%')
                 ->orderByRaw('CAST(SUBSTRING_INDEX(sku, "-", -1) AS UNSIGNED) DESC')
                 ->first();
@@ -1124,6 +1149,7 @@ class ProdukController extends Controller
     public function getKelompokNama(Request $request)
     {
         try {
+            // Get unique kelompok_nama values
             $kelompokList = Produk::select('kelompok_nama')
                 ->whereNotNull('kelompok_nama')
                 ->distinct()
