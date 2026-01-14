@@ -60,10 +60,10 @@ export default function ProdukEdit({ produk, kategori, stok_tersedia }: Props) {
     kategori_id: produk?.kategori_id ? String(produk.kategori_id) : '',
     nama: produk?.nama ?? '',
     kelompok_nama: produk?.kelompok_nama ?? '',
-    varian: produk?.varian ?? '',
+    varian: produk?.varian ?? 'none',
     sku: produk?.sku ?? '',
     tipe: produk?.tipe ?? '',
-    base: produk?.base ?? '',
+    base: produk?.base ?? 'none',
     deskripsi: produk?.deskripsi ?? '',
     satuan_dasar: produk?.satuan_dasar ?? '',
     harga_modal: produk?.harga_modal !== undefined && produk?.harga_modal !== null ? String(produk.harga_modal) : '',
@@ -333,7 +333,7 @@ export default function ProdukEdit({ produk, kategori, stok_tersedia }: Props) {
                         <SelectValue placeholder="Pilih varian (opsional)" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Tidak ada varian</SelectItem>
+                        <SelectItem value="none">Tidak ada varian</SelectItem>
                         <SelectItem value="Hot">Hot</SelectItem>
                         <SelectItem value="Ice">Ice</SelectItem>
                       </SelectContent>
@@ -373,7 +373,7 @@ export default function ProdukEdit({ produk, kategori, stok_tersedia }: Props) {
                         <SelectValue placeholder="Pilih base (opsional)" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Tidak ada base</SelectItem>
+                        <SelectItem value="none">Tidak ada base</SelectItem>
                         <SelectItem value="coffee">Coffee</SelectItem>
                         <SelectItem value="milk">Milk</SelectItem>
                         <SelectItem value="tea">Tea</SelectItem>

@@ -33,10 +33,10 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
     kategori_id: '',
     nama: '',
     kelompok_nama: '',
-    varian: '',
+    varian: 'none',
     sku: '',
     tipe: '',
-    base: '',
+    base: 'none',
     deskripsi: '',
     satuan_dasar: '',
     harga_modal: '',
@@ -288,7 +288,7 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
                         <SelectValue placeholder="Pilih varian (opsional)" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Tidak ada varian</SelectItem>
+                        <SelectItem value="none">Tidak ada varian</SelectItem>
                         <SelectItem value="Hot">Hot</SelectItem>
                         <SelectItem value="Ice">Ice</SelectItem>
                       </SelectContent>
@@ -328,7 +328,7 @@ export default function ProdukCreate({ kategori, tipe_options, satuan_options }:
                         <SelectValue placeholder="Pilih base (opsional)" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Tidak ada base</SelectItem>
+                        <SelectItem value="none">Tidak ada base</SelectItem>
                         <SelectItem value="coffee">Coffee</SelectItem>
                         <SelectItem value="milk">Milk</SelectItem>
                         <SelectItem value="tea">Tea</SelectItem>
