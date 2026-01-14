@@ -68,7 +68,7 @@ class ProdukController extends Controller
                     'cabangList' => $this->getCabangList($user),
                     'selectedCabang' => null,
                     'filter_aktif' => ['search' => '', 'cabang_id' => null, 'kategori_id' => null, 'tipe' => null, 'aktif' => null],
-                    'kategori_list' => KategoriProduk::select('id','nama')->get(),
+                    'kategori_list' => KategoriProduk::select('id', 'nama')->get(),
                     'cacheInfo' => null,
                     'canManageProduk' => $this->canManageProduk($user),
                 ]);
@@ -125,7 +125,7 @@ class ProdukController extends Controller
                     'current_page' => $produks['current_page'],
                     'last_page' => $produks['last_page'],
                 ],
-                'kategori_list_count' => KategoriProduk::select('id','nama')->get()->count(),
+                'kategori_list_count' => KategoriProduk::select('id', 'nama')->get()->count(),
                 'selected_cabang_id' => $selectedCabang?->id,
                 'can_manage' => $this->canManageProduk($user),
             ]);
@@ -141,11 +141,10 @@ class ProdukController extends Controller
                     'tipe' => $request->input('tipe', ''),
                     'aktif' => $request->input('aktif', null),
                 ],
-                'kategori_list' => KategoriProduk::select('id','nama')->get(),
+                'kategori_list' => KategoriProduk::select('id', 'nama')->get(),
                 'cacheInfo' => $this->productCacheService->getCacheStats($cabangId),
                 'canManageProduk' => $this->canManageProduk($user)
             ]);
-
         } catch (\Exception $e) {
             Log::error('Error fetching produk', [
                 'error' => $e->getMessage(),
@@ -202,7 +201,6 @@ class ProdukController extends Controller
                 'produk' => $produk,
                 'selectedCabang' => Cabang::find($cabangId)
             ]);
-
         } catch (\Exception $e) {
             Log::error('Error fetching produk detail', [
                 'produk_id' => $produkId,
@@ -231,7 +229,6 @@ class ProdukController extends Controller
             ]);
 
             return back()->with('success', 'Cache produk berhasil dibersihkan');
-
         } catch (\Exception $e) {
             Log::error('Error clearing cache', ['error' => $e->getMessage()]);
             return back()->with('error', 'Gagal membersihkan cache');
@@ -276,7 +273,6 @@ class ProdukController extends Controller
                 ],
                 'kategori_list' => KategoriProduk::select('id', 'nama')->get()
             ]);
-
         } catch (\Exception $e) {
             Log::error('API Error', ['error' => $e->getMessage()]);
 
@@ -371,7 +367,6 @@ class ProdukController extends Controller
                 'total' => $total,
                 'per_page' => $perPage
             ]);
-
         } catch (\Exception $e) {
             Log::error('Mobile API Error', ['error' => $e->getMessage()]);
 
@@ -535,7 +530,7 @@ class ProdukController extends Controller
             $cabangId = $this->getCabangId($request, $user);
 
             // DEBUG: Log kategori and satuan options
-            $kategoriList = KategoriProduk::select('id','nama')->get();
+            $kategoriList = KategoriProduk::select('id', 'nama')->get();
             $satuanOptions = SatuanProduk::select('nama_satuan')->distinct()->pluck('nama_satuan')->values()->all();
             Log::info('PRODUK CREATE - Options loaded', [
                 'kategori_count' => $kategoriList->count(),
@@ -555,12 +550,11 @@ class ProdukController extends Controller
 
             return Inertia::render('produk/Create', [
                 'kategori' => $kategoriList,
-                'tipe_options' => ['beans','minuman','snack'],
+                'tipe_options' => ['beans', 'minuman', 'snack'],
                 'satuan_options' => $satuanOptions,
                 'cabangList' => $cabangList,
                 'selectedCabang' => $selectedCabang
             ]);
-
         } catch (\Exception $e) {
             Log::error('Error loading create produk form', ['error' => $e->getMessage()]);
             return back()->with('error', 'Gagal memuat form tambah produk');
@@ -595,6 +589,7 @@ class ProdukController extends Controller
                 'deskripsi' => 'nullable|string',
                 'kategori_id' => 'required|exists:kategori_produk,id',
                 'tipe' => 'required|in:beans,minuman,snack',
+                'base' => 'nullable|in:coffee,milk,tea,others',
                 'satuan_dasar' => 'required|string|max:50',
                 'harga_modal' => 'required|numeric|min:0',
                 'harga_jual' => 'required|numeric|min:0',
@@ -665,7 +660,6 @@ class ProdukController extends Controller
             ]);
 
             return redirect()->route('produk.index')->with('success', 'Produk berhasil ditambahkan');
-
         } catch (\Exception $e) {
             Log::error('Error creating produk', ['error' => $e->getMessage()]);
             return back()->with('error', 'Gagal menambahkan produk')->withInput();
@@ -734,9 +728,9 @@ class ProdukController extends Controller
                 }
             }
 
-            $kategoriList = KategoriProduk::select('id','nama')->get();
+            $kategoriList = KategoriProduk::select('id', 'nama')->get();
             $satuanOptions = SatuanProduk::select('nama_satuan')->distinct()->pluck('nama_satuan')->values()->all();
-            $stokTersedia = $produk->stokEtalase->map(function($s) {
+            $stokTersedia = $produk->stokEtalase->map(function ($s) {
                 return [
                     'id' => $s->id,
                     'cabang' => $s->cabang ? ['id' => $s->cabang->id, 'nama' => $s->cabang->nama] : null,
@@ -754,11 +748,10 @@ class ProdukController extends Controller
             return Inertia::render('produk/Edit', [
                 'produk' => $produk,
                 'kategori' => $kategoriList,
-                'tipe_options' => ['beans','minuman','snack'],
+                'tipe_options' => ['beans', 'minuman', 'snack'],
                 'satuan_options' => $satuanOptions,
                 'stok_tersedia' => $stokTersedia
             ]);
-
         } catch (\Exception $e) {
             Log::error('Error loading edit produk form', ['error' => $e->getMessage()]);
             return back()->with('error', 'Gagal memuat form edit produk');
@@ -770,7 +763,6 @@ class ProdukController extends Controller
         try {
             $user = auth()->user();
 
-            // DEBUG: Log update request
             Log::info('=== PRODUK UPDATE DEBUG ===', [
                 'user_id' => $user->id,
                 'user_role' => $user->role,
@@ -778,7 +770,6 @@ class ProdukController extends Controller
                 'request_data_keys' => array_keys($request->all()),
             ]);
 
-            // Check authorization
             if (!$this->canManageProduk($user)) {
                 Log::warning('PRODUK UPDATE - Unauthorized access', ['user_id' => $user->id, 'user_role' => $user->role, 'produk_id' => $id]);
                 return back()->with('error', 'Anda tidak memiliki akses untuk mengedit produk');
@@ -788,7 +779,6 @@ class ProdukController extends Controller
 
             $produk = Produk::with(['stokEtalase'])->findOrFail($id);
 
-            // DEBUG: Log produk details
             Log::info('PRODUK UPDATE - Produk Loaded', [
                 'produk_id' => $produk->id,
                 'produk_nama' => $produk->nama,
@@ -796,12 +786,10 @@ class ProdukController extends Controller
                 'affected_cabang_ids' => $produk->stokEtalase->pluck('cabang_id')->all(),
             ]);
 
-            // For manager/supervisor, check if they have access to this produk's cabang
             if (in_array($user->role, ['manager', 'supervisor'])) {
                 $assignedCabangIds = $user->cabang->pluck('id')->all();
                 $produkCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
 
-                // DEBUG: Log access check
                 Log::info('PRODUK UPDATE - Cabang Access Check', [
                     'user_assigned_cabang' => $assignedCabangIds,
                     'produk_cabang_ids' => $produkCabangIds,
@@ -824,6 +812,7 @@ class ProdukController extends Controller
                 'deskripsi' => 'nullable|string',
                 'kategori_id' => 'required|exists:kategori_produk,id',
                 'tipe' => 'required|in:beans,minuman,snack',
+                'base' => 'nullable|in:coffee,milk,tea,others',
                 'satuan_dasar' => 'required|string|max:50',
                 'harga_modal' => 'required|numeric|min:0',
                 'harga_jual' => 'required|numeric|min:0',
@@ -911,7 +900,6 @@ class ProdukController extends Controller
             ]);
 
             return redirect()->route('produk.index')->with('success', 'Produk berhasil diupdate');
-
         } catch (\Exception $e) {
             Log::error('Error updating produk', ['error' => $e->getMessage()]);
             return back()->with('error', 'Gagal mengupdate produk')->withInput();
@@ -992,7 +980,6 @@ class ProdukController extends Controller
             ]);
 
             return redirect()->route('produk.index')->with('success', 'Produk berhasil dihapus');
-
         } catch (\Exception $e) {
             Log::error('Error deleting produk', ['error' => $e->getMessage()]);
             return back()->with('error', 'Gagal menghapus produk');
@@ -1049,5 +1036,112 @@ class ProdukController extends Controller
                 ] : null
             ];
         });
+    }
+
+    public function checkSku(Request $request)
+    {
+        try {
+            $sku = $request->input('sku');
+            $excludeId = $request->input('exclude_id');
+
+            if (!$sku) {
+                return response()->json(['exists' => false]);
+            }
+
+            $query = Produk::where('sku', $sku);
+
+            if ($excludeId) {
+                $query->where('id', '!=', $excludeId);
+            }
+
+            $exists = $query->exists();
+
+            return response()->json(['exists' => $exists]);
+        } catch (\Exception $e) {
+            Log::error('Error checking SKU', ['error' => $e->getMessage()]);
+            return response()->json(['exists' => false], 500);
+        }
+    }
+    public function suggestSku(Request $request)
+    {
+        try {
+            $tipe = $request->input('tipe');
+            $nama = $request->input('nama', '');
+            $varian = $request->input('varian', '');
+            $kategoriId = $request->input('kategori_id');
+
+            $prefix = match ($tipe) {
+                'beans' => 'BNS',
+                'minuman' => 'BEV',
+                'snack' => 'SNK',
+                default => 'PRD'
+            };
+
+            $label = '';
+            if ($nama) {
+                $cleanName = preg_replace('/\b(kopi|coffee|teh|tea|susu|milk)\b/i', '', $nama);
+                $cleanName = trim($cleanName);
+
+                $words = preg_split('/[\s\-_]+/', $cleanName);
+                if (count($words) > 1) {
+                    $label = strtoupper(substr(implode('', array_map(fn($w) => substr($w, 0, 1), $words)), 0, 3));
+                } else {
+                    $label = strtoupper(substr($cleanName, 0, 3));
+                }
+            }
+
+            $varianPart = '';
+            if ($varian) {
+                $varianPart = '-' . strtoupper(substr($varian, 0, 3));
+            }
+
+            $basePattern = $prefix . ($label ? "-{$label}" : '') . $varianPart;
+
+            $lastProduct = Produk::where('sku', 'like', $basePattern . '-%')
+                ->orderByRaw('CAST(SUBSTRING_INDEX(sku, "-", -1) AS UNSIGNED) DESC')
+                ->first();
+
+            $nextNumber = 1;
+            if ($lastProduct) {
+                $lastSku = $lastProduct->sku;
+                $parts = explode('-', $lastSku);
+                $lastNumber = (int) end($parts);
+                $nextNumber = $lastNumber + 1;
+            }
+
+            $sku = $basePattern . '-' . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
+
+            return response()->json(['sku' => $sku]);
+        } catch (\Exception $e) {
+            Log::error('Error suggesting SKU', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json(['error' => 'Failed to generate SKU'], 500);
+        }
+    }
+
+    public function getKelompokNama(Request $request)
+    {
+        try {
+            $kelompokList = Produk::select('kelompok_nama')
+                ->whereNotNull('kelompok_nama')
+                ->distinct()
+                ->orderBy('kelompok_nama')
+                ->pluck('kelompok_nama')
+                ->filter()
+                ->values();
+
+            return response()->json([
+                'success' => true,
+                'data' => $kelompokList
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error fetching kelompok nama', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengambil data kelompok nama'
+            ], 500);
+        }
     }
 }

@@ -40,7 +40,7 @@ Route::middleware('auth')->group(function () {
     // IT SUPPORT ROUTES (it_support only)
     // Prefix: /admin
     // ------------------------------------------------------------------------
-   Route::middleware('role:it_support')->prefix('admin')->name('admin.')->group(function () {
+    Route::middleware('role:it_support')->prefix('admin')->name('admin.')->group(function () {
         Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
         Route::get('/system-logs', [SystemController::class, 'logs'])->name('system.logs');
         Route::get('/users', [UserController::class, 'index'])->name('users.index');
@@ -64,7 +64,7 @@ Route::middleware('auth')->group(function () {
     // MANAGER ROUTES (manager, it_support)
     // Prefix: /manager
     // ------------------------------------------------------------------------
-     Route::middleware('role:manager,it_support')->prefix('manager')->name('manager.')->group(function () {
+    Route::middleware('role:manager,it_support')->prefix('manager')->name('manager.')->group(function () {
         Route::get('/dashboard', [ManagerController::class, 'dashboard'])->name('dashboard');
         Route::get('/laporan-cabang', [ManagerController::class, 'laporanCabang'])->name('laporan.cabang');
         Route::get('/performa-shift', [ManagerController::class, 'perfomaShift'])->name('performa.shift');
@@ -91,16 +91,17 @@ Route::middleware('auth')->group(function () {
     Route::middleware('role:manager,it_support, supervisor, kasir')->prefix('produk')->name('produk.')->group(function () {
         // INDEX ROUTE - Tampilan utama (bisa pilih cabang via query ?cabang_id=1)
         Route::get('/', [ProdukController::class, 'index'])->name('index');
-        
+
         // STATIC ROUTES (harus di atas dynamic routes)
         Route::get('/create', [ProdukController::class, 'create'])->name('create');
         Route::post('/', [ProdukController::class, 'store'])->name('store');
         Route::get('/sku-suggest', [ProdukController::class, 'suggestSku'])->name('sku.suggest');
         Route::get('/check-sku', [ProdukController::class, 'checkSku'])->name('sku.check');
-        
+        Route::get('/kelompok-nama', [ProdukController::class, 'getKelompokNama'])->name('kelompok-nama');
+
         // Cache management route
         Route::post('/cache/clear', [ProdukController::class, 'clearCache'])->name('cache.clear');
-        
+
         // Kategori routes
         Route::get('/kategori', [KategoriProdukController::class, 'index'])->name('kategori.index');
         Route::get('/kategori/create', [KategoriProdukController::class, 'create'])->name('kategori.create');
@@ -109,13 +110,13 @@ Route::middleware('auth')->group(function () {
         Route::get('/kategori/{kategori}/edit', [KategoriProdukController::class, 'edit'])->name('kategori.edit');
         Route::put('/kategori/{kategori}', [KategoriProdukController::class, 'update'])->name('kategori.update');
         Route::delete('/kategori/{kategori}', [KategoriProdukController::class, 'destroy'])->name('kategori.destroy');
-        
+
         // Satuan routes
         Route::delete('/satuan/{satuan}', [ProdukController::class, 'deleteSatuan'])->name('satuan.delete');
         Route::post('/{produk}/satuan', [ProdukController::class, 'addSatuan'])->name('satuan.store');
 
         Route::post('/{produk}/toggle-aktif', [ProdukController::class, 'toggleAktif'])->name('toggle-aktif');
-        
+
         // DYNAMIC ROUTES (harus di bawah semua static routes)
         Route::get('/{produk}/edit', [ProdukController::class, 'edit'])->name('edit');
         Route::put('/{produk}', [ProdukController::class, 'update'])->name('update');
@@ -210,4 +211,4 @@ Route::middleware('auth')->group(function () {
     });
 });
 
-require __DIR__.'/settings.php';
+require __DIR__ . '/settings.php';
