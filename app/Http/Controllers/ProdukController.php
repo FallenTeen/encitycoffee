@@ -88,10 +88,21 @@ class ProdukController extends Controller
             ]);
 
             // Build simple paginator for the frontend
-            $perPage = $request->input('per_page', 20);
+            $perPage = max(1, min(1000, (int) $request->input('per_page', 20)));
             $page = max(1, (int) $request->input('page', 1));
             $total = $produk->count();
+            
+            // Handle case when total products is less than per_page
+            // Always show all available products, even if less than requested
             $offset = ($page - 1) * $perPage;
+            
+            // If offset is beyond total products, show last page
+            if ($offset >= $total && $total > 0) {
+                $page = max(1, (int) ceil($total / $perPage));
+                $offset = ($page - 1) * $perPage;
+            }
+            
+            // Slice the collection for current page
             $items = $produk->slice($offset, $perPage)->values();
 
             // DEBUG: Log pagination and results
@@ -102,7 +113,24 @@ class ProdukController extends Controller
                 'items_returned' => $items->count(),
                 'first_produk_id' => $items->first()?->id,
                 'last_produk_id' => $items->last()?->id,
+                'offset' => $offset,
+                'last_page' => $lastPage,
+                'has_prev_page' => $page > 1,
+                'has_next_page' => $page < $lastPage,
             ]);
+            
+            // Log if fewer products than requested per_page (for debugging missing products)
+            if ($total < $perPage && $total > 0) {
+                Log::warning('PRODUK INDEX - Fewer products than requested per_page', [
+                    'total_produk' => $total,
+                    'requested_per_page' => $perPage,
+                    'cabang_id' => $cabangId,
+                    'search' => $request->input('search', ''),
+                    'kategori_id' => $request->input('kategori_id', ''),
+                    'tipe' => $request->input('tipe', ''),
+                    'aktif' => $request->input('aktif', null),
+                ]);
+            }
 
             $lastPage = $total > 0 ? (int) ceil($total / $perPage) : 1;
             $produks = [
@@ -474,13 +502,14 @@ class ProdukController extends Controller
 
     private function getProdukByCabang($cabangId, Request $request)
     {
-        $useCache = $request->boolean('use_cache', true);
-        $search = $request->input('search', '');
-        $kategoriId = $request->input('kategori_id', '');
-        $aktif = $request->input('aktif', null);
-        $tipe = $request->input('tipe', '');
-        $sortBy = $request->input('sort_by', '');
-        $sortDir = $request->input('sort_dir', 'asc');
+        try {
+            $useCache = $request->boolean('use_cache', true);
+            $search = $request->input('search', '');
+            $kategoriId = $request->input('kategori_id', '');
+            $aktif = $request->input('aktif', null);
+            $tipe = $request->input('tipe', '');
+            $sortBy = $request->input('sort_by', '');
+            $sortDir = $request->input('sort_dir', 'asc');
 
         if ($search) {
             $produk = $this->productCacheService->searchProduk($cabangId, $search, $useCache);
@@ -516,6 +545,26 @@ class ProdukController extends Controller
         }
 
         return $produk;
+        
+        } catch (\Exception $e) {
+            Log::error('Error in getProdukByCabang', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'cabang_id' => $cabangId,
+                'search' => $request->input('search', ''),
+                'kategori_id' => $request->input('kategori_id', ''),
+                'tipe' => $request->input('tipe', ''),
+                'aktif' => $request->input('aktif', null),
+                'sort_by' => $request->input('sort_by', ''),
+                'sort_dir' => $request->input('sort_dir', 'asc'),
+                'use_cache' => $request->boolean('use_cache', true),
+                'user_id' => auth()->id(),
+            ]);
+            
+            // Return empty collection on error to prevent crashes
+            return collect();
+        }
     }
 
     public function create(Request $request)

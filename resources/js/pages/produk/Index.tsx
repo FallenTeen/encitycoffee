@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import AppLayout from '@/layouts/app-layout';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Grid3X3, List, Rows3, ChevronUp, ChevronDown, Search, X } from 'lucide-react';
+import { Grid3X3, List, Rows3, ChevronUp, ChevronDown, Search, X, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface KategoriOption {
@@ -112,8 +112,11 @@ export default function ProdukIndex({
 
     const [togglingId, setTogglingId] = useState<number | null>(null);
     const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+    const [clearAllError, setClearAllError] = useState<string | null>(null);
+    const [isClearing, setIsClearing] = useState(false);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const debounceTimeout = useRef<number | null>(null);
+    const clearAllDebounceTimeout = useRef<number | null>(null);
 
     const aktifValue = filter_aktif?.aktif;
     const { data, setData, get, processing } = useForm({
@@ -168,6 +171,9 @@ export default function ProdukIndex({
             if (debounceTimeout.current) {
                 window.clearTimeout(debounceTimeout.current);
             }
+            if (clearAllDebounceTimeout.current) {
+                window.clearTimeout(clearAllDebounceTimeout.current);
+            }
         };
     }, [data.search]);
 
@@ -209,11 +215,15 @@ export default function ProdukIndex({
 
     const handlePerPageChange = (value: string) => {
         const newPerPage = parseInt(value);
-        setPerPage(newPerPage);
-        setData({ ...data, per_page: newPerPage });
+        
+        // Validate per_page value (min 1, max 1000)
+        const validatedPerPage = Math.max(1, Math.min(1000, newPerPage));
+        
+        setPerPage(validatedPerPage);
+        setData({ ...data, per_page: validatedPerPage });
         
         get('/produk', {
-            data: { ...data, per_page: newPerPage },
+            data: { ...data, per_page: validatedPerPage },
             preserveState: true,
             preserveScroll: false,
             replace: true,
@@ -243,24 +253,59 @@ export default function ProdukIndex({
     };
 
     const clearAllFilters = () => {
-        const resetData = {
-            search: '',
-            kategori_id: '__all__',
-            tipe: '__all__',
-            aktif: '__all__',
-            sort_by: '',
-            sort_dir: '',
-            per_page: perPage,
-            cabang_id: data.cabang_id,
-        };
-        setData(resetData);
-        setSortBy(null);
-        setSortDir(null);
+        // Clear any existing debounce timeout
+        if (clearAllDebounceTimeout.current) {
+            window.clearTimeout(clearAllDebounceTimeout.current);
+        }
         
-        router.get('/produk', data.cabang_id ? { cabang_id: data.cabang_id, per_page: perPage } : { per_page: perPage }, {
-            preserveScroll: true,
-            replace: true,
-        });
+        // Set new debounce timeout (500ms)
+        clearAllDebounceTimeout.current = window.setTimeout(() => {
+            // Rate limiting: prevent multiple rapid requests
+            if (isClearing) {
+                return;
+            }
+            
+            setIsClearing(true);
+            setClearAllError(null);
+            
+            const resetData = {
+                search: '',
+                kategori_id: '__all__',
+                tipe: '__all__',
+                aktif: '__all__',
+                sort_by: '',
+                sort_dir: '',
+                per_page: perPage,
+                cabang_id: data.cabang_id,
+            };
+            setData(resetData);
+            setSortBy(null);
+            setSortDir(null);
+            
+            router.get('/produk', data.cabang_id ? { cabang_id: data.cabang_id, per_page: perPage } : { per_page: perPage }, {
+                preserveScroll: true,
+                replace: true,
+                onError: (errors) => {
+                    console.error('Error clearing filters:', errors);
+                    setClearAllError('Gagal membersihkan filter. Silakan coba lagi.');
+                    setIsClearing(false);
+                    
+                    // Log error for debugging
+                    if (window.console && window.console.error) {
+                        window.console.error('ClearAllFilters Error:', {
+                            errors,
+                            timestamp: new Date().toISOString(),
+                            userAgent: navigator.userAgent,
+                            url: window.location.href,
+                        });
+                    }
+                },
+                onSuccess: () => {
+                    setIsClearing(false);
+                    setClearAllError(null);
+                },
+            });
+        }, 500);
     };
 
     const formatHarga = (value: number | string) => {
@@ -392,11 +437,30 @@ export default function ProdukIndex({
                             size="sm"
                             onClick={clearAllFilters}
                             className="h-6 px-2 text-xs"
+                            disabled={isClearing}
                         >
-                            Clear All ({activeFiltersCount})
+                            {isClearing ? 'Menghapus...' : `Clear All (${activeFiltersCount})`}
                         </Button>
                     )}
                 </div>
+                
+                {/* Error Message */}
+                {clearAllError && (
+                    <div className="rounded-md bg-red-50 p-3 text-sm text-red-800">
+                        <div className="flex items-center gap-2">
+                            <AlertCircle className="h-4 w-4" />
+                            <span>{clearAllError}</span>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="ml-auto h-6 px-2"
+                                onClick={() => setClearAllError(null)}
+                            >
+                                Tutup
+                            </Button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Search & Filters */}
                 <div className="space-y-3 rounded-lg border bg-card p-4">
@@ -523,8 +587,8 @@ export default function ProdukIndex({
                                 <Button type="button" onClick={submitFilters} disabled={processing} className="flex-1">
                                     Apply Filters
                                 </Button>
-                                <Button type="button" variant="outline" onClick={clearAllFilters}>
-                                    Reset
+                                <Button type="button" variant="outline" onClick={clearAllFilters} disabled={isClearing}>
+                                    {isClearing ? 'Menghapus...' : 'Reset'}
                                 </Button>
                             </div>
                         </div>
