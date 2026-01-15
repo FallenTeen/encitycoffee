@@ -105,6 +105,9 @@ class ProdukController extends Controller
             // Slice the collection for current page
             $items = $produk->slice($offset, $perPage)->values();
 
+            // Calculate last page before using it
+            $lastPage = $total > 0 ? (int) ceil($total / $perPage) : 1;
+            
             // DEBUG: Log pagination and results
             Log::info('PRODUK INDEX - Results', [
                 'total_produk' => $total,
@@ -131,8 +134,6 @@ class ProdukController extends Controller
                     'aktif' => $request->input('aktif', null),
                 ]);
             }
-
-            $lastPage = $total > 0 ? (int) ceil($total / $perPage) : 1;
             $produks = [
                 'data' => $items,
                 'total' => $total,
