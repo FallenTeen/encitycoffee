@@ -27,137 +27,87 @@ class ProdukController extends Controller
         try {
             $user = auth()->user();
 
-            // DEBUG: Log user and role info
+            $validated = $request->validate([
+                'search' => 'nullable|string|max:255',
+                'cabang_id' => 'nullable|integer|exists:cabang,id',
+                'kategori_id' => 'nullable|string|max:50',
+                'tipe' => 'nullable|string|in:beans,minuman,snack,__all__',
+                'aktif' => 'nullable|string|in:0,1,__all__',
+                'sort_by' => 'nullable|string|in:nama,sku,harga_jual,kategori,stok',
+                'sort_dir' => 'nullable|string|in:asc,desc',
+                'per_page' => 'nullable|integer|min:1|max:1000',
+                'page' => 'nullable|integer|min:1',
+            ]);
+
             Log::info('=== PRODUK INDEX DEBUG ===', [
                 'user_id' => $user->id,
                 'user_name' => $user->name,
                 'user_role' => $user->role,
-                'user_aktif' => $user->aktif,
                 'assigned_cabang_ids' => $user->cabang->pluck('id')->all(),
-                'assigned_cabang_names' => $user->cabang->pluck('nama')->all(),
+                'validated_input' => $validated,
             ]);
 
             $cabangId = $this->getCabangId($request, $user);
 
-            // DEBUG: Log cabang resolution
-            Log::info('PRODUK INDEX - Cabang Resolution', [
-                'request_cabang_id' => $request->input('cabang_id'),
-                'resolved_cabang_id' => $cabangId,
-            ]);
-
             if (!$cabangId) {
                 Log::warning('PRODUK INDEX - No cabang assigned for user', ['user_id' => $user->id]);
-                // No cabang assigned / selected — return empty paginator and required props for frontend
-                Log::info('PRODUK INDEX - Returning empty data (no cabang)', [
-                    'user_id' => $user->id,
-                    'reason' => 'No cabang assigned or selected',
-                ]);
 
-                $produks = [
-                    'data' => collect()->toArray(),
-                    'total' => 0,
-                    'current_page' => 1,
-                    'per_page' => 20,
-                    'last_page' => 1,
-                    'from' => null,
-                    'to' => null,
-                ];
-
-                return Inertia::render('produk/Index', [
-                    'produks' => $produks,
-                    'cabangList' => $this->getCabangList($user),
-                    'selectedCabang' => null,
-                    'filter_aktif' => ['search' => '', 'cabang_id' => null, 'kategori_id' => null, 'tipe' => null, 'aktif' => null],
-                    'kategori_list' => KategoriProduk::select('id', 'nama')->get(),
-                    'cacheInfo' => null,
-                    'canManageProduk' => $this->canManageProduk($user),
-                ]);
+                return $this->renderEmptyProductList($user);
             }
 
+            // Get filtered products
             $produk = $this->getProdukByCabang($cabangId, $request);
             $selectedCabang = Cabang::find($cabangId);
 
-            // DEBUG: Log filters and results
-            Log::info('PRODUK INDEX - Filters Applied', [
-                'cabang_id' => $cabangId,
-                'cabang_name' => $selectedCabang?->nama,
-                'search' => $request->input('search', ''),
-                'kategori_id' => $request->input('kategori_id', ''),
-                'tipe' => $request->input('tipe', ''),
-                'use_cache' => $request->boolean('use_cache', true),
-            ]);
-
-            // Build simple paginator for the frontend
-            $perPage = max(1, min(1000, (int) $request->input('per_page', 20)));
+            // Pagination settings with proper validation
+            $perPage = $this->getValidatedPerPage($request);
             $page = max(1, (int) $request->input('page', 1));
             $total = $produk->count();
-            
-            // Handle case when total products is less than per_page
-            // Always show all available products, even if less than requested
-            $offset = ($page - 1) * $perPage;
-            
-            // If offset is beyond total products, show last page
-            if ($offset >= $total && $total > 0) {
-                $page = max(1, (int) ceil($total / $perPage));
-                $offset = ($page - 1) * $perPage;
-            }
-            
-            // Slice the collection for current page
-            $items = $produk->slice($offset, $perPage)->values();
 
-            // Calculate last page before using it
-            $lastPage = $total > 0 ? (int) ceil($total / $perPage) : 1;
-            
-            // DEBUG: Log pagination and results
-            Log::info('PRODUK INDEX - Results', [
+            Log::info('PRODUK INDEX - After Filtering', [
                 'total_produk' => $total,
-                'current_page' => $page,
                 'per_page' => $perPage,
-                'items_returned' => $items->count(),
-                'first_produk_id' => $items->first()?->id,
-                'last_produk_id' => $items->last()?->id,
-                'offset' => $offset,
-                'last_page' => $lastPage,
-                'has_prev_page' => $page > 1,
-                'has_next_page' => $page < $lastPage,
+                'current_page' => $page,
             ]);
-            
-            // Log if fewer products than requested per_page (for debugging missing products)
-            if ($total < $perPage && $total > 0) {
-                Log::warning('PRODUK INDEX - Fewer products than requested per_page', [
-                    'total_produk' => $total,
-                    'requested_per_page' => $perPage,
-                    'cabang_id' => $cabangId,
-                    'search' => $request->input('search', ''),
-                    'kategori_id' => $request->input('kategori_id', ''),
-                    'tipe' => $request->input('tipe', ''),
-                    'aktif' => $request->input('aktif', null),
-                ]);
+
+            // Calculate pagination - FIXED LOGIC
+            $lastPage = $total > 0 ? max(1, (int) ceil($total / $perPage)) : 1;
+
+            // Ensure page is within valid range
+            $page = min($page, $lastPage);
+
+            // Calculate offset - handle edge case when per_page > total
+            $offset = ($page - 1) * $perPage;
+
+            // Get items for current page - FIXED: handle when per_page > total
+            if ($perPage >= $total) {
+                // If per_page is greater than or equal to total, show all items
+                $items = $produk->values();
+            } else {
+                // Otherwise, slice normally
+                $items = $produk->slice($offset, $perPage)->values();
             }
+
+            Log::info('PRODUK INDEX - Pagination Result', [
+                'total' => $total,
+                'per_page' => $perPage,
+                'current_page' => $page,
+                'last_page' => $lastPage,
+                'offset' => $offset,
+                'items_count' => $items->count(),
+            ]);
+
             $produks = [
-                'data' => $items,
+                'data' => $items->toArray(),
                 'total' => $total,
                 'current_page' => $page,
                 'per_page' => $perPage,
                 'last_page' => $lastPage,
-                'from' => $total > 0 ? $offset + 1 : null,
-                'to' => $total > 0 ? min($offset + $perPage, $total) : null,
+                'from' => $total > 0 ? ($offset + 1) : null,
+                'to' => $total > 0 ? min($offset + $items->count(), $total) : null,
                 'prev_page_url' => $page > 1 ? route('produk.index', array_merge($request->query(), ['page' => $page - 1])) : null,
                 'next_page_url' => $page < $lastPage ? route('produk.index', array_merge($request->query(), ['page' => $page + 1])) : null,
             ];
-
-            // DEBUG: Log what will be sent to frontend
-            Log::info('PRODUK INDEX - Sending to Frontend', [
-                'produks_structure' => [
-                    'data_count' => count($produks['data']),
-                    'total' => $produks['total'],
-                    'current_page' => $produks['current_page'],
-                    'last_page' => $produks['last_page'],
-                ],
-                'kategori_list_count' => KategoriProduk::select('id', 'nama')->get()->count(),
-                'selected_cabang_id' => $selectedCabang?->id,
-                'can_manage' => $this->canManageProduk($user),
-            ]);
 
             return Inertia::render('produk/Index', [
                 'produks' => $produks,
@@ -180,11 +130,57 @@ class ProdukController extends Controller
         } catch (\Exception $e) {
             Log::error('Error fetching produk', [
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
                 'user_id' => auth()->id()
             ]);
 
-            return back()->with('error', 'Gagal mengambil data produk');
+            return back()->with('error', 'Gagal mengambil data produk: ' . $e->getMessage());
         }
+    }
+
+    private function renderEmptyProductList($user)
+    {
+        $produks = [
+            'data' => [],
+            'total' => 0,
+            'current_page' => 1,
+            'per_page' => 20,
+            'last_page' => 1,
+            'from' => null,
+            'to' => null,
+            'prev_page_url' => null,
+            'next_page_url' => null,
+        ];
+
+        return Inertia::render('produk/Index', [
+            'produks' => $produks,
+            'cabangList' => $this->getCabangList($user),
+            'selectedCabang' => null,
+            'filter_aktif' => [
+                'search' => '',
+                'cabang_id' => null,
+                'kategori_id' => null,
+                'tipe' => null,
+                'aktif' => null,
+                'sort_by' => null,
+                'sort_dir' => null,
+                'per_page' => 20,
+            ],
+            'kategori_list' => KategoriProduk::select('id', 'nama')->get(),
+            'cacheInfo' => null,
+            'canManageProduk' => $this->canManageProduk($user),
+        ]);
+    }
+
+    private function getValidatedPerPage(Request $request)
+    {
+        $perPage = $request->input('per_page', 20);
+
+        // Ensure it's an integer
+        $perPage = is_numeric($perPage) ? (int) $perPage : 20;
+
+        // Clamp between 1 and 1000
+        return max(1, min(1000, $perPage));
     }
 
     public function show(Request $request, $produkId)
@@ -192,19 +188,13 @@ class ProdukController extends Controller
         try {
             $user = auth()->user();
 
-            // DEBUG: Log show request
             Log::info('=== PRODUK SHOW DEBUG ===', [
                 'user_id' => $user->id,
                 'user_role' => $user->role,
                 'produk_id' => $produkId,
-                'assigned_cabang_ids' => $user->cabang->pluck('id')->all(),
             ]);
 
             $cabangId = $this->getCabangId($request, $user);
-
-            Log::info('PRODUK SHOW - Cabang Info', [
-                'resolved_cabang_id' => $cabangId,
-            ]);
 
             if (!$cabangId) {
                 Log::warning('PRODUK SHOW - No cabang assigned', ['user_id' => $user->id]);
@@ -212,14 +202,6 @@ class ProdukController extends Controller
             }
 
             $produk = $this->productCacheService->getProdukById($cabangId, $produkId);
-
-            // DEBUG: Log produk retrieval
-            Log::info('PRODUK SHOW - Produk Retrieved', [
-                'produk_id' => $produkId,
-                'found' => $produk ? true : false,
-                'cabang_id' => $cabangId,
-                'produk_name' => $produk?->nama,
-            ]);
 
             if (!$produk) {
                 Log::warning('PRODUK SHOW - Produk not found', [
@@ -335,7 +317,7 @@ class ProdukController extends Controller
                 }
             }
 
-            $produk->aktif = ! $produk->aktif;
+            $produk->aktif = !$produk->aktif;
             $produk->save();
 
             $affectedCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
@@ -412,7 +394,6 @@ class ProdukController extends Controller
     private function getCabangId(Request $request, $user)
     {
         if ($user->role === 'it_support') {
-            // it_support can access all cabang
             $cabangId = $request->input('cabang_id');
 
             if (!$cabangId) {
@@ -423,11 +404,7 @@ class ProdukController extends Controller
             return $cabangId;
         }
 
-        if (in_array($user->role, ['manager', 'supervisor'])) {
-            // manager/supervisor can only access their assigned cabang
-            $cabangId = $request->input('cabang_id');
-
-            // Get assigned cabang IDs for this user
+        if (in_array($user->role, ['manager', 'supervisor', 'kasir'])) {
             $assignedCabangIds = $user->cabang->pluck('id')->all();
 
             if (empty($assignedCabangIds)) {
@@ -435,37 +412,13 @@ class ProdukController extends Controller
                 return null;
             }
 
+            $cabangId = $request->input('cabang_id');
+
             if ($cabangId) {
-                // Verify the requested cabang is in their assigned cabang list
                 if (!in_array((int)$cabangId, $assignedCabangIds)) {
                     Log::warning('Unauthorized cabang access attempt', [
                         'user_id' => $user->id,
                         'role' => $user->role,
-                        'requested_cabang_id' => $cabangId,
-                        'assigned_cabang_ids' => $assignedCabangIds
-                    ]);
-                    return null; // Return null to indicate unauthorized access
-                }
-                return $cabangId;
-            }
-
-            // If no cabang_id specified, use the first assigned cabang
-            return $assignedCabangIds[0];
-        }
-
-        // For kasir role, check if they have cabang assignment
-        if ($user->role === 'kasir') {
-            $assignedCabangIds = $user->cabang->pluck('id')->all();
-            if (empty($assignedCabangIds)) {
-                Log::warning('Kasir has no assigned cabang', ['user_id' => $user->id]);
-                return null;
-            }
-
-            $cabangId = $request->input('cabang_id');
-            if ($cabangId) {
-                if (!in_array((int)$cabangId, $assignedCabangIds)) {
-                    Log::warning('Kasir trying to access unauthorized cabang', [
-                        'user_id' => $user->id,
                         'requested_cabang_id' => $cabangId,
                         'assigned_cabang_ids' => $assignedCabangIds
                     ]);
@@ -483,12 +436,10 @@ class ProdukController extends Controller
     private function getCabangList($user)
     {
         if ($user->role === 'it_support') {
-            // it_support can see all cabang
             return Cabang::select('id', 'nama', 'kode')->get();
         }
 
         if (in_array($user->role, ['manager', 'supervisor'])) {
-            // manager/supervisor can only see their assigned cabang
             return $user->cabang->map(function ($cabang) {
                 return [
                     'id' => $cabang->id,
@@ -505,67 +456,165 @@ class ProdukController extends Controller
     {
         try {
             $useCache = $request->boolean('use_cache', true);
-            $search = $request->input('search', '');
+            $search = trim($request->input('search', ''));
             $kategoriId = $request->input('kategori_id', '');
             $aktif = $request->input('aktif', null);
             $tipe = $request->input('tipe', '');
             $sortBy = $request->input('sort_by', '');
-            $sortDir = $request->input('sort_dir', 'asc');
+            $sortDir = strtolower($request->input('sort_dir', 'asc'));
 
-        if ($search) {
-            $produk = $this->productCacheService->searchProduk($cabangId, $search, $useCache);
-        } else {
-            $produk = $this->productCacheService->getProdukByCabang($cabangId, $useCache);
-        }
-
-        if ($kategoriId) {
-            $produk = $produk->where('kategori_id', $kategoriId);
-        }
-
-        if ($tipe) {
-            $produk = $produk->where('tipe', $tipe);
-        }
-
-        if ($aktif !== null && $aktif !== '') {
-            if ($aktif === '1' || $aktif === 1 || $aktif === true || $aktif === 'true') {
-                $produk = $produk->where('aktif', true);
-            } elseif ($aktif === '0' || $aktif === 0 || $aktif === false || $aktif === 'false') {
-                $produk = $produk->where('aktif', false);
+            // Validate sort direction
+            if (!in_array($sortDir, ['asc', 'desc'])) {
+                $sortDir = 'asc';
             }
-        }
 
-        // Apply sorting
-        if ($sortBy && in_array($sortBy, ['nama', 'sku', 'harga_jual'])) {
-            $produk = $produk->sortBy($sortBy, SORT_REGULAR, $sortDir === 'desc');
-        } elseif ($sortBy === 'kategori') {
-            $produk = $produk->sortBy('kategori.nama', SORT_REGULAR, $sortDir === 'desc');
-        } elseif ($sortBy === 'stok') {
-            $produk = $produk->sortBy(function ($item) {
-                return $item->stokEtalase->first()?->jumlah ?? 0;
-            }, SORT_REGULAR, $sortDir === 'desc');
-        }
+            Log::info('getProdukByCabang - Start', [
+                'cabang_id' => $cabangId,
+                'search' => $search,
+                'kategori_id' => $kategoriId,
+                'tipe' => $tipe,
+                'aktif' => $aktif,
+                'sort_by' => $sortBy,
+                'sort_dir' => $sortDir,
+            ]);
 
-        return $produk;
-        
+            // Get base products
+            if ($search) {
+                $produk = $this->productCacheService->searchProduk($cabangId, $search, $useCache);
+            } else {
+                $produk = $this->productCacheService->getProdukByCabang($cabangId, $useCache);
+            }
+
+            Log::info('getProdukByCabang - After base query', ['count' => $produk->count()]);
+
+            // Apply kategori filter - FIXED: Simplified logic
+            if ($this->isValidFilterValue($kategoriId)) {
+                $kategoriIdInt = (int) $kategoriId;
+                $produk = $produk->filter(function ($item) use ($kategoriIdInt) {
+                    return $item->kategori_id == $kategoriIdInt;
+                });
+                Log::info('getProdukByCabang - After kategori filter', [
+                    'kategori_id' => $kategoriIdInt,
+                    'count' => $produk->count(),
+                ]);
+            }
+
+            // Apply tipe filter - FIXED: Simplified logic
+            if ($this->isValidFilterValue($tipe)) {
+                $produk = $produk->filter(function ($item) use ($tipe) {
+                    return $item->tipe === $tipe;
+                });
+                Log::info('getProdukByCabang - After tipe filter', [
+                    'tipe' => $tipe,
+                    'count' => $produk->count(),
+                ]);
+            }
+
+            // Apply aktif filter - FIXED: More robust handling
+            if ($this->isValidFilterValue($aktif)) {
+                $isAktif = $this->normalizeAktifValue($aktif);
+                $produk = $produk->filter(function ($item) use ($isAktif) {
+                    return $item->aktif == $isAktif;
+                });
+                Log::info('getProdukByCabang - After aktif filter', [
+                    'aktif' => $aktif,
+                    'is_aktif' => $isAktif,
+                    'count' => $produk->count(),
+                ]);
+            }
+
+            // Apply sorting
+            $produk = $this->applySorting($produk, $sortBy, $sortDir);
+
+            Log::info('getProdukByCabang - Final result', ['count' => $produk->count()]);
+
+            return $produk;
         } catch (\Exception $e) {
             Log::error('Error in getProdukByCabang', [
                 'error' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
                 'cabang_id' => $cabangId,
-                'search' => $request->input('search', ''),
-                'kategori_id' => $request->input('kategori_id', ''),
-                'tipe' => $request->input('tipe', ''),
-                'aktif' => $request->input('aktif', null),
-                'sort_by' => $request->input('sort_by', ''),
-                'sort_dir' => $request->input('sort_dir', 'asc'),
-                'use_cache' => $request->boolean('use_cache', true),
-                'user_id' => auth()->id(),
             ]);
-            
-            // Return empty collection on error to prevent crashes
+
             return collect();
         }
+    }
+
+    private function isValidFilterValue($value)
+    {
+        if ($value === null || $value === '' || $value === '__all__') {
+            return false;
+        }
+
+        // Also check for string "0" which might be used for "all categories"
+        if ($value === '0' || $value === 0) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Normalize aktif value to boolean
+     */
+    private function normalizeAktifValue($aktif)
+    {
+        // Handle various input formats
+        if (is_bool($aktif)) {
+            return $aktif;
+        }
+
+        if (is_numeric($aktif)) {
+            return (int) $aktif === 1;
+        }
+
+        if (is_string($aktif)) {
+            return in_array(strtolower($aktif), ['1', 'true', 'yes'], true);
+        }
+
+        return false;
+    }
+
+    /**
+     * Apply sorting to product collection
+     */
+    private function applySorting($produk, $sortBy, $sortDir)
+    {
+        if (!$sortBy) {
+            return $produk->values();
+        }
+
+        switch ($sortBy) {
+            case 'nama':
+            case 'sku':
+            case 'harga_jual':
+                $produk = $produk->sortBy($sortBy, SORT_REGULAR, $sortDir === 'desc');
+                break;
+
+            case 'kategori':
+                $produk = $produk->sortBy(function ($item) {
+                    return $item->kategori->nama ?? '';
+                }, SORT_REGULAR, $sortDir === 'desc');
+                break;
+
+            case 'stok':
+                $produk = $produk->sortBy(function ($item) {
+                    $stokEtalase = $item->stokEtalase->first();
+                    return $stokEtalase ? (float) $stokEtalase->jumlah : 0;
+                }, SORT_REGULAR, $sortDir === 'desc');
+                break;
+
+            default:
+                // Invalid sort field, return unsorted
+                return $produk->values();
+        }
+
+        Log::info('getProdukByCabang - After sorting', [
+            'sort_by' => $sortBy,
+            'sort_dir' => $sortDir,
+        ]);
+
+        return $produk->values();
     }
 
     public function create(Request $request)
