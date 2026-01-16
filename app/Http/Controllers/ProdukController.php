@@ -55,11 +55,9 @@ class ProdukController extends Controller
                 return $this->renderEmptyProductList($user);
             }
 
-            // Get filtered products
             $produk = $this->getProdukByCabang($cabangId, $request);
             $selectedCabang = Cabang::find($cabangId);
 
-            // Pagination settings with proper validation
             $perPage = $this->getValidatedPerPage($request);
             $page = max(1, (int) $request->input('page', 1));
             $total = $produk->count();
@@ -70,21 +68,15 @@ class ProdukController extends Controller
                 'current_page' => $page,
             ]);
 
-            // Calculate pagination - FIXED LOGIC
-            $lastPage = $total > 0 ? max(1, (int) ceil($total / $perPage)) : 1;
+            $lastPage = $total > 0 ? (int) ceil($total / $perPage) : 1;
 
-            // Ensure page is within valid range
             $page = min($page, $lastPage);
 
-            // Calculate offset - handle edge case when per_page > total
             $offset = ($page - 1) * $perPage;
 
-            // Get items for current page - FIXED: handle when per_page > total
             if ($perPage >= $total) {
-                // If per_page is greater than or equal to total, show all items
                 $items = $produk->values();
             } else {
-                // Otherwise, slice normally
                 $items = $produk->slice($offset, $perPage)->values();
             }
 
@@ -176,10 +168,8 @@ class ProdukController extends Controller
     {
         $perPage = $request->input('per_page', 20);
 
-        // Ensure it's an integer
         $perPage = is_numeric($perPage) ? (int) $perPage : 20;
 
-        // Clamp between 1 and 1000
         return max(1, min(1000, $perPage));
     }
 
@@ -337,7 +327,6 @@ class ProdukController extends Controller
         try {
             $user = auth()->user();
 
-            // DEBUG: Log user and role info
             Log::info('=== PRODUK INDEX DEBUG ===', [
                 'user_id' => $user->id,
                 'user_name' => $user->name,
@@ -349,7 +338,6 @@ class ProdukController extends Controller
 
             $cabangId = $this->getCabangId($request, $user);
 
-            // DEBUG: Log cabang resolution
             Log::info('PRODUK INDEX - Cabang Resolution', [
                 'request_cabang_id' => $request->input('cabang_id'),
                 'resolved_cabang_id' => $cabangId,
@@ -370,7 +358,6 @@ class ProdukController extends Controller
 
             $produk = $this->getProdukForApi($cabangId, $search, $kategoriId, $tipe, $base);
 
-            // Apply pagination
             $total = $produk->count();
             $produk = $produk->take($perPage)->values();
 
@@ -463,7 +450,6 @@ class ProdukController extends Controller
             $sortBy = $request->input('sort_by', '');
             $sortDir = strtolower($request->input('sort_dir', 'asc'));
 
-            // Validate sort direction
             if (!in_array($sortDir, ['asc', 'desc'])) {
                 $sortDir = 'asc';
             }
@@ -478,7 +464,6 @@ class ProdukController extends Controller
                 'sort_dir' => $sortDir,
             ]);
 
-            // Get base products
             if ($search) {
                 $produk = $this->productCacheService->searchProduk($cabangId, $search, $useCache);
             } else {
@@ -487,7 +472,6 @@ class ProdukController extends Controller
 
             Log::info('getProdukByCabang - After base query', ['count' => $produk->count()]);
 
-            // Apply kategori filter - FIXED: Simplified logic
             if ($this->isValidFilterValue($kategoriId)) {
                 $kategoriIdInt = (int) $kategoriId;
                 $produk = $produk->filter(function ($item) use ($kategoriIdInt) {
@@ -499,7 +483,6 @@ class ProdukController extends Controller
                 ]);
             }
 
-            // Apply tipe filter - FIXED: Simplified logic
             if ($this->isValidFilterValue($tipe)) {
                 $produk = $produk->filter(function ($item) use ($tipe) {
                     return $item->tipe === $tipe;
@@ -510,7 +493,6 @@ class ProdukController extends Controller
                 ]);
             }
 
-            // Apply aktif filter - FIXED: More robust handling
             if ($this->isValidFilterValue($aktif)) {
                 $isAktif = $this->normalizeAktifValue($aktif);
                 $produk = $produk->filter(function ($item) use ($isAktif) {
@@ -523,7 +505,6 @@ class ProdukController extends Controller
                 ]);
             }
 
-            // Apply sorting
             $produk = $this->applySorting($produk, $sortBy, $sortDir);
 
             Log::info('getProdukByCabang - Final result', ['count' => $produk->count()]);
@@ -546,7 +527,6 @@ class ProdukController extends Controller
             return false;
         }
 
-        // Also check for string "0" which might be used for "all categories"
         if ($value === '0' || $value === 0) {
             return false;
         }
@@ -622,7 +602,6 @@ class ProdukController extends Controller
         try {
             $user = auth()->user();
 
-            // DEBUG: Log create request
             Log::info('=== PRODUK CREATE DEBUG ===', [
                 'user_id' => $user->id,
                 'user_name' => $user->name,
@@ -631,7 +610,6 @@ class ProdukController extends Controller
                 'assigned_cabang_names' => $user->cabang->pluck('nama')->all(),
             ]);
 
-            // Check authorization
             if (!$this->canManageProduk($user)) {
                 Log::warning('PRODUK CREATE - Unauthorized access attempt', [
                     'user_id' => $user->id,
@@ -644,7 +622,6 @@ class ProdukController extends Controller
 
             $cabangId = $this->getCabangId($request, $user);
 
-            // DEBUG: Log kategori and satuan options
             $kategoriList = KategoriProduk::select('id', 'nama')->get();
             $satuanOptions = SatuanProduk::select('nama_satuan')->distinct()->pluck('nama_satuan')->values()->all();
             Log::info('PRODUK CREATE - Options loaded', [
@@ -681,14 +658,12 @@ class ProdukController extends Controller
         try {
             $user = auth()->user();
 
-            // DEBUG: Log store request
             Log::info('=== PRODUK STORE DEBUG ===', [
                 'user_id' => $user->id,
                 'user_role' => $user->role,
                 'request_data_keys' => array_keys($request->all()),
             ]);
 
-            // Check authorization
             if (!$this->canManageProduk($user)) {
                 Log::warning('PRODUK STORE - Unauthorized access', ['user_id' => $user->id, 'user_role' => $user->role]);
                 return back()->with('error', 'Anda tidak memiliki akses untuk menambah produk');
@@ -724,7 +699,6 @@ class ProdukController extends Controller
                 return back()->withErrors($validator)->withInput();
             }
 
-            // Validate cabang access for manager/supervisor
             if (in_array($user->role, ['manager', 'supervisor']) && $request->has('stok_etalase')) {
                 $assignedCabangIds = $user->cabang->pluck('id')->all();
                 foreach ($request->input('stok_etalase') as $stok) {
@@ -752,19 +726,20 @@ class ProdukController extends Controller
 
             $produk = Produk::create($data);
 
-            // Create stok etalase if provided
+            $affectedCabangIds = [];
+
             if ($request->has('stok_etalase')) {
                 foreach ($request->input('stok_etalase') as $stok) {
                     $produk->stokEtalase()->create($stok);
+                    $affectedCabangIds[] = $stok['cabang_id'];
                 }
             }
 
-            // Clear cache for affected cabang
-            if ($request->has('stok_etalase')) {
-                foreach ($request->input('stok_etalase') as $stok) {
-                    $this->productCacheService->clearCache($stok['cabang_id']);
-                }
+            foreach (array_unique($affectedCabangIds) as $cabangId) {
+                $this->productCacheService->clearCache($cabangId);
             }
+
+            $this->productCacheService->incrementCacheVersion();
 
             Log::info('PRODUK STORE - Success', [
                 'produk_id' => $produk->id,
@@ -772,6 +747,7 @@ class ProdukController extends Controller
                 'produk_sku' => $produk->sku,
                 'produk_nama' => $produk->nama,
                 'stok_etalase_created' => $request->has('stok_etalase') ? count($request->input('stok_etalase', [])) : 0,
+                'cleared_cache_for_cabang' => $affectedCabangIds,
             ]);
 
             return redirect()->route('produk.index')->with('success', 'Produk berhasil ditambahkan');
@@ -949,7 +925,6 @@ class ProdukController extends Controller
                 return back()->withErrors($validator)->withInput();
             }
 
-            // Validate cabang access for manager/supervisor
             if (in_array($user->role, ['manager', 'supervisor']) && $request->has('stok_etalase')) {
                 $assignedCabangIds = $user->cabang->pluck('id')->all();
                 foreach ($request->input('stok_etalase') as $stok) {
@@ -983,35 +958,32 @@ class ProdukController extends Controller
                 $data['image_path'] = $path;
             }
 
+            $affectedCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
+
             $produk->update($data);
 
-            // Update stok etalase
             if ($request->has('stok_etalase')) {
-                // Get affected cabang IDs before update
-                $affectedCabangIds = array_merge(
-                    $produk->stokEtalase->pluck('cabang_id')->all(),
-                    array_column($request->input('stok_etalase'), 'cabang_id')
-                );
+                $newCabangIds = array_column($request->input('stok_etalase'), 'cabang_id');
+                $affectedCabangIds = array_merge($affectedCabangIds, $newCabangIds);
 
-                // Delete existing stok etalase
                 $produk->stokEtalase()->delete();
 
-                // Create new stok etalase
                 foreach ($request->input('stok_etalase') as $stok) {
                     $produk->stokEtalase()->create($stok);
                 }
-
-                // Clear cache for affected cabang
-                foreach (array_unique($affectedCabangIds) as $cabangId) {
-                    $this->productCacheService->clearCache($cabangId);
-                }
             }
+
+            foreach (array_unique($affectedCabangIds) as $cabangId) {
+                $this->productCacheService->clearCache($cabangId);
+            }
+
+            $this->productCacheService->incrementCacheVersion();
 
             Log::info('PRODUK UPDATE - Success', [
                 'produk_id' => $produk->id,
                 'user_id' => $user->id,
                 'produk_sku' => $produk->sku,
-                'affected_cabang_ids' => $affectedCabangIds,
+                'affected_cabang_ids' => array_unique($affectedCabangIds),
             ]);
 
             return redirect()->route('produk.index')->with('success', 'Produk berhasil diupdate');
@@ -1026,14 +998,12 @@ class ProdukController extends Controller
         try {
             $user = auth()->user();
 
-            // DEBUG: Log destroy request
             Log::info('=== PRODUK DESTROY DEBUG ===', [
                 'user_id' => $user->id,
                 'user_role' => $user->role,
                 'produk_id' => $id,
             ]);
 
-            // Check authorization
             if (!$this->canManageProduk($user)) {
                 Log::warning('PRODUK DESTROY - Unauthorized access', ['user_id' => $user->id, 'user_role' => $user->role, 'produk_id' => $id]);
                 return back()->with('error', 'Anda tidak memiliki akses untuk menghapus produk');
@@ -1043,7 +1013,6 @@ class ProdukController extends Controller
 
             $produk = Produk::with(['stokEtalase'])->findOrFail($id);
 
-            // DEBUG: Log produk details
             Log::info('PRODUK DESTROY - Produk Details', [
                 'produk_id' => $produk->id,
                 'produk_nama' => $produk->nama,
@@ -1051,12 +1020,10 @@ class ProdukController extends Controller
                 'affected_cabang_ids' => $produk->stokEtalase->pluck('cabang_id')->all(),
             ]);
 
-            // For manager/supervisor, check if they have access to this produk's cabang
             if (in_array($user->role, ['manager', 'supervisor'])) {
                 $assignedCabangIds = $user->cabang->pluck('id')->all();
                 $produkCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
 
-                // DEBUG: Log access check
                 Log::info('PRODUK DESTROY - Cabang Access Check', [
                     'user_assigned_cabang' => $assignedCabangIds,
                     'produk_cabang_ids' => $produkCabangIds,
@@ -1071,7 +1038,6 @@ class ProdukController extends Controller
                 }
             }
 
-            // Get affected cabang IDs before deletion
             $affectedCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
 
             Log::info('PRODUK DESTROY - Deleting', [
@@ -1079,13 +1045,13 @@ class ProdukController extends Controller
                 'affected_cabang_ids' => $affectedCabangIds,
             ]);
 
-            // Soft delete the produk
             $produk->delete();
 
-            // Clear cache for affected cabang
             foreach ($affectedCabangIds as $cabangId) {
                 $this->productCacheService->clearCache($cabangId);
             }
+
+            $this->productCacheService->incrementCacheVersion();
 
             Log::info('PRODUK DESTROY - Success', [
                 'produk_id' => $id,
