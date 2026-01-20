@@ -7,6 +7,7 @@ interface Produk {
   id: number;
   sku: string;
   nama: string;
+  varian?: string | null;
   deskripsi?: string | null;
   image_path?: string | null;
   tipe: string;
@@ -86,6 +87,10 @@ export default function ProdukShow({ produk }: Props) {
                 <div className="flex flex-col gap-1">
                   <dt className="text-muted-foreground">Nama</dt>
                   <dd className="font-medium">{produk?.nama}</dd>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <dt className="text-muted-foreground">Varian</dt>
+                  <dd>{produk?.varian ?? '-'}</dd>
                 </div>
                 <div className="flex flex-col gap-1">
                   <dt className="text-muted-foreground">SKU</dt>

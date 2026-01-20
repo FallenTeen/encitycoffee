@@ -15,11 +15,12 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Head, Link, useForm } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, Sparkles, Trash2 } from 'lucide-react';
+import { CheckCircle2, Flame, Loader2, Snowflake, Sparkles, Trash2 } from 'lucide-react';
 
 interface Kategori {
   id: number;
   nama: string;
+  slug: string;
 }
 
 interface SatuanStok {
@@ -57,48 +58,82 @@ interface Props {
 export default function ProdukEdit({ produk, kategori, stok_tersedia }: Props) {
   const { data, setData, post, processing, errors } = useForm({
     _method: 'PUT',
-    kategori_id: produk?.kategori_id ? String(produk.kategori_id) : '',
-    nama: produk?.nama ?? '',
-    kelompok_nama: produk?.kelompok_nama ?? '',
-    varian: produk?.varian ?? 'none',
-    sku: produk?.sku ?? '',
-    tipe: produk?.tipe ?? '',
-    base: produk?.base ?? 'none',
-    deskripsi: produk?.deskripsi ?? '',
-    satuan_dasar: produk?.satuan_dasar ?? '',
-    harga_modal: produk?.harga_modal !== undefined && produk?.harga_modal !== null ? String(produk.harga_modal) : '',
-    harga_jual: produk?.harga_jual !== undefined && produk?.harga_jual !== null ? String(produk.harga_jual) : '',
+    kategori_id: String(produk.kategori_id || ''),
+    kelompok_nama: produk.kelompok_nama || produk.nama,
+    varian: produk.varian || 'none',
+    nama: produk.nama,
+    sku: produk.sku,
+    tipe: produk.tipe,
+    base: produk.base || 'none',
+    deskripsi: produk.deskripsi || '',
+    satuan_dasar: produk.satuan_dasar || 'pcs',
+    harga_modal:
+      produk.harga_modal !== undefined && produk.harga_modal !== null
+        ? String(produk.harga_modal)
+        : '',
+    harga_jual:
+      produk.harga_jual !== undefined && produk.harga_jual !== null
+        ? String(produk.harga_jual)
+        : '',
     image: null as File | null,
     hapus_gambar: false,
-    perlu_kalibrasi: Boolean(produk?.perlu_kalibrasi),
-    aktif: Boolean(produk?.aktif),
+    perlu_kalibrasi: Boolean(produk.perlu_kalibrasi),
+    aktif: Boolean(produk.aktif),
   });
+
+  const KATEGORI_TIPE_MAP: Record<string, string> = {
+    'kopi-beans': 'beans',
+    'minuman-kopi': 'minuman',
+    'minuman-non-kopi': 'minuman',
+    snack: 'snack',
+  };
+
+  const [autoTipe, setAutoTipe] = useState<string>(produk.tipe || '');
+  const [showBaseField, setShowBaseField] = useState(produk.tipe === 'minuman');
 
   const [skuStatus, setSkuStatus] = useState<'idle' | 'checking' | 'taken' | 'available'>('idle');
   const [isGeneratingSku, setIsGeneratingSku] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const skuCheckTimeout = useRef<number | null>(null);
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
-  const [kelompokList, setKelompokList] = useState<string[]>([]);
-  const [showKelompokInput, setShowKelompokInput] = useState(false);
 
   const currentImageUrl = produk?.image_path ? `/storage/${produk.image_path}` : null;
 
-  // Fetch existing kelompok nama
+  const handleKategoriChange = (kategoriId: string) => {
+    setData('kategori_id', kategoriId);
+
+    const selectedKat = kategori.find((k) => String(k.id) === kategoriId);
+    if (selectedKat) {
+      const tipe = KATEGORI_TIPE_MAP[selectedKat.slug] || '';
+      setAutoTipe(tipe);
+      setData('tipe', tipe);
+      setShowBaseField(tipe === 'minuman');
+
+      if (tipe !== 'minuman') {
+        setData('base', 'none');
+      }
+    }
+  };
+
+  const handleKelompokOrVarianChange = () => {
+    const kelompok = data.kelompok_nama.trim();
+    const varian = data.varian;
+
+    if (!kelompok) {
+      setData('nama', '');
+      return;
+    }
+
+    if (varian === 'none' || !varian) {
+      setData('nama', kelompok);
+    } else {
+      setData('nama', `${kelompok} ${varian}`);
+    }
+  };
+
   useEffect(() => {
-    fetch('/produk/kelompok-nama', {
-      headers: { Accept: 'application/json' },
-    })
-      .then(async (res) => {
-        if (res.ok) {
-          const json = await res.json();
-          setKelompokList(json.data || []);
-        }
-      })
-      .catch(() => {
-        // Silent fail
-      });
-  }, []);
+    handleKelompokOrVarianChange();
+  }, [data.kelompok_nama, data.varian]);
 
   const checkSkuAvailability = (value: string) => {
     if (!value) {
@@ -192,8 +227,13 @@ export default function ProdukEdit({ produk, kategori, stok_tersedia }: Props) {
 
             const nextErrors: Record<string, string> = {};
 
-            if (!data.nama.trim()) nextErrors.nama = 'Nama produk wajib diisi';
+            if (!data.kelompok_nama.trim()) {
+              nextErrors.kelompok_nama = 'Kelompok nama wajib diisi';
+            }
             if (!data.satuan_dasar.trim()) nextErrors.satuan_dasar = 'Satuan dasar wajib diisi';
+            if (showBaseField && (!data.base || data.base === 'none')) {
+              nextErrors.base = 'Base produk wajib dipilih';
+            }
 
             const hargaModal = Number(data.harga_modal);
             if (!data.harga_modal || Number.isNaN(hargaModal) || hargaModal < 0) {
@@ -227,10 +267,9 @@ export default function ProdukEdit({ produk, kategori, stok_tersedia }: Props) {
                   <CardDescription>Detail utama produk</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* Kategori */}
                   <div className="space-y-2">
                     <Label htmlFor="kategori_id">Kategori Produk *</Label>
-                    <Select value={data.kategori_id} onValueChange={(v) => setData('kategori_id', v)}>
+                    <Select value={data.kategori_id} onValueChange={handleKategoriChange}>
                       <SelectTrigger id="kategori_id">
                         <SelectValue placeholder="Pilih kategori" />
                       </SelectTrigger>
@@ -245,100 +284,74 @@ export default function ProdukEdit({ produk, kategori, stok_tersedia }: Props) {
                     <InputError message={errors.kategori_id as string} />
                   </div>
 
-                  {/* Nama Produk */}
                   <div className="space-y-2">
-                    <Label htmlFor="nama">Nama Produk *</Label>
+                    <Label htmlFor="kelompok_nama">Kelompok Nama *</Label>
+                    <Input
+                      id="kelompok_nama"
+                      value={data.kelompok_nama}
+                      onChange={(e) => setData('kelompok_nama', e.target.value)}
+                      placeholder="Contoh: Caramel Latte"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Nama base produk (tanpa varian)
+                    </p>
+                    <InputError
+                      message={clientErrors.kelompok_nama || (errors.kelompok_nama as string)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Varian</Label>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant={!data.varian || data.varian === 'none' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setData('varian', 'none')}
+                      >
+                        Tanpa Varian
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={data.varian === 'Hot' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() =>
+                          setData('varian', data.varian === 'Hot' ? 'none' : 'Hot')
+                        }
+                        className="inline-flex items-center gap-1"
+                      >
+                        <Flame className="h-4 w-4" />
+                        <span>Hot</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={data.varian === 'Ice' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() =>
+                          setData('varian', data.varian === 'Ice' ? 'none' : 'Ice')
+                        }
+                        className="inline-flex items-center gap-1"
+                      >
+                        <Snowflake className="h-4 w-4" />
+                        <span>Ice</span>
+                      </Button>
+                    </div>
+                    <InputError message={errors.varian as string} />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="nama">Nama Lengkap (Auto) *</Label>
                     <Input
                       id="nama"
                       value={data.nama}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setData('nama', value);
-                        if (!data.kelompok_nama) {
-                          setData('kelompok_nama', value);
-                        }
-                      }}
-                      placeholder="Contoh: Caramel Latte"
+                      readOnly
+                      className="bg-muted cursor-not-allowed"
+                      placeholder="Akan terisi otomatis"
                     />
-                    <InputError message={clientErrors.nama || (errors.nama as string)} />
-                  </div>
-
-                  {/* Kelompok Nama */}
-                  <div className="space-y-2">
-                    <Label htmlFor="kelompok_nama">Kelompok Nama</Label>
-                    {!showKelompokInput && kelompokList.length > 0 ? (
-                      <div className="flex gap-2">
-                        <Select
-                          value={data.kelompok_nama}
-                          onValueChange={(v) => {
-                            if (v === '__new__') {
-                              setShowKelompokInput(true);
-                              setData('kelompok_nama', '');
-                            } else {
-                              setData('kelompok_nama', v);
-                            }
-                          }}
-                        >
-                          <SelectTrigger className="flex-1">
-                            <SelectValue placeholder="Pilih kelompok atau buat baru" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {kelompokList.map((k) => (
-                              <SelectItem key={k} value={k}>
-                                {k}
-                              </SelectItem>
-                            ))}
-                            <SelectItem value="__new__">+ Buat Kelompok Baru</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          onClick={() => setShowKelompokInput(true)}
-                        >
-                          <Sparkles className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex gap-2">
-                        <Input
-                          id="kelompok_nama"
-                          value={data.kelompok_nama}
-                          onChange={(e) => setData('kelompok_nama', e.target.value)}
-                          placeholder="Contoh: Latte"
-                        />
-                        {kelompokList.length > 0 && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setShowKelompokInput(false)}
-                          >
-                            Pilih Existing
-                          </Button>
-                        )}
-                      </div>
-                    )}
                     <p className="text-xs text-muted-foreground">
-                      Kelompok untuk mengelompokkan produk serupa (opsional)
+                      Nama dibuat otomatis dari Kelompok + Varian
                     </p>
-                    <InputError message={errors.kelompok_nama as string} />
-                  </div>
-
-                  {/* Varian */}
-                  <div className="space-y-2">
-                    <Label htmlFor="varian">Varian</Label>
-                    <Select value={data.varian} onValueChange={(v) => setData('varian', v)}>
-                      <SelectTrigger id="varian">
-                        <SelectValue placeholder="Pilih varian (opsional)" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Tidak ada varian</SelectItem>
-                        <SelectItem value="Hot">Hot</SelectItem>
-                        <SelectItem value="Ice">Ice</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <InputError message={errors.varian as string} />
+                    <InputError message={clientErrors.nama || (errors.nama as string)} />
                   </div>
                 </CardContent>
               </Card>
@@ -349,42 +362,46 @@ export default function ProdukEdit({ produk, kategori, stok_tersedia }: Props) {
                   <CardDescription>Tipe dan base produk</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* Tipe */}
                   <div className="space-y-2">
                     <Label htmlFor="tipe">Tipe Produk *</Label>
-                    <Select value={data.tipe} onValueChange={(v) => setData('tipe', v)}>
-                      <SelectTrigger id="tipe">
-                        <SelectValue placeholder="Pilih tipe" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="beans">Beans (Biji Kopi)</SelectItem>
-                        <SelectItem value="minuman">Minuman (Beverage)</SelectItem>
-                        <SelectItem value="snack">Snack (Makanan)</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <Input
+                      id="tipe"
+                      value={
+                        autoTipe
+                          ? autoTipe === 'beans'
+                            ? 'Beans'
+                            : autoTipe === 'minuman'
+                              ? 'Minuman'
+                              : 'Snack'
+                          : ''
+                      }
+                      readOnly
+                      className="bg-muted cursor-not-allowed"
+                    />
+                    <p className="text-xs text-muted-foreground">Tipe otomatis dari kategori</p>
                     <InputError message={errors.tipe as string} />
                   </div>
 
-                  {/* Base */}
-                  <div className="space-y-2">
-                    <Label htmlFor="base">Base Produk</Label>
-                    <Select value={data.base} onValueChange={(v) => setData('base', v)}>
-                      <SelectTrigger id="base">
-                        <SelectValue placeholder="Pilih base (opsional)" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Tidak ada base</SelectItem>
-                        <SelectItem value="coffee">Coffee</SelectItem>
-                        <SelectItem value="milk">Milk</SelectItem>
-                        <SelectItem value="tea">Tea</SelectItem>
-                        <SelectItem value="others">Others</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      Base ingredient utama produk (untuk minuman)
-                    </p>
-                    <InputError message={errors.base as string} />
-                  </div>
+                  {showBaseField && (
+                    <div className="space-y-2">
+                      <Label htmlFor="base">Base Produk *</Label>
+                      <Select value={data.base} onValueChange={(v) => setData('base', v)}>
+                        <SelectTrigger id="base">
+                          <SelectValue placeholder="Pilih base" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="coffee">Coffee</SelectItem>
+                          <SelectItem value="milk">Milk</SelectItem>
+                          <SelectItem value="tea">Tea</SelectItem>
+                          <SelectItem value="others">Others</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Base ingredient utama produk (untuk minuman)
+                      </p>
+                      <InputError message={clientErrors.base || (errors.base as string)} />
+                    </div>
+                  )}
 
                   {/* SKU */}
                   <div className="space-y-2">
@@ -430,7 +447,10 @@ export default function ProdukEdit({ produk, kategori, stok_tersedia }: Props) {
                       <p className="text-xs text-destructive">SKU ini sudah dipakai</p>
                     )}
                     {skuStatus === 'available' && (
-                      <p className="text-xs text-emerald-600">✓ SKU tersedia</p>
+                      <p className="inline-flex items-center gap-1 text-xs text-emerald-600">
+                        <CheckCircle2 className="h-3 w-3" />
+                        <span>SKU tersedia</span>
+                      </p>
                     )}
                     {skuStatus === 'checking' && (
                       <p className="text-xs text-muted-foreground">Memeriksa ketersediaan...</p>

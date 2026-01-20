@@ -38,7 +38,7 @@ class ProductCacheService
 
     private function fetchFromDatabase(int $cabangId)
     {
-        $produk = Produk::aktif()
+        $produk = Produk::query()
             ->withStokCabang($cabangId)
             ->select([
                 'produk.id',
@@ -60,7 +60,6 @@ class ProductCacheService
             ->orderBy('produk.nama')
             ->get();
 
-        // DEBUG: Log hasil query
         Log::info('Produk database fetch completed', [
             'cabang_id' => $cabangId,
             'produk_count' => $produk->count(),
@@ -94,7 +93,7 @@ class ProductCacheService
 
     private function fetchAllFromDatabase()
     {
-        return Produk::aktif()
+        return Produk::query()
             ->with(['stokEtalase.cabang', 'kategori'])
             ->select([
                 'produk.id',
@@ -151,8 +150,8 @@ class ProductCacheService
         $searchTerm = strtolower($query);
         return $produk->filter(function ($item) use ($searchTerm) {
             return str_contains(strtolower($item->nama), $searchTerm) ||
-                   str_contains(strtolower($item->sku), $searchTerm) ||
-                   str_contains(strtolower($item->deskripsi), $searchTerm);
+                str_contains(strtolower($item->sku), $searchTerm) ||
+                str_contains(strtolower($item->deskripsi), $searchTerm);
         })->values();
     }
 

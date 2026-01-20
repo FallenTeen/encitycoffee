@@ -9,6 +9,14 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from '@/components/ui/dialog';
 import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
 import { Head, Link, router, useForm } from '@inertiajs/react';
@@ -16,10 +24,13 @@ import {
     AlertCircle,
     ChevronDown,
     ChevronUp,
+    Flame,
     Grid3X3,
     List,
+    Package,
     Rows3,
     Search,
+    Snowflake,
     X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -78,17 +89,20 @@ interface Props {
     selectedCabang?: { id: number; nama: string; kode: string } | null;
     cacheInfo?: { has_cache: boolean; cache_key: string; ttl: number };
     canManageProduk?: boolean;
+    canDeleteProduk?: boolean;
 }
 
 type ViewMode = 'table' | 'card' | 'compact';
 type SortField = 'nama' | 'kategori' | 'harga_jual' | 'stok' | 'sku';
 type SortDir = 'asc' | 'desc' | null;
+type GroupMode = 'list' | 'grouped';
 
 const STORAGE_KEYS = {
     VIEW_MODE: 'produk_view_mode',
     PER_PAGE: 'produk_per_page',
     SORT_BY: 'produk_sort_by',
     SORT_DIR: 'produk_sort_dir',
+    GROUP_MODE: 'produk_group_mode',
 };
 
 export default function ProdukIndex({
@@ -98,6 +112,7 @@ export default function ProdukIndex({
     cabangList,
     selectedCabang,
     canManageProduk = false,
+    canDeleteProduk = false,
 }: Props) {
     // Load saved preferences
     const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -132,10 +147,20 @@ export default function ProdukIndex({
         );
     });
 
+    const [groupMode, setGroupMode] = useState<GroupMode>(() => {
+        if (typeof window === 'undefined') return 'list';
+        return (
+            (localStorage.getItem(STORAGE_KEYS.GROUP_MODE) as GroupMode) ||
+            'list'
+        );
+    });
+
     const [togglingId, setTogglingId] = useState<number | null>(null);
+    const [statusMap, setStatusMap] = useState<Record<number, boolean>>({});
     const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
     const [clearAllError, setClearAllError] = useState<string | null>(null);
     const [isClearing, setIsClearing] = useState(false);
+    const [isCabangModalOpen, setIsCabangModalOpen] = useState(false);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const debounceTimeout = useRef<number | null>(null);
     const clearAllDebounceTimeout = useRef<number | null>(null);
@@ -203,6 +228,10 @@ export default function ProdukIndex({
         else localStorage.removeItem(STORAGE_KEYS.SORT_DIR);
     }, [sortDir]);
 
+    useEffect(() => {
+        localStorage.setItem(STORAGE_KEYS.GROUP_MODE, groupMode);
+    }, [groupMode]);
+
     // Real-time search with debounce (optional)
     useEffect(() => {
         if (debounceTimeout.current) {
@@ -247,13 +276,13 @@ export default function ProdukIndex({
             }
         }
 
+        const nextData = { ...data, sort_by: field, sort_dir: newDir };
+
         setSortBy(field);
         setSortDir(newDir);
-        setData({ ...data, sort_by: field, sort_dir: newDir });
+        setData(nextData);
 
-        // Submit with new sort
         get('/produk', {
-            data: { ...data, sort_by: field, sort_dir: newDir },
             preserveState: true,
             preserveScroll: true,
             replace: true,
@@ -271,11 +300,12 @@ export default function ProdukIndex({
 
         const validatedPerPage = Math.max(1, Math.min(1000, newPerPage));
 
+        const nextData = { ...data, per_page: validatedPerPage, page: 1 };
+
         setPerPage(validatedPerPage);
-        setData({ ...data, per_page: validatedPerPage });
+        setData(nextData);
 
         get('/produk', {
-            data: { ...data, per_page: validatedPerPage, page: 1 }, // Reset to page 1
             preserveState: true,
             preserveScroll: false,
             replace: true,
@@ -299,7 +329,6 @@ export default function ProdukIndex({
 
         setData(newData);
         get('/produk', {
-            data: newData,
             preserveState: true,
             preserveScroll: true,
             replace: true,
@@ -400,6 +429,24 @@ export default function ProdukIndex({
         data.aktif,
     ].filter(Boolean).length;
 
+    const groupedProducts = useMemo(() => {
+        if (groupMode === 'list') return null;
+
+        const groups: Record<string, ProdukItem[]> = {};
+
+        (produks?.data ?? []).forEach((produk) => {
+            const key = `${produk.kategori?.id || 0}_${
+                produk.kelompok_nama || produk.nama
+            }`;
+            if (!groups[key]) {
+                groups[key] = [];
+            }
+            groups[key].push(produk);
+        });
+
+        return groups;
+    }, [produks, groupMode]);
+
     const SortIcon = ({ field }: { field: SortField }) => {
         if (sortBy !== field)
             return <ChevronUp className="h-3 w-3 opacity-30" />;
@@ -434,7 +481,7 @@ export default function ProdukIndex({
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        {/* View Mode Toggle */}
+                        {/* View Mode Toggle - EXISTING */}
                         <div className="flex items-center rounded-md border">
                             <Button
                                 variant={
@@ -458,7 +505,9 @@ export default function ProdukIndex({
                             </Button>
                             <Button
                                 variant={
-                                    viewMode === 'compact' ? 'default' : 'ghost'
+                                    viewMode === 'compact'
+                                        ? 'default'
+                                        : 'ghost'
                                 }
                                 size="sm"
                                 onClick={() => setViewMode('compact')}
@@ -467,6 +516,94 @@ export default function ProdukIndex({
                                 <Rows3 className="h-4 w-4" />
                             </Button>
                         </div>
+                        {/* NEW: Group Mode Toggle */}
+                        <div className="flex items-center rounded-md border">
+                            <Button
+                                variant={
+                                    groupMode === 'list'
+                                        ? 'default'
+                                        : 'ghost'
+                                }
+                                size="sm"
+                                onClick={() => setGroupMode('list')}
+                                className="rounded-r-none"
+                            >
+                                List All
+                            </Button>
+                            <Button
+                                variant={
+                                    groupMode === 'grouped'
+                                        ? 'default'
+                                        : 'ghost'
+                                }
+                                size="sm"
+                                onClick={() => setGroupMode('grouped')}
+                                className="rounded-l-none"
+                            >
+                                <Package className="mr-1 h-4 w-4" />
+                                Grouped
+                            </Button>
+                        </div>
+                        {cabangList && cabangList.length > 1 && (
+                            <Dialog
+                                open={isCabangModalOpen}
+                                onOpenChange={setIsCabangModalOpen}
+                            >
+                                <DialogTrigger asChild>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                    >
+                                        Lihat Produk Cabang Lain
+                                    </Button>
+                                </DialogTrigger>
+                                <DialogContent className="max-w-3xl">
+                                    <DialogHeader>
+                                        <DialogTitle>
+                                            Katalog Produk Cabang Lain
+                                        </DialogTitle>
+                                        <DialogDescription>
+                                            Pilih cabang untuk membuka katalog
+                                            produk cabang tersebut.
+                                        </DialogDescription>
+                                    </DialogHeader>
+                                    <div className="mt-4 space-y-3">
+                                        {cabangList.map((cabang) => (
+                                            <div
+                                                key={cabang.id}
+                                                className="flex items-center justify-between rounded border bg-muted/40 px-3 py-2"
+                                            >
+                                                <div className="flex flex-col">
+                                                    <span className="font-medium">
+                                                        {cabang.nama}
+                                                    </span>
+                                                    <span className="text-xs text-muted-foreground">
+                                                        Kode:{' '}
+                                                        {cabang.kode}
+                                                    </span>
+                                                </div>
+                                                <Button
+                                                    size="sm"
+                                                    asChild
+                                                    onClick={() =>
+                                                        setIsCabangModalOpen(
+                                                            false,
+                                                        )
+                                                    }
+                                                >
+                                                    <Link
+                                                        href={`/produk?cabang_id=${cabang.id}`}
+                                                    >
+                                                        Buka katalog
+                                                    </Link>
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </DialogContent>
+                            </Dialog>
+                        )}
                         {canManageProduk && (
                             <Button asChild>
                                 <Link href="/produk/create">
@@ -735,7 +872,7 @@ export default function ProdukIndex({
                 </div>
 
                 {/* Table View */}
-                {viewMode === 'table' && (
+                {viewMode === 'table' && groupMode === 'list' && (
                     <div className="rounded-lg border bg-card">
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
@@ -821,6 +958,8 @@ export default function ProdukIndex({
                                         const imageUrl = getImageUrl(
                                             p.image_path,
                                         );
+                                        const isAktif =
+                                            statusMap[p.id] ?? p.aktif;
 
                                         return (
                                             <tr
@@ -899,7 +1038,7 @@ export default function ProdukIndex({
                                                         type="button"
                                                         className={cn(
                                                             'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',
-                                                            p.aktif
+                                                            isAktif
                                                                 ? 'bg-green-500'
                                                                 : 'bg-gray-300',
                                                             togglingId ===
@@ -913,38 +1052,143 @@ export default function ProdukIndex({
                                                                 p.id ||
                                                             !canManageProduk
                                                         }
-                                                        onClick={() => {
+                                                        onClick={async () => {
                                                             if (
                                                                 !canManageProduk
                                                             )
                                                                 return;
+                                                            const currentStatus =
+                                                                statusMap[
+                                                                    p.id
+                                                                ] ?? p.aktif;
                                                             const ok =
                                                                 window.confirm(
-                                                                    p.aktif
+                                                                    currentStatus
                                                                         ? `Nonaktifkan ${p.nama}?`
                                                                         : `Aktifkan ${p.nama}?`,
                                                                 );
                                                             if (!ok) return;
+                                                            const nextStatus =
+                                                                !currentStatus;
                                                             setTogglingId(p.id);
-                                                            router.post(
-                                                                `/produk/${p.id}/toggle-aktif`,
-                                                                {},
-                                                                {
-                                                                    preserveScroll: true,
-                                                                    preserveState: true,
-                                                                    onFinish:
-                                                                        () =>
-                                                                            setTogglingId(
-                                                                                null,
-                                                                            ),
-                                                                },
+                                                            setStatusMap(
+                                                                (prev) => ({
+                                                                    ...prev,
+                                                                    [p.id]:
+                                                                        nextStatus,
+                                                                }),
                                                             );
+                                                            try {
+                                                                const token =
+                                                                    (window as any)
+                                                                        ?.Laravel
+                                                                        ?.csrfToken;
+                                                                const response =
+                                                                    await fetch(
+                                                                        `/produk/${p.id}/toggle-aktif`,
+                                                                        {
+                                                                            method: 'POST',
+                                                                            headers: {
+                                                                                'Content-Type':
+                                                                                    'application/json',
+                                                                                Accept: 'application/json',
+                                                                                ...(token
+                                                                                    ? {
+                                                                                          'X-CSRF-TOKEN':
+                                                                                              token,
+                                                                                      }
+                                                                                    : {}),
+                                                                            },
+                                                                            body: JSON.stringify(
+                                                                                {},
+                                                                            ),
+                                                                        },
+                                                                    );
+                                                                if (
+                                                                    !response.ok
+                                                                ) {
+                                                                    let message =
+                                                                        'Gagal mengubah status produk';
+                                                                    try {
+                                                                        const data =
+                                                                            await response.json();
+                                                                        if (
+                                                                            data &&
+                                                                            typeof data.message ===
+                                                                                'string'
+                                                                        ) {
+                                                                            message =
+                                                                                data.message;
+                                                                        }
+                                                                    } catch (parseError) {
+                                                                        console.error(
+                                                                            parseError,
+                                                                        );
+                                                                    }
+                                                                    alert(
+                                                                        message,
+                                                                    );
+                                                                    setStatusMap(
+                                                                        (
+                                                                            prev,
+                                                                        ) => ({
+                                                                            ...prev,
+                                                                            [p.id]:
+                                                                                currentStatus,
+                                                                        }),
+                                                                    );
+                                                                } else {
+                                                                    try {
+                                                                        const data =
+                                                                            await response.json();
+                                                                        if (
+                                                                            data &&
+                                                                            data.data &&
+                                                                            typeof data
+                                                                                .data
+                                                                                .aktif !==
+                                                                                'undefined'
+                                                                        ) {
+                                                                            setStatusMap(
+                                                                                (
+                                                                                    prev,
+                                                                                ) => ({
+                                                                                    ...prev,
+                                                                                    [p.id]:
+                                                                                        !!data
+                                                                                            .data
+                                                                                            .aktif,
+                                                                                }),
+                                                                            );
+                                                                        }
+                                                                    } catch (parseError) {
+                                                                        console.error(
+                                                                            parseError,
+                                                                        );
+                                                                    }
+                                                                }
+                                                            } catch {
+                                                                alert(
+                                                                    'Gagal mengubah status produk',
+                                                                );
+                                                                setStatusMap(
+                                                                    (prev) => ({
+                                                                        ...prev,
+                                                                        [p.id]:
+                                                                            currentStatus,
+                                                                    }),
+                                                                );
+                                                            } finally {
+                                                                setTogglingId(
+                                                                    null,
+                                                                );
+                                                            }
                                                         }}
                                                     >
                                                         <span
                                                             className={cn(
                                                                 'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-                                                                p.aktif
+                                                                isAktif
                                                                     ? 'translate-x-4'
                                                                     : 'translate-x-0.5',
                                                             )}
@@ -960,34 +1204,35 @@ export default function ProdukIndex({
                                                             Detail
                                                         </Link>
                                                         {canManageProduk && (
-                                                            <>
-                                                                <Link
-                                                                    href={`/produk/${p.id}/edit`}
-                                                                    className="text-xs text-primary hover:underline"
-                                                                >
-                                                                    Edit
-                                                                </Link>
-                                                                <button
-                                                                    type="button"
-                                                                    className="text-xs text-destructive hover:underline"
-                                                                    onClick={() => {
-                                                                        if (
-                                                                            window.confirm(
-                                                                                `Hapus ${p.nama}?`,
-                                                                            )
-                                                                        ) {
-                                                                            router.delete(
-                                                                                `/produk/${p.id}`,
-                                                                                {
-                                                                                    preserveScroll: true,
-                                                                                },
-                                                                            );
-                                                                        }
-                                                                    }}
-                                                                >
-                                                                    Hapus
-                                                                </button>
-                                                            </>
+                                                            <Link
+                                                                href={`/produk/${p.id}/edit`}
+                                                                className="text-xs text-primary hover:underline"
+                                                            >
+                                                                Edit
+                                                            </Link>
+                                                        )}
+                                                        {canDeleteProduk && (
+                                                            <button
+                                                                type="button"
+                                                                className="text-xs text-destructive hover:underline"
+                                                                onClick={() => {
+                                                                    if (
+                                                                        window.confirm(
+                                                                            `Hapus ${p.nama}?`,
+                                                                        )
+                                                                    ) {
+                                                                        router.delete(
+                                                                            `/produk/${p.id}`,
+                                                                            {
+                                                                                preserveScroll:
+                                                                                    true,
+                                                                            },
+                                                                        );
+                                                                    }
+                                                                }}
+                                                            >
+                                                                Hapus
+                                                            </button>
                                                         )}
                                                     </div>
                                                 </td>
@@ -1009,6 +1254,166 @@ export default function ProdukIndex({
                         )}
                     </div>
                 )}
+
+                {/* Grouped View */}
+                {viewMode === 'table' &&
+                    groupMode === 'grouped' &&
+                    groupedProducts && (
+                        <div className="space-y-4 rounded-lg border bg-card p-4">
+                            {Object.entries(groupedProducts).map(
+                                ([key, items]) => {
+                                    const firstItem = items[0];
+                                    const kelompokNama =
+                                        firstItem.kelompok_nama ||
+                                        firstItem.nama;
+                                    const kategoriNama =
+                                        firstItem.kategori?.nama ||
+                                        'Tanpa Kategori';
+
+                                    return (
+                                        <div
+                                            key={key}
+                                            className="rounded-lg border-2 border-primary/20 bg-primary/5 p-4"
+                                        >
+                                            <div className="mb-3 flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <Package className="h-6 w-6 text-primary" />
+                                                    <div>
+                                                        <h3 className="text-lg font-bold">
+                                                            {kelompokNama}
+                                                        </h3>
+                                                        <p className="text-sm text-muted-foreground">
+                                                            Kategori:{' '}
+                                                            {kategoriNama} •{' '}
+                                                            {
+                                                                items.length
+                                                            }{' '}
+                                                            varian
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                {canManageProduk && (
+                                                    <Link
+                                                        href={`/produk/create?kelompok=${encodeURIComponent(
+                                                            kelompokNama,
+                                                        )}`}
+                                                    >
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                        >
+                                                            + Tambah Varian
+                                                        </Button>
+                                                    </Link>
+                                                )}
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                {items.map((produk, idx) => {
+                                                    const isLast =
+                                                        idx ===
+                                                        items.length - 1;
+                                                    const icon =
+                                                        produk.varian === 'Hot'
+                                                            ? (
+                                                                <Flame className="h-4 w-4 text-orange-500" />
+                                                            )
+                                                            : produk.varian ===
+                                                                'Ice'
+                                                              ? (
+                                                                  <Snowflake className="h-4 w-4 text-blue-500" />
+                                                              )
+                                                              : (
+                                                                  <Package className="h-4 w-4 text-muted-foreground" />
+                                                              );
+                                                    const stok =
+                                                        produk.stok_etalase?.[0]
+                                                            ?.jumlah;
+                                                    const imageUrl =
+                                                        getImageUrl(
+                                                            produk.image_path,
+                                                        );
+
+                                                    return (
+                                                        <div
+                                                            key={produk.id}
+                                                            className="flex items-center gap-4 rounded-md border bg-card p-3 hover:bg-muted/50"
+                                                        >
+                                                            <div className="flex items-center gap-2 text-muted-foreground">
+                                                                <span>
+                                                                    {isLast
+                                                                        ? '└─'
+                                                                        : '├─'}
+                                                                </span>
+                                                                <span>{icon}</span>
+                                                            </div>
+
+                                                            {imageUrl ? (
+                                                                <img
+                                                                    src={
+                                                                        imageUrl
+                                                                    }
+                                                                    alt={
+                                                                        produk.nama
+                                                                    }
+                                                                    className="h-12 w-12 rounded object-cover"
+                                                                />
+                                                            ) : (
+                                                                <div className="flex h-12 w-12 items-center justify-center rounded bg-muted text-xs">
+                                                                    No img
+                                                                </div>
+                                                            )}
+
+                                                            <div className="flex-1">
+                                                                <div className="font-medium">
+                                                                    {produk.varian ||
+                                                                        'Default'}{' '}
+                                                                    -{' '}
+                                                                    {formatHarga(
+                                                                        produk.harga_jual,
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                                    <code>
+                                                                        {
+                                                                            produk.sku
+                                                                        }
+                                                                    </code>
+                                                                    <span>
+                                                                        •
+                                                                    </span>
+                                                                    <span>
+                                                                        Stok:{' '}
+                                                                        {stok ??
+                                                                            '-'}
+                                                                    </span>
+                                                                    <span>
+                                                                        •
+                                                                    </span>
+                                                                    <Badge
+                                                                        variant={
+                                                                            produk.aktif
+                                                                                ? 'default'
+                                                                                : 'secondary'
+                                                                        }
+                                                                        className="h-5"
+                                                                    >
+                                                                        {produk.aktif
+                                                                            ? 'Aktif'
+                                                                            : 'Non-Aktif'}
+                                                                    </Badge>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    );
+                                },
+                            )}
+                        </div>
+                    )}
 
                 {/* Card View */}
                 {viewMode === 'card' && (

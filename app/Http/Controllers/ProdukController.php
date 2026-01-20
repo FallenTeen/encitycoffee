@@ -117,7 +117,8 @@ class ProdukController extends Controller
                 ],
                 'kategori_list' => KategoriProduk::select('id', 'nama')->get(),
                 'cacheInfo' => $this->productCacheService->getCacheStats($cabangId),
-                'canManageProduk' => $this->canManageProduk($user)
+                'canManageProduk' => $this->canManageProduk($user),
+                'canDeleteProduk' => $this->canDeleteProduk($user),
             ]);
         } catch (\Exception $e) {
             Log::error('Error fetching produk', [
@@ -161,6 +162,7 @@ class ProdukController extends Controller
             'kategori_list' => KategoriProduk::select('id', 'nama')->get(),
             'cacheInfo' => null,
             'canManageProduk' => $this->canManageProduk($user),
+            'canDeleteProduk' => $this->canDeleteProduk($user),
         ]);
     }
 
@@ -293,6 +295,13 @@ class ProdukController extends Controller
             $user = auth()->user();
 
             if (!$this->canManageProduk($user)) {
+                if ($request->wantsJson()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Anda tidak memiliki akses untuk mengubah status produk',
+                    ], 403);
+                }
+
                 return back()->with('error', 'Anda tidak memiliki akses untuk mengubah status produk');
             }
 
@@ -303,6 +312,13 @@ class ProdukController extends Controller
                 $produkCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
 
                 if (!array_intersect($assignedCabangIds, $produkCabangIds)) {
+                    if ($request->wantsJson()) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Anda tidak memiliki akses untuk mengubah status produk ini',
+                        ], 403);
+                    }
+
                     return back()->with('error', 'Anda tidak memiliki akses untuk mengubah status produk ini');
                 }
             }
@@ -315,9 +331,28 @@ class ProdukController extends Controller
                 $this->productCacheService->clearCache($cabangId);
             }
 
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Status produk berhasil diperbarui',
+                    'data' => [
+                        'id' => $produk->id,
+                        'aktif' => $produk->aktif,
+                    ],
+                ]);
+            }
+
             return back()->with('success', 'Status produk berhasil diperbarui');
         } catch (\Exception $e) {
             Log::error('Error toggling produk status', ['error' => $e->getMessage(), 'produk_id' => $id]);
+
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal mengubah status produk',
+                ], 500);
+            }
+
             return back()->with('error', 'Gagal mengubah status produk');
         }
     }
@@ -622,7 +657,7 @@ class ProdukController extends Controller
 
             $cabangId = $this->getCabangId($request, $user);
 
-            $kategoriList = KategoriProduk::select('id', 'nama')->get();
+            $kategoriList = KategoriProduk::select('id', 'nama', 'slug')->get();
             $satuanOptions = SatuanProduk::select('nama_satuan')->distinct()->pluck('nama_satuan')->values()->all();
             Log::info('PRODUK CREATE - Options loaded', [
                 'kategori_count' => $kategoriList->count(),
@@ -661,52 +696,135 @@ class ProdukController extends Controller
             Log::info('=== PRODUK STORE DEBUG ===', [
                 'user_id' => $user->id,
                 'user_role' => $user->role,
-                'request_data_keys' => array_keys($request->all()),
+                'buat_dua_varian' => $request->boolean('buat_dua_varian'),
             ]);
 
             if (!$this->canManageProduk($user)) {
-                Log::warning('PRODUK STORE - Unauthorized access', ['user_id' => $user->id, 'user_role' => $user->role]);
                 return back()->with('error', 'Anda tidak memiliki akses untuk menambah produk');
             }
 
-            Log::info('PRODUK STORE - Authorization passed');
+            $buatDuaVarian = $request->boolean('buat_dua_varian');
 
-            $validator = Validator::make($request->all(), [
-                'sku' => 'required|string|max:50|unique:produk',
-                'nama' => 'required|string|max:255',
-                'kelompok_nama' => 'nullable|string|max:255',
-                'varian' => 'nullable|string|max:50',
-                'deskripsi' => 'nullable|string',
-                'kategori_id' => 'required|exists:kategori_produk,id',
-                'tipe' => 'required|in:beans,minuman,snack',
-                'base' => 'nullable|in:coffee,milk,tea,others',
-                'satuan_dasar' => 'required|string|max:50',
-                'harga_modal' => 'required|numeric|min:0',
-                'harga_jual' => 'required|numeric|min:0',
-                'aktif' => 'boolean',
-                'perlu_kalibrasi' => 'boolean',
-                'stok_etalase' => 'nullable|array',
-                'stok_etalase.*.cabang_id' => 'required_with:stok_etalase|exists:cabang,id',
-                'stok_etalase.*.jumlah' => 'required_with:stok_etalase|numeric|min:0',
-                'stok_etalase.*.stok_minimum' => 'required_with:stok_etalase|numeric|min:0',
-                'image' => 'nullable|image|max:2048',
-            ]);
+            if ($buatDuaVarian) {
+                $validator = Validator::make($request->all(), [
+                    'sku' => 'required|string|max:50',
+                    'kelompok_nama' => 'required|string|max:255',
+                    'deskripsi' => 'nullable|string',
+                    'kategori_id' => 'required|exists:kategori_produk,id',
+                    'tipe' => 'required|in:beans,minuman,snack',
+                    'base' => 'nullable|in:coffee,milk,tea,others',
+                    'satuan_dasar' => 'required|string|max:50',
+                    'harga_modal_hot' => 'required|numeric|min:0',
+                    'harga_jual_hot' => 'required|numeric|min:0',
+                    'harga_modal_ice' => 'required|numeric|min:0',
+                    'harga_jual_ice' => 'required|numeric|min:0',
+                    'aktif' => 'boolean',
+                    'perlu_kalibrasi' => 'boolean',
+                    'image' => 'nullable|image|max:2048',
+                ]);
+            } else {
+                $validator = Validator::make($request->all(), [
+                    'sku' => 'required|string|max:50|unique:produk',
+                    'nama' => 'required|string|max:255',
+                    'kelompok_nama' => 'nullable|string|max:255',
+                    'varian' => 'nullable|string|max:50',
+                    'deskripsi' => 'nullable|string',
+                    'kategori_id' => 'required|exists:kategori_produk,id',
+                    'tipe' => 'required|in:beans,minuman,snack',
+                    'base' => 'nullable|in:coffee,milk,tea,others',
+                    'satuan_dasar' => 'required|string|max:50',
+                    'harga_modal' => 'required|numeric|min:0',
+                    'harga_jual' => 'required|numeric|min:0',
+                    'aktif' => 'boolean',
+                    'perlu_kalibrasi' => 'boolean',
+                    'image' => 'nullable|image|max:2048',
+                ]);
+            }
 
             if ($validator->fails()) {
-                Log::warning('PRODUK STORE - Validation failed', [
-                    'errors' => $validator->errors()->toArray(),
-                ]);
                 return back()->withErrors($validator)->withInput();
             }
 
-            if (in_array($user->role, ['manager', 'supervisor']) && $request->has('stok_etalase')) {
-                $assignedCabangIds = $user->cabang->pluck('id')->all();
-                foreach ($request->input('stok_etalase') as $stok) {
-                    if (!in_array($stok['cabang_id'], $assignedCabangIds)) {
-                        Log::warning('PRODUK STORE - Unauthorized cabang access', ['user_id' => $user->id, 'requested_cabang_id' => $stok['cabang_id']]);
-                        return back()->with('error', 'Anda tidak memiliki akses untuk menambah stok di cabang tersebut');
-                    }
+            $affectedCabangIds = [];
+
+            if ($buatDuaVarian) {
+                $kelompokNama = $request->input('kelompok_nama');
+                $baseSku = $request->input('sku');
+
+                $imagePath = null;
+                if ($request->hasFile('image')) {
+                    $imagePath = $request->file('image')->store('foto-produk', 'public');
                 }
+
+                $variants = [
+                    [
+                        'varian' => 'Hot',
+                        'nama' => $kelompokNama . ' Hot',
+                        'sku_suffix' => 'HOT',
+                        'harga_modal' => $request->input('harga_modal_hot'),
+                        'harga_jual' => $request->input('harga_jual_hot'),
+                    ],
+                    [
+                        'varian' => 'Ice',
+                        'nama' => $kelompokNama . ' Ice',
+                        'sku_suffix' => 'ICE',
+                        'harga_modal' => $request->input('harga_modal_ice'),
+                        'harga_jual' => $request->input('harga_jual_ice'),
+                    ],
+                ];
+
+                $createdProducts = [];
+
+                foreach ($variants as $variant) {
+                    $skuParts = explode('-', $baseSku);
+                    if (count($skuParts) >= 3) {
+                        $skuParts[count($skuParts) - 2] = $variant['sku_suffix'];
+                    } else {
+                        $skuParts[] = $variant['sku_suffix'];
+                    }
+                    $finalSku = implode('-', $skuParts);
+
+                    $counter = 1;
+                    $originalSku = $finalSku;
+                    while (Produk::where('sku', $finalSku)->exists()) {
+                        $skuParts = explode('-', $originalSku);
+                        $skuParts[count($skuParts) - 1] = str_pad($counter, 3, '0', STR_PAD_LEFT);
+                        $finalSku = implode('-', $skuParts);
+                        $counter++;
+                    }
+
+                    $produkData = [
+                        'kategori_id' => $request->input('kategori_id'),
+                        'sku' => $finalSku,
+                        'nama' => $variant['nama'],
+                        'kelompok_nama' => $kelompokNama,
+                        'varian' => $variant['varian'],
+                        'deskripsi' => $request->input('deskripsi'),
+                        'tipe' => $request->input('tipe'),
+                        'base' => $request->input('base'),
+                        'satuan_dasar' => strtolower(trim($request->input('satuan_dasar'))),
+                        'harga_modal' => $variant['harga_modal'],
+                        'harga_jual' => $variant['harga_jual'],
+                        'aktif' => $request->boolean('aktif', true),
+                        'perlu_kalibrasi' => $request->boolean('perlu_kalibrasi', false),
+                        'image_path' => $imagePath,
+                    ];
+
+                    $produk = Produk::create($produkData);
+                    $createdProducts[] = $produk;
+
+                    Log::info('Dual variant product created', [
+                        'produk_id' => $produk->id,
+                        'sku' => $produk->sku,
+                        'nama' => $produk->nama,
+                        'varian' => $variant['varian'],
+                    ]);
+                }
+
+                $this->productCacheService->clearAllCache();
+                $this->productCacheService->incrementCacheVersion();
+
+                return redirect()->route('produk.index')->with('success', '2 varian produk berhasil ditambahkan: Hot & Ice');
             }
 
             $data = $validator->validated();
@@ -726,8 +844,6 @@ class ProdukController extends Controller
 
             $produk = Produk::create($data);
 
-            $affectedCabangIds = [];
-
             if ($request->has('stok_etalase')) {
                 foreach ($request->input('stok_etalase') as $stok) {
                     $produk->stokEtalase()->create($stok);
@@ -741,19 +857,15 @@ class ProdukController extends Controller
 
             $this->productCacheService->incrementCacheVersion();
 
-            Log::info('PRODUK STORE - Success', [
+            Log::info('Single product created', [
                 'produk_id' => $produk->id,
-                'user_id' => $user->id,
-                'produk_sku' => $produk->sku,
-                'produk_nama' => $produk->nama,
-                'stok_etalase_created' => $request->has('stok_etalase') ? count($request->input('stok_etalase', [])) : 0,
-                'cleared_cache_for_cabang' => $affectedCabangIds,
+                'sku' => $produk->sku,
             ]);
 
             return redirect()->route('produk.index')->with('success', 'Produk berhasil ditambahkan');
         } catch (\Exception $e) {
             Log::error('Error creating produk', ['error' => $e->getMessage()]);
-            return back()->with('error', 'Gagal menambahkan produk')->withInput();
+            return back()->with('error', 'Gagal menambahkan produk: ' . $e->getMessage())->withInput();
         }
     }
 
@@ -819,7 +931,7 @@ class ProdukController extends Controller
                 }
             }
 
-            $kategoriList = KategoriProduk::select('id', 'nama')->get();
+            $kategoriList = KategoriProduk::select('id', 'nama', 'slug')->get();
             $satuanOptions = SatuanProduk::select('nama_satuan')->distinct()->pluck('nama_satuan')->values()->all();
             $stokTersedia = $produk->stokEtalase->map(function ($s) {
                 return [
@@ -1004,7 +1116,7 @@ class ProdukController extends Controller
                 'produk_id' => $id,
             ]);
 
-            if (!$this->canManageProduk($user)) {
+            if (!$this->canDeleteProduk($user)) {
                 Log::warning('PRODUK DESTROY - Unauthorized access', ['user_id' => $user->id, 'user_role' => $user->role, 'produk_id' => $id]);
                 return back()->with('error', 'Anda tidak memiliki akses untuk menghapus produk');
             }
@@ -1070,6 +1182,11 @@ class ProdukController extends Controller
     private function canManageProduk($user)
     {
         return in_array($user->role, ['it_support', 'manager', 'supervisor']);
+    }
+
+    private function canDeleteProduk($user)
+    {
+        return in_array($user->role, ['it_support', 'manager']);
     }
 
     private function getProdukForApi($cabangId, $search = '', $kategoriId = '', $tipe = '', $base = '')
