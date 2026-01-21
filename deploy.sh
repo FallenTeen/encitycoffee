@@ -42,6 +42,19 @@ rm -rf $PUBLIC_PATH/*
 cp -r $APP_PATH/public/* $PUBLIC_PATH/
 cp $APP_PATH/public/.htaccess $PUBLIC_PATH/ 2>/dev/null || true
 
+echo "🔗 Ensuring storage symlink..."
+# Hapus folder storage lama jika bukan symlink, lalu buat symlink ke storage publik Laravel
+if [ -d "$PUBLIC_PATH/storage" ] && [ ! -L "$PUBLIC_PATH/storage" ]; then
+    rm -rf "$PUBLIC_PATH/storage"
+fi
+
+if [ ! -L "$PUBLIC_PATH/storage" ]; then
+    ln -s "$APP_PATH/storage/app/public" "$PUBLIC_PATH/storage"
+    echo "  ↳ Created storage symlink: $PUBLIC_PATH/storage -> $APP_PATH/storage/app/public"
+else
+    echo "  ↳ Storage symlink already exists"
+fi
+
 # Restore webhook.php
 if [ -f "$WEBHOOK_BACKUP" ]; then
     cp "$WEBHOOK_BACKUP" "$PUBLIC_PATH/webhook.php"
