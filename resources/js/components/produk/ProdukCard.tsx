@@ -1,7 +1,10 @@
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Eye, Pencil, Trash2 } from 'lucide-react';
 import { router } from '@inertiajs/react';
+import Swal from 'sweetalert2';
 
 interface ProdukItem {
     id: number;
@@ -20,6 +23,27 @@ interface ProdukItem {
         stok_minimum: number;
         cabang?: { nama: string };
     }>;
+}
+
+async function handleDeleteProduk(produk: ProdukItem) {
+    const result = await Swal.fire({
+        title: 'Hapus Produk',
+        text: `Apakah Anda yakin ingin menghapus "${produk.nama}"?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Hapus',
+        cancelButtonText: 'Batal',
+        reverseButtons: true,
+        focusCancel: true,
+    });
+
+    if (!result.isConfirmed) {
+        return;
+    }
+
+    router.delete(`/produk/${produk.id}`, {
+        preserveScroll: true,
+    });
 }
 
 interface ProdukCardProps {
@@ -146,36 +170,63 @@ export default function ProdukCard({ produk, canManageProduk = false, formatHarg
 
                     {canManageProduk && (
                         <div className="flex gap-2 pt-3 border-t">
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => router.get(`/produk/${produk.id}`)}
-                                className="flex-1"
-                            >
-                                Detail
-                            </Button>
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => router.get(`/produk/${produk.id}/edit`)}
-                                className="flex-1"
-                            >
-                                Edit
-                            </Button>
-                            <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => {
-                                    const ok = window.confirm(`Hapus produk ${produk.nama}?`);
-                                    if (!ok) return;
-                                    router.delete(`/produk/${produk.id}`, {
-                                        preserveScroll: true,
-                                    });
-                                }}
-                                className="flex-1"
-                            >
-                                Hapus
-                            </Button>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() =>
+                                            router.get(`/produk/${produk.id}`)
+                                        }
+                                        aria-label="Lihat Detail"
+                                    >
+                                        <Eye
+                                            className="h-5 w-5"
+                                            aria-hidden="true"
+                                        />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Lihat Detail</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() =>
+                                            router.get(
+                                                `/produk/${produk.id}/edit`,
+                                            )
+                                        }
+                                        aria-label="Edit Produk"
+                                    >
+                                        <Pencil
+                                            className="h-5 w-5"
+                                            aria-hidden="true"
+                                        />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Edit Produk</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:ring-destructive/30"
+                                        onClick={() =>
+                                            handleDeleteProduk(produk)
+                                        }
+                                        aria-label="Hapus Produk"
+                                    >
+                                        <Trash2
+                                            className="h-5 w-5"
+                                            aria-hidden="true"
+                                        />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Hapus Produk</TooltipContent>
+                            </Tooltip>
                         </div>
                     )}
                 </div>

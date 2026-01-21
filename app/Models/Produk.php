@@ -26,6 +26,7 @@ class Produk extends Model
         'harga_jual',
         'aktif',
         'perlu_kalibrasi',
+        'audit_log',
     ];
 
     protected $casts = [
@@ -33,6 +34,7 @@ class Produk extends Model
         'harga_jual' => 'decimal:2',
         'aktif' => 'boolean',
         'perlu_kalibrasi' => 'boolean',
+        'audit_log' => 'array',
     ];
 
     public function kategori()
@@ -109,5 +111,17 @@ class Produk extends Model
     public function getHargaFormattedAttribute()
     {
         return 'Rp ' . number_format($this->harga_jual, 0, ',', '.');
+    }
+
+    public function addAuditLog(string $action, array $data = []): void
+    {
+        $log = $this->audit_log ?? [];
+        $log[] = [
+            'action' => $action,
+            'user_id' => auth()->id(),
+            'timestamp' => now()->toDateTimeString(),
+            'data' => $data,
+        ];
+        $this->update(['audit_log' => $log]);
     }
 }

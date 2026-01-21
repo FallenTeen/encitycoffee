@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import admin from '@/routes/admin';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { useMemo } from 'react';
+import Swal from 'sweetalert2';
 
 interface Props {
   users: {
@@ -211,10 +212,25 @@ export default function AdminUsersIndex({ users, cabangs, filter_aktif }: Props)
                         <button
                           type="button"
                           className="text-destructive underline"
-                          onClick={() => {
-                            const ok = window.confirm(`Hapus pengguna ${u.name}?`);
-                            if (!ok) return;
-                            router.delete(admin.users.destroy(u.id).url, { preserveScroll: true });
+                          onClick={async () => {
+                            const result = await Swal.fire({
+                              title: 'Hapus Pengguna',
+                              text: `Apakah Anda yakin ingin menghapus "${u.name}"?`,
+                              icon: 'warning',
+                              showCancelButton: true,
+                              confirmButtonText: 'Hapus',
+                              cancelButtonText: 'Batal',
+                              reverseButtons: true,
+                              focusCancel: true,
+                            });
+
+                            if (!result.isConfirmed) {
+                              return;
+                            }
+
+                            router.delete(admin.users.destroy(u.id).url, {
+                              preserveScroll: true,
+                            });
                           }}
                         >
                           Hapus

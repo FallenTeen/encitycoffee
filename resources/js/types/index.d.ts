@@ -20,6 +20,12 @@ export interface NavItem {
     href: NonNullable<InertiaLinkProps['href']>;
     icon?: LucideIcon | null;
     isActive?: boolean;
+    badge?: {
+        label?: string;
+        count?: number;
+        variant?: 'default' | 'warning' | 'destructive';
+    };
+    description?: string;
 }
 
 export interface SharedData {
@@ -40,4 +46,15 @@ export interface User {
     created_at: string;
     updated_at: string;
     [key: string]: unknown; // This allows for additional properties...
+}
+
+export interface SidebarState {
+    expandedGroups: string[];
+    favorites: string[];
+    recentItems: Array<{
+        href: string;
+        title: string;
+        icon?: string;
+    }>;
+    isCollapsed: boolean;
 }

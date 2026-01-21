@@ -17,6 +17,11 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
+import LazyImage from '@/components/produk/LazyImage';
+import ToggleStatusBadge from '@/components/produk/ToggleStatusBadge';
+import SkeletonProductTable from '@/components/produk/SkeletonProductTable';
+import SkeletonProductCard from '@/components/produk/SkeletonProductCard';
+import SkeletonProductCompact from '@/components/produk/SkeletonProductCompact';
 import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
 import { Head, Link, router, useForm } from '@inertiajs/react';
@@ -24,15 +29,20 @@ import {
     AlertCircle,
     ChevronDown,
     ChevronUp,
+    Eye,
     Flame,
     Grid3X3,
     List,
     Package,
+    Pencil,
     Rows3,
     Search,
     Snowflake,
+    Trash2,
     X,
 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import Swal from 'sweetalert2';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 interface KategoriOption {
@@ -105,6 +115,12 @@ const STORAGE_KEYS = {
     GROUP_MODE: 'produk_group_mode',
 };
 
+interface QuickFiltersState {
+    tipe: string[];
+    aktif: boolean;
+    stok_rendah: boolean;
+}
+
 export default function ProdukIndex({
     produks,
     kategori_list,
@@ -156,11 +172,16 @@ export default function ProdukIndex({
     });
 
     const [togglingId, setTogglingId] = useState<number | null>(null);
-    const [statusMap, setStatusMap] = useState<Record<number, boolean>>({});
     const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
     const [clearAllError, setClearAllError] = useState<string | null>(null);
     const [isClearing, setIsClearing] = useState(false);
     const [isCabangModalOpen, setIsCabangModalOpen] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
+    const [quickFilters, setQuickFilters] = useState<QuickFiltersState>({
+        tipe: [],
+        aktif: false,
+        stok_rendah: false,
+    });
     const searchInputRef = useRef<HTMLInputElement>(null);
     const debounceTimeout = useRef<number | null>(null);
     const clearAllDebounceTimeout = useRef<number | null>(null);
@@ -187,6 +208,38 @@ export default function ProdukIndex({
         sort_dir: sortDir || '',
         per_page: perPage,
     });
+
+    const applyQuickFilters = useMemo(() => {
+        const result = produks?.data ?? [];
+        return result;
+    }, [produks?.data]);
+
+    const filteredData = useMemo(() => {
+        let result = applyQuickFilters;
+
+        if (quickFilters.tipe.length > 0) {
+            result = result.filter((p) => quickFilters.tipe.includes(p.tipe));
+        }
+
+        if (quickFilters.aktif) {
+            result = result.filter((p) => p.aktif);
+        }
+
+        return result;
+    }, [applyQuickFilters, quickFilters]);
+
+    const quickFiltersCount =
+        quickFilters.tipe.length +
+        (quickFilters.aktif ? 1 : 0) +
+        (quickFilters.stok_rendah ? 1 : 0);
+
+    const activeFiltersCount =
+        [
+            data.search,
+            data.kategori_id,
+            data.tipe,
+            data.aktif,
+        ].filter(Boolean).length + quickFiltersCount;
 
     const handlePagination = (url: string | null) => {
         if (!url) return;
@@ -232,6 +285,89 @@ export default function ProdukIndex({
         localStorage.setItem(STORAGE_KEYS.GROUP_MODE, groupMode);
     }, [groupMode]);
 
+    const handleToggleQuickFilter = (
+        filterType: 'tipe' | 'aktif' | 'stok_rendah',
+        value?: string,
+    ) => {
+        if (filterType === 'tipe' && value) {
+            setQuickFilters((prev) => ({
+                ...prev,
+                tipe: prev.tipe.includes(value)
+                    ? prev.tipe.filter((t) => t !== value)
+                    : [...prev.tipe, value],
+            }));
+        } else {
+            setQuickFilters((prev) => ({
+                ...prev,
+                [filterType]: !prev[filterType],
+            }));
+        }
+    };
+
+    const handleDeleteProduk = async (produk: ProdukItem) => {
+        const result = await Swal.fire({
+            title: 'Hapus Produk',
+            text: `Apakah Anda yakin ingin menghapus "${produk.nama}"?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Hapus',
+            cancelButtonText: 'Batal',
+            reverseButtons: true,
+            focusCancel: true,
+        });
+
+        if (!result.isConfirmed) {
+            return;
+        }
+
+        router.delete(`/produk/${produk.id}`, {
+            preserveScroll: true,
+        });
+    };
+
+    const handleToggleStatus = async (produk: ProdukItem) => {
+        if (!canManageProduk) return;
+
+        setTogglingId(produk.id);
+
+        try {
+            const token = (window as any)?.Laravel?.csrfToken;
+            const response = await fetch(`/produk/${produk.id}/toggle-aktif`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    ...(token ? { 'X-CSRF-TOKEN': token } : {}),
+                },
+                body: JSON.stringify({}),
+            });
+
+            if (!response.ok) {
+                let message = 'Gagal mengubah status produk';
+                try {
+                    const responseData = await response.json();
+                    if (
+                        responseData &&
+                        typeof responseData.message === 'string'
+                    ) {
+                        message = responseData.message;
+                    }
+                } catch (parseError) {
+                    console.error(parseError);
+                }
+                alert(message);
+            } else {
+                router.reload({
+                    only: ['produks'],
+                });
+            }
+        } catch {
+            alert('Gagal mengubah status produk');
+        } finally {
+            setTogglingId(null);
+        }
+    };
+
     // Real-time search with debounce (optional)
     useEffect(() => {
         if (debounceTimeout.current) {
@@ -255,9 +391,11 @@ export default function ProdukIndex({
 
     const submitFilters = () => {
         get('/produk', {
-            preserveState: true,
+            preserveState: viewMode === 'table',
             preserveScroll: true,
             replace: true,
+            onStart: () => setIsLoading(true),
+            onFinish: () => setIsLoading(false),
         });
     };
 
@@ -283,9 +421,11 @@ export default function ProdukIndex({
         setData(nextData);
 
         get('/produk', {
-            preserveState: true,
+            preserveState: viewMode === 'table',
             preserveScroll: true,
             replace: true,
+            onStart: () => setIsLoading(true),
+            onFinish: () => setIsLoading(false),
         });
     };
 
@@ -306,32 +446,11 @@ export default function ProdukIndex({
         setData(nextData);
 
         get('/produk', {
-            preserveState: true,
+            preserveState: viewMode === 'table',
             preserveScroll: false,
             replace: true,
-        });
-    };
-
-    const handleQuickFilter = (
-        filterType: 'beans' | 'minuman' | 'snack' | 'stok_rendah' | 'aktif',
-    ) => {
-        const newData = { ...data };
-
-        if (filterType === 'stok_rendah') {
-            // Toggle stok rendah filter (handled in backend or client-side filter)
-            // For now, just visual feedback
-            return;
-        } else if (filterType === 'aktif') {
-            newData.aktif = data.aktif === '1' ? '' : '1';
-        } else {
-            newData.tipe = data.tipe === filterType ? '' : filterType;
-        }
-
-        setData(newData);
-        get('/produk', {
-            preserveState: true,
-            preserveScroll: true,
-            replace: true,
+            onStart: () => setIsLoading(true),
+            onFinish: () => setIsLoading(false),
         });
     };
 
@@ -358,6 +477,11 @@ export default function ProdukIndex({
         setData(resetData);
         setSortBy(null);
         setSortDir(null);
+        setQuickFilters({
+            tipe: [],
+            aktif: false,
+            stok_rendah: false,
+        });
 
         // Use router.get with proper params
         const params: any = { per_page: perPage };
@@ -366,8 +490,10 @@ export default function ProdukIndex({
         }
 
         router.get('/produk', params, {
+            preserveState: viewMode === 'table',
             preserveScroll: true,
             replace: true,
+            onStart: () => setIsLoading(true),
             onError: (errors) => {
                 console.error('Error clearing filters:', errors);
                 setClearAllError(
@@ -381,6 +507,7 @@ export default function ProdukIndex({
             },
             onFinish: () => {
                 setIsClearing(false);
+                setIsLoading(false);
             },
         });
     };
@@ -422,19 +549,12 @@ export default function ProdukIndex({
         return `/storage/${imagePath}`;
     };
 
-    const activeFiltersCount = [
-        data.search,
-        data.kategori_id,
-        data.tipe,
-        data.aktif,
-    ].filter(Boolean).length;
-
     const groupedProducts = useMemo(() => {
         if (groupMode === 'list') return null;
 
         const groups: Record<string, ProdukItem[]> = {};
 
-        (produks?.data ?? []).forEach((produk) => {
+        filteredData.forEach((produk) => {
             const key = `${produk.kategori?.id || 0}_${
                 produk.kelompok_nama || produk.nama
             }`;
@@ -445,7 +565,7 @@ export default function ProdukIndex({
         });
 
         return groups;
-    }, [produks, groupMode]);
+    }, [filteredData, groupMode]);
 
     const SortIcon = ({ field }: { field: SortField }) => {
         if (sortBy !== field)
@@ -477,6 +597,11 @@ export default function ProdukIndex({
                                         {selectedCabang.kode})
                                     </span>
                                 </>
+                            )}
+                            {activeFiltersCount > 0 && (
+                                <Badge variant="secondary">
+                                    {activeFiltersCount} filter aktif
+                                </Badge>
                             )}
                         </div>
                     </div>
@@ -620,32 +745,65 @@ export default function ProdukIndex({
                         Quick:
                     </span>
                     <Badge
-                        variant={data.tipe === 'beans' ? 'default' : 'outline'}
-                        className="cursor-pointer"
-                        onClick={() => handleQuickFilter('beans')}
+                        variant={
+                            quickFilters.tipe.includes('beans')
+                                ? 'default'
+                                : 'outline'
+                        }
+                        className={cn(
+                            'cursor-pointer transition-all',
+                            quickFilters.tipe.includes('beans') &&
+                                'ring-2 ring-primary ring-offset-1',
+                        )}
+                        onClick={() => handleToggleQuickFilter('tipe', 'beans')}
                     >
-                        Beans
+                        Beans{' '}
+                        {quickFilters.tipe.includes('beans') ? '✓' : null}
                     </Badge>
                     <Badge
                         variant={
-                            data.tipe === 'minuman' ? 'default' : 'outline'
+                            quickFilters.tipe.includes('minuman')
+                                ? 'default'
+                                : 'outline'
                         }
-                        className="cursor-pointer"
-                        onClick={() => handleQuickFilter('minuman')}
+                        className={cn(
+                            'cursor-pointer transition-all',
+                            quickFilters.tipe.includes('minuman') &&
+                                'ring-2 ring-primary ring-offset-1',
+                        )}
+                        onClick={() =>
+                            handleToggleQuickFilter('tipe', 'minuman')
+                        }
                     >
-                        Minuman
+                        Minuman{' '}
+                        {quickFilters.tipe.includes('minuman') ? '✓' : null}
                     </Badge>
                     <Badge
-                        variant={data.tipe === 'snack' ? 'default' : 'outline'}
-                        className="cursor-pointer"
-                        onClick={() => handleQuickFilter('snack')}
+                        variant={
+                            quickFilters.tipe.includes('snack')
+                                ? 'default'
+                                : 'outline'
+                        }
+                        className={cn(
+                            'cursor-pointer transition-all',
+                            quickFilters.tipe.includes('snack') &&
+                                'ring-2 ring-primary ring-offset-1',
+                        )}
+                        onClick={() => handleToggleQuickFilter('tipe', 'snack')}
                     >
-                        Snack
+                        Snack{' '}
+                        {quickFilters.tipe.includes('snack') ? '✓' : null}
                     </Badge>
                     <Badge
-                        variant={data.aktif === '1' ? 'default' : 'outline'}
-                        className="cursor-pointer"
-                        onClick={() => handleQuickFilter('aktif')}
+                        variant={
+                            quickFilters.aktif ? 'default' : 'outline'
+                        }
+                        className={cn(
+                            'cursor-pointer transition-all',
+                            quickFilters.aktif &&
+                                'ring-2 ring-primary ring-offset-1',
+                        )}
+                        onClick={() => handleToggleQuickFilter('aktif')}
                     >
                         Aktif Saja
                     </Badge>
@@ -950,39 +1108,40 @@ export default function ProdukIndex({
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {(produks?.data ?? []).map((p) => {
-                                        const stok =
-                                            p.stok_etalase?.[0]?.jumlah;
-                                        const stockStatus =
-                                            getStockStatus(stok);
-                                        const imageUrl = getImageUrl(
-                                            p.image_path,
-                                        );
-                                        const isAktif =
-                                            statusMap[p.id] ?? p.aktif;
+                                    {(isLoading || processing) && (
+                                        <SkeletonProductTable
+                                            count={
+                                                produks?.per_page ?? perPage
+                                            }
+                                        />
+                                    )}
+                                    {!isLoading &&
+                                        !processing &&
+                                        filteredData.map((p) => {
+                                            const stok =
+                                                p.stok_etalase?.[0]?.jumlah;
+                                            const stockStatus =
+                                                getStockStatus(stok);
+                                            const imageUrl = getImageUrl(
+                                                p.image_path,
+                                            );
 
-                                        return (
-                                            <tr
-                                                key={p.id}
-                                                className="border-b last:border-0 hover:bg-muted/50"
-                                            >
+                                            return (
+                                                <tr
+                                                    key={p.id}
+                                                    className="border-b last:border-0 hover:bg-muted/50"
+                                                >
                                                 <td className="px-4 py-3">
                                                     <code className="text-xs">
                                                         {p.sku}
                                                     </code>
                                                 </td>
                                                 <td className="px-4 py-3">
-                                                    {imageUrl ? (
-                                                        <img
-                                                            src={imageUrl}
-                                                            alt={p.nama}
-                                                            className="h-10 w-10 rounded object-cover"
-                                                        />
-                                                    ) : (
-                                                        <div className="flex h-10 w-10 items-center justify-center rounded bg-muted text-xs text-muted-foreground">
-                                                            No img
-                                                        </div>
-                                                    )}
+                                                    <LazyImage
+                                                        src={imageUrl}
+                                                        alt={p.nama}
+                                                        className="h-10 w-10"
+                                                    />
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     <div className="font-medium">
@@ -1034,205 +1193,98 @@ export default function ProdukIndex({
                                                     </Badge>
                                                 </td>
                                                 <td className="px-4 py-3 text-center">
-                                                    <button
-                                                        type="button"
-                                                        className={cn(
-                                                            'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',
-                                                            isAktif
-                                                                ? 'bg-green-500'
-                                                                : 'bg-gray-300',
-                                                            togglingId ===
-                                                                p.id ||
-                                                                !canManageProduk
-                                                                ? 'cursor-not-allowed opacity-60'
-                                                                : 'cursor-pointer',
-                                                        )}
-                                                        disabled={
-                                                            togglingId ===
-                                                                p.id ||
-                                                            !canManageProduk
-                                                        }
-                                                        onClick={async () => {
-                                                            if (
-                                                                !canManageProduk
-                                                            )
-                                                                return;
-                                                            const currentStatus =
-                                                                statusMap[
-                                                                    p.id
-                                                                ] ?? p.aktif;
-                                                            const ok =
-                                                                window.confirm(
-                                                                    currentStatus
-                                                                        ? `Nonaktifkan ${p.nama}?`
-                                                                        : `Aktifkan ${p.nama}?`,
-                                                                );
-                                                            if (!ok) return;
-                                                            const nextStatus =
-                                                                !currentStatus;
-                                                            setTogglingId(p.id);
-                                                            setStatusMap(
-                                                                (prev) => ({
-                                                                    ...prev,
-                                                                    [p.id]:
-                                                                        nextStatus,
-                                                                }),
-                                                            );
-                                                            try {
-                                                                const token =
-                                                                    (window as any)
-                                                                        ?.Laravel
-                                                                        ?.csrfToken;
-                                                                const response =
-                                                                    await fetch(
-                                                                        `/produk/${p.id}/toggle-aktif`,
-                                                                        {
-                                                                            method: 'POST',
-                                                                            headers: {
-                                                                                'Content-Type':
-                                                                                    'application/json',
-                                                                                Accept: 'application/json',
-                                                                                ...(token
-                                                                                    ? {
-                                                                                          'X-CSRF-TOKEN':
-                                                                                              token,
-                                                                                      }
-                                                                                    : {}),
-                                                                            },
-                                                                            body: JSON.stringify(
-                                                                                {},
-                                                                            ),
-                                                                        },
-                                                                    );
-                                                                if (
-                                                                    !response.ok
-                                                                ) {
-                                                                    let message =
-                                                                        'Gagal mengubah status produk';
-                                                                    try {
-                                                                        const data =
-                                                                            await response.json();
-                                                                        if (
-                                                                            data &&
-                                                                            typeof data.message ===
-                                                                                'string'
-                                                                        ) {
-                                                                            message =
-                                                                                data.message;
-                                                                        }
-                                                                    } catch (parseError) {
-                                                                        console.error(
-                                                                            parseError,
-                                                                        );
-                                                                    }
-                                                                    alert(
-                                                                        message,
-                                                                    );
-                                                                    setStatusMap(
-                                                                        (
-                                                                            prev,
-                                                                        ) => ({
-                                                                            ...prev,
-                                                                            [p.id]:
-                                                                                currentStatus,
-                                                                        }),
-                                                                    );
-                                                                } else {
-                                                                    try {
-                                                                        const data =
-                                                                            await response.json();
-                                                                        if (
-                                                                            data &&
-                                                                            data.data &&
-                                                                            typeof data
-                                                                                .data
-                                                                                .aktif !==
-                                                                                'undefined'
-                                                                        ) {
-                                                                            setStatusMap(
-                                                                                (
-                                                                                    prev,
-                                                                                ) => ({
-                                                                                    ...prev,
-                                                                                    [p.id]:
-                                                                                        !!data
-                                                                                            .data
-                                                                                            .aktif,
-                                                                                }),
-                                                                            );
-                                                                        }
-                                                                    } catch (parseError) {
-                                                                        console.error(
-                                                                            parseError,
-                                                                        );
-                                                                    }
-                                                                }
-                                                            } catch {
-                                                                alert(
-                                                                    'Gagal mengubah status produk',
-                                                                );
-                                                                setStatusMap(
-                                                                    (prev) => ({
-                                                                        ...prev,
-                                                                        [p.id]:
-                                                                            currentStatus,
-                                                                    }),
-                                                                );
-                                                            } finally {
-                                                                setTogglingId(
-                                                                    null,
-                                                                );
-                                                            }
+                                                    <ToggleStatusBadge
+                                                        produk={{
+                                                            id: p.id,
+                                                            nama: p.nama,
+                                                            aktif: p.aktif,
                                                         }}
-                                                    >
-                                                        <span
-                                                            className={cn(
-                                                                'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-                                                                isAktif
-                                                                    ? 'translate-x-4'
-                                                                    : 'translate-x-0.5',
-                                                            )}
-                                                        />
-                                                    </button>
+                                                        canManage={
+                                                            canManageProduk
+                                                        }
+                                                        isToggling={
+                                                            togglingId === p.id
+                                                        }
+                                                        onToggle={() =>
+                                                            handleToggleStatus(
+                                                                p,
+                                                            )
+                                                        }
+                                                    />
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     <div className="flex items-center justify-center gap-2">
-                                                        <Link
-                                                            href={`/produk/${p.id}`}
-                                                            className="text-xs text-primary hover:underline"
-                                                        >
-                                                            Detail
-                                                        </Link>
+                                                        <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                                <Button
+                                                                    asChild
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                >
+                                                                    <Link
+                                                                        href={`/produk/${p.id}`}
+                                                                        aria-label="Lihat Detail"
+                                                                    >
+                                                                        <Eye
+                                                                            className="h-5 w-5"
+                                                                            aria-hidden="true"
+                                                                        />
+                                                                    </Link>
+                                                                </Button>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent>
+                                                                Lihat Detail
+                                                            </TooltipContent>
+                                                        </Tooltip>
                                                         {canManageProduk && (
-                                                            <Link
-                                                                href={`/produk/${p.id}/edit`}
-                                                                className="text-xs text-primary hover:underline"
-                                                            >
-                                                                Edit
-                                                            </Link>
+                                                            <Tooltip>
+                                                                <TooltipTrigger asChild>
+                                                                    <Button
+                                                                        asChild
+                                                                        variant="ghost"
+                                                                        size="icon"
+                                                                    >
+                                                                        <Link
+                                                                            href={`/produk/${p.id}/edit`}
+                                                                            aria-label="Edit Produk"
+                                                                        >
+                                                                            <Pencil
+                                                                                className="h-5 w-5"
+                                                                                aria-hidden="true"
+                                                                            />
+                                                                        </Link>
+                                                                    </Button>
+                                                                </TooltipTrigger>
+                                                                <TooltipContent>
+                                                                    Edit Produk
+                                                                </TooltipContent>
+                                                            </Tooltip>
                                                         )}
                                                         {canDeleteProduk && (
-                                                            <button
-                                                                type="button"
-                                                                className="text-xs text-destructive hover:underline"
-                                                                onClick={() => {
-                                                                    if (
-                                                                        window.confirm(
-                                                                            `Hapus ${p.nama}?`,
-                                                                        )
-                                                                    ) {
-                                                                        router.delete(
-                                                                            `/produk/${p.id}`,
-                                                                            {
-                                                                                preserveScroll:
-                                                                                    true,
-                                                                            },
-                                                                        );
-                                                                    }
-                                                                }}
-                                                            >
-                                                                Hapus
-                                                            </button>
+                                                            <Tooltip>
+                                                                <TooltipTrigger asChild>
+                                                                    <Button
+                                                                        type="button"
+                                                                        variant="ghost"
+                                                                        size="icon"
+                                                                        className="text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:ring-destructive/30"
+                                                                        aria-label="Hapus Produk"
+                                                                        onClick={() =>
+                                                                            handleDeleteProduk(
+                                                                                p,
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        <Trash2
+                                                                            className="h-5 w-5"
+                                                                            aria-hidden="true"
+                                                                        />
+                                                                    </Button>
+                                                                </TooltipTrigger>
+                                                                <TooltipContent>
+                                                                    Hapus Produk
+                                                                </TooltipContent>
+                                                            </Tooltip>
                                                         )}
                                                     </div>
                                                 </td>
@@ -1348,21 +1400,13 @@ export default function ProdukIndex({
                                                                 <span>{icon}</span>
                                                             </div>
 
-                                                            {imageUrl ? (
-                                                                <img
-                                                                    src={
-                                                                        imageUrl
-                                                                    }
-                                                                    alt={
-                                                                        produk.nama
-                                                                    }
-                                                                    className="h-12 w-12 rounded object-cover"
-                                                                />
-                                                            ) : (
-                                                                <div className="flex h-12 w-12 items-center justify-center rounded bg-muted text-xs">
-                                                                    No img
-                                                                </div>
-                                                            )}
+                                                            <LazyImage
+                                                                src={imageUrl}
+                                                                alt={
+                                                                    produk.nama
+                                                                }
+                                                                className="h-12 w-12"
+                                                            />
 
                                                             <div className="flex-1">
                                                                 <div className="font-medium">
@@ -1390,18 +1434,25 @@ export default function ProdukIndex({
                                                                     <span>
                                                                         •
                                                                     </span>
-                                                                    <Badge
-                                                                        variant={
-                                                                            produk.aktif
-                                                                                ? 'default'
-                                                                                : 'secondary'
+                                                                    <ToggleStatusBadge
+                                                                        produk={{
+                                                                            id: produk.id,
+                                                                            nama: produk.nama,
+                                                                            aktif: produk.aktif,
+                                                                        }}
+                                                                        canManage={
+                                                                            canManageProduk
                                                                         }
-                                                                        className="h-5"
-                                                                    >
-                                                                        {produk.aktif
-                                                                            ? 'Aktif'
-                                                                            : 'Non-Aktif'}
-                                                                    </Badge>
+                                                                        isToggling={
+                                                                            togglingId ===
+                                                                            produk.id
+                                                                        }
+                                                                        onToggle={() =>
+                                                                            handleToggleStatus(
+                                                                                produk,
+                                                                            )
+                                                                        }
+                                                                    />
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -1418,10 +1469,18 @@ export default function ProdukIndex({
                 {/* Card View */}
                 {viewMode === 'card' && (
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {(produks?.data ?? []).map((p) => {
-                            const stok = p.stok_etalase?.[0]?.jumlah;
-                            const stockStatus = getStockStatus(stok);
-                            const imageUrl = getImageUrl(p.image_path);
+                        {(isLoading || processing) && (
+                            <SkeletonProductCard
+                                count={produks?.per_page ?? perPage}
+                            />
+                        )}
+                        {!isLoading &&
+                            !processing &&
+                            filteredData.map((p) => {
+                                const stok = p.stok_etalase?.[0]?.jumlah;
+                                const stockStatus = getStockStatus(stok);
+                                const imageUrl = getImageUrl(p.image_path);
+                                const isAktif = p.aktif;
 
                             return (
                                 <div
@@ -1429,17 +1488,11 @@ export default function ProdukIndex({
                                     className="group rounded-lg border bg-card p-4 transition-shadow hover:shadow-md"
                                 >
                                     <div className="flex gap-3">
-                                        {imageUrl ? (
-                                            <img
-                                                src={imageUrl}
-                                                alt={p.nama}
-                                                className="h-20 w-20 rounded object-cover"
-                                            />
-                                        ) : (
-                                            <div className="flex h-20 w-20 items-center justify-center rounded bg-muted text-xs text-muted-foreground">
-                                                No Image
-                                            </div>
-                                        )}
+                                        <LazyImage
+                                            src={imageUrl}
+                                            alt={p.nama}
+                                            className="h-20 w-20"
+                                        />
                                         <div className="flex-1 space-y-1">
                                             <h3 className="line-clamp-2 font-semibold">
                                                 {p.varian
@@ -1478,25 +1531,65 @@ export default function ProdukIndex({
                                             {p.sku}
                                         </code>
                                         <div className="flex items-center gap-2">
-                                            <Link href={`/produk/${p.id}`}>
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                >
-                                                    Detail
-                                                </Button>
-                                            </Link>
-                                            {canManageProduk && (
-                                                <Link
-                                                    href={`/produk/${p.id}/edit`}
-                                                >
+                                            <ToggleStatusBadge
+                                                produk={{
+                                                    id: p.id,
+                                                    nama: p.nama,
+                                                    aktif: isAktif,
+                                                }}
+                                                canManage={canManageProduk}
+                                                isToggling={
+                                                    togglingId === p.id
+                                                }
+                                                onToggle={() =>
+                                                    handleToggleStatus(p)
+                                                }
+                                            />
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
                                                     <Button
-                                                        variant="default"
-                                                        size="sm"
+                                                        asChild
+                                                        variant="ghost"
+                                                        size="icon"
                                                     >
-                                                        Edit
+                                                        <Link
+                                                            href={`/produk/${p.id}`}
+                                                            aria-label="Lihat Detail"
+                                                        >
+                                                            <Eye
+                                                                className="h-5 w-5"
+                                                                aria-hidden="true"
+                                                            />
+                                                        </Link>
                                                     </Button>
-                                                </Link>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    Lihat Detail
+                                                </TooltipContent>
+                                            </Tooltip>
+                                            {canManageProduk && (
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <Button
+                                                            asChild
+                                                            variant="ghost"
+                                                            size="icon"
+                                                        >
+                                                            <Link
+                                                                href={`/produk/${p.id}/edit`}
+                                                                aria-label="Edit Produk"
+                                                            >
+                                                                <Pencil
+                                                                    className="h-5 w-5"
+                                                                    aria-hidden="true"
+                                                                />
+                                                            </Link>
+                                                        </Button>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                        Edit Produk
+                                                    </TooltipContent>
+                                                </Tooltip>
                                             )}
                                         </div>
                                     </div>
@@ -1519,26 +1612,37 @@ export default function ProdukIndex({
                 {/* Compact View */}
                 {viewMode === 'compact' && (
                     <div className="space-y-2">
-                        {(produks?.data ?? []).map((p) => {
-                            const stok = p.stok_etalase?.[0]?.jumlah;
-                            const stockStatus = getStockStatus(stok);
+                        {(isLoading || processing) && (
+                            <SkeletonProductCompact
+                                count={produks?.per_page ?? perPage}
+                            />
+                        )}
+                        {!isLoading &&
+                            !processing &&
+                            filteredData.map((p) => {
+                                const stok = p.stok_etalase?.[0]?.jumlah;
+                                const stockStatus = getStockStatus(stok);
 
-                            return (
+                                return (
                                 <div
                                     key={p.id}
                                     className="flex items-center justify-between rounded-lg border bg-card p-3 hover:bg-muted/50"
                                 >
                                     <div className="flex items-center gap-3">
-                                        <Badge
-                                            variant={
-                                                p.aktif
-                                                    ? 'default'
-                                                    : 'secondary'
+                                        <ToggleStatusBadge
+                                            produk={{
+                                                id: p.id,
+                                                nama: p.nama,
+                                                aktif: p.aktif,
+                                            }}
+                                            canManage={canManageProduk}
+                                            isToggling={
+                                                togglingId === p.id
                                             }
-                                            className="w-12 justify-center text-xs"
-                                        >
-                                            {p.aktif ? 'ON' : 'OFF'}
-                                        </Badge>
+                                            onToggle={() =>
+                                                handleToggleStatus(p)
+                                            }
+                                        />
                                         <div>
                                             <div className="font-medium">
                                                 {p.varian
@@ -1567,25 +1671,51 @@ export default function ProdukIndex({
                                             {formatHarga(p.harga_jual)}
                                         </span>
                                         <div className="flex items-center gap-2">
-                                            <Link href={`/produk/${p.id}`}>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                >
-                                                    Detail
-                                                </Button>
-                                            </Link>
-                                            {canManageProduk && (
-                                                <Link
-                                                    href={`/produk/${p.id}/edit`}
-                                                >
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
                                                     <Button
-                                                        variant="outline"
-                                                        size="sm"
+                                                        asChild
+                                                        variant="ghost"
+                                                        size="icon"
                                                     >
-                                                        Edit
+                                                        <Link
+                                                            href={`/produk/${p.id}`}
+                                                            aria-label="Lihat Detail"
+                                                        >
+                                                            <Eye
+                                                                className="h-5 w-5"
+                                                                aria-hidden="true"
+                                                            />
+                                                        </Link>
                                                     </Button>
-                                                </Link>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    Lihat Detail
+                                                </TooltipContent>
+                                            </Tooltip>
+                                            {canManageProduk && (
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <Button
+                                                            asChild
+                                                            variant="ghost"
+                                                            size="icon"
+                                                        >
+                                                            <Link
+                                                                href={`/produk/${p.id}/edit`}
+                                                                aria-label="Edit Produk"
+                                                            >
+                                                                <Pencil
+                                                                    className="h-5 w-5"
+                                                                    aria-hidden="true"
+                                                                />
+                                                            </Link>
+                                                        </Button>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                        Edit Produk
+                                                    </TooltipContent>
+                                                </Tooltip>
                                             )}
                                         </div>
                                     </div>

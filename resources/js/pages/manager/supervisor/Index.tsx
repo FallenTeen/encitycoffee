@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import AppLayout from '@/layouts/app-layout';
 import manager from '@/routes/manager';
 import { Head, Link, router, useForm } from '@inertiajs/react';
+import Swal from 'sweetalert2';
 
 interface Props {
   supervisors: {
@@ -138,10 +139,25 @@ export default function ManagerSupervisorIndex({ supervisors, cabang_list, filte
                         <button
                           type="button"
                           className="text-destructive underline"
-                          onClick={() => {
-                            const ok = window.confirm(`Hapus supervisor ${s.name}?`);
-                            if (!ok) return;
-                            router.delete(manager.supervisor.destroy(s.id).url, { preserveScroll: true });
+                          onClick={async () => {
+                            const result = await Swal.fire({
+                              title: 'Hapus Supervisor',
+                              text: `Apakah Anda yakin ingin menghapus supervisor "${s.name}"?`,
+                              icon: 'warning',
+                              showCancelButton: true,
+                              confirmButtonText: 'Hapus',
+                              cancelButtonText: 'Batal',
+                              reverseButtons: true,
+                              focusCancel: true,
+                            });
+
+                            if (!result.isConfirmed) {
+                              return;
+                            }
+
+                            router.delete(manager.supervisor.destroy(s.id).url, {
+                              preserveScroll: true,
+                            });
                           }}
                         >
                           Hapus
@@ -178,4 +194,3 @@ export default function ManagerSupervisorIndex({ supervisors, cabang_list, filte
     </AppLayout>
   );
 }
-

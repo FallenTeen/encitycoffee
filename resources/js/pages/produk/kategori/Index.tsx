@@ -9,7 +9,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Head, Link, router, useForm } from '@inertiajs/react';
+import { Eye, Pencil, Trash2 } from 'lucide-react';
+import Swal from 'sweetalert2';
 import { useMemo } from 'react';
 
 interface KategoriItem {
@@ -82,6 +85,27 @@ export default function KategoriIndex({ kategori, filter_aktif }: Props) {
       preserveState: true,
       replace: true,
       only: ['kategori', 'filter_aktif'],
+    });
+  };
+
+  const handleDeleteKategori = async (item: KategoriItem) => {
+    const result = await Swal.fire({
+      title: 'Hapus Kategori',
+      text: `Apakah Anda yakin ingin menghapus "${item.nama}"?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Hapus',
+      cancelButtonText: 'Batal',
+      reverseButtons: true,
+      focusCancel: true,
+    });
+
+    if (!result.isConfirmed) {
+      return;
+    }
+
+    router.delete(`/produk/kategori/${item.id}`, {
+      preserveScroll: true,
     });
   };
 
@@ -203,32 +227,48 @@ export default function KategoriIndex({ kategori, filter_aktif }: Props) {
                     </td>
                     <td className="px-4 py-2 text-right">{k.produk_count ?? 0}</td>
                     <td className="px-4 py-2 text-center">
-                      <div className="flex items-center justify-center gap-3">
-                        <Link
-                          href={`/produk/kategori/${k.id}`}
-                          className="text-primary underline"
-                        >
-                          Detail
-                        </Link>
-                        <Link
-                          href={`/produk/kategori/${k.id}/edit`}
-                          className="text-muted-foreground underline"
-                        >
-                          Edit
-                        </Link>
-                        <button
-                          type="button"
-                          className="text-destructive underline"
-                          onClick={() => {
-                            const ok = window.confirm(`Hapus kategori ${k.nama}?`);
-                            if (!ok) return;
-                            router.delete(`/produk/kategori/${k.id}`, {
-                              preserveScroll: true,
-                            });
-                          }}
-                        >
-                          Hapus
-                        </button>
+                      <div className="flex items-center justify-center gap-2">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button asChild variant="ghost" size="icon">
+                              <Link
+                                href={`/produk/kategori/${k.id}`}
+                                aria-label="Lihat Detail"
+                              >
+                                <Eye className="h-5 w-5" aria-hidden="true" />
+                              </Link>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Lihat Detail</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button asChild variant="ghost" size="icon">
+                              <Link
+                                href={`/produk/kategori/${k.id}/edit`}
+                                aria-label="Edit Kategori"
+                              >
+                                <Pencil className="h-5 w-5" aria-hidden="true" />
+                              </Link>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Edit Kategori</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:ring-destructive/30"
+                              aria-label="Hapus Kategori"
+                              onClick={() => handleDeleteKategori(k)}
+                            >
+                              <Trash2 className="h-5 w-5" aria-hidden="true" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Hapus Kategori</TooltipContent>
+                        </Tooltip>
                       </div>
                     </td>
                   </tr>

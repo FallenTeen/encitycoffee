@@ -35,7 +35,7 @@ class ProdukController extends Controller
                 'aktif' => 'nullable|string|in:0,1,__all__',
                 'sort_by' => 'nullable|string|in:nama,sku,harga_jual,kategori,stok',
                 'sort_dir' => 'nullable|string|in:asc,desc',
-                'per_page' => 'nullable|integer|min:1|max:1000',
+                'per_page' => 'nullable|integer',
                 'page' => 'nullable|integer|min:1',
             ]);
 
@@ -308,23 +308,48 @@ class ProdukController extends Controller
             $produk = Produk::with(['stokEtalase'])->findOrFail($id);
 
             if (in_array($user->role, ['manager', 'supervisor'])) {
-                $assignedCabangIds = $user->cabang->pluck('id')->all();
                 $produkCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
 
-                if (!array_intersect($assignedCabangIds, $produkCabangIds)) {
-                    if ($request->wantsJson()) {
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'Anda tidak memiliki akses untuk mengubah status produk ini',
-                        ], 403);
-                    }
+                if (!empty($produkCabangIds)) {
+                    $assignedCabangIds = $user->cabang->pluck('id')->all();
 
-                    return back()->with('error', 'Anda tidak memiliki akses untuk mengubah status produk ini');
+                    if (!array_intersect($assignedCabangIds, $produkCabangIds)) {
+                        if ($request->wantsJson()) {
+                            return response()->json([
+                                'success' => false,
+                                'message' => 'Anda tidak memiliki akses untuk mengubah status produk ini',
+                            ], 403);
+                        }
+
+                        return back()->with('error', 'Anda tidak memiliki akses untuk mengubah status produk ini');
+                    }
                 }
             }
 
+            $oldStatus = (bool) $produk->aktif;
             $produk->aktif = !$produk->aktif;
             $produk->save();
+
+            try {
+                $produk->addAuditLog('status_toggled', [
+                    'old_status' => $oldStatus,
+                    'new_status' => (bool) $produk->aktif,
+                    'performed_by_role' => $user->role,
+                ]);
+            } catch (\Throwable $logException) {
+                Log::warning('Failed to write produk status audit log', [
+                    'produk_id' => $produk->id,
+                    'error' => $logException->getMessage(),
+                ]);
+            }
+
+            Log::info('PRODUK TOGGLE - Success', [
+                'produk_id' => $produk->id,
+                'old_status' => $oldStatus,
+                'new_status' => $produk->aktif,
+                'user_id' => $user->id,
+                'user_role' => $user->role,
+            ]);
 
             $affectedCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
             foreach (array_unique($affectedCabangIds) as $cabangId) {
@@ -658,6 +683,14 @@ class ProdukController extends Controller
             $cabangId = $this->getCabangId($request, $user);
 
             $kategoriList = KategoriProduk::select('id', 'nama', 'slug')->get();
+            $snackVarianOptions = Produk::where('tipe', 'snack')
+                ->whereNotNull('varian')
+                ->where('varian', '!=', '')
+                ->distinct()
+                ->orderBy('varian')
+                ->pluck('varian')
+                ->values()
+                ->all();
             $satuanOptions = SatuanProduk::select('nama_satuan')->distinct()->pluck('nama_satuan')->values()->all();
             Log::info('PRODUK CREATE - Options loaded', [
                 'kategori_count' => $kategoriList->count(),
@@ -679,6 +712,7 @@ class ProdukController extends Controller
                 'kategori' => $kategoriList,
                 'tipe_options' => ['beans', 'minuman', 'snack'],
                 'satuan_options' => $satuanOptions,
+                'snack_varian_options' => $snackVarianOptions,
                 'cabangList' => $cabangList,
                 'selectedCabang' => $selectedCabang
             ]);
@@ -706,11 +740,11 @@ class ProdukController extends Controller
             $buatDuaVarian = $request->boolean('buat_dua_varian');
 
             if ($buatDuaVarian) {
-                $validator = Validator::make($request->all(), [
+                $rules = [
                     'sku' => 'required|string|max:50',
                     'kelompok_nama' => 'required|string|max:255',
                     'deskripsi' => 'nullable|string',
-                    'kategori_id' => 'required|exists:kategori_produk,id',
+                    'kategori_id' => 'nullable|exists:kategori_produk,id',
                     'tipe' => 'required|in:beans,minuman,snack',
                     'base' => 'nullable|in:coffee,milk,tea,others',
                     'satuan_dasar' => 'required|string|max:50',
@@ -721,15 +755,21 @@ class ProdukController extends Controller
                     'aktif' => 'boolean',
                     'perlu_kalibrasi' => 'boolean',
                     'image' => 'nullable|image|max:2048',
-                ]);
+                ];
+
+                if ($request->input('tipe') !== 'minuman') {
+                    $rules['base'] = 'nullable';
+                }
+
+                $validator = Validator::make($request->all(), $rules);
             } else {
-                $validator = Validator::make($request->all(), [
+                $rules = [
                     'sku' => 'required|string|max:50|unique:produk',
                     'nama' => 'required|string|max:255',
                     'kelompok_nama' => 'nullable|string|max:255',
                     'varian' => 'nullable|string|max:50',
                     'deskripsi' => 'nullable|string',
-                    'kategori_id' => 'required|exists:kategori_produk,id',
+                    'kategori_id' => 'nullable|exists:kategori_produk,id',
                     'tipe' => 'required|in:beans,minuman,snack',
                     'base' => 'nullable|in:coffee,milk,tea,others',
                     'satuan_dasar' => 'required|string|max:50',
@@ -738,14 +778,47 @@ class ProdukController extends Controller
                     'aktif' => 'boolean',
                     'perlu_kalibrasi' => 'boolean',
                     'image' => 'nullable|image|max:2048',
-                ]);
+                ];
+
+                if ($request->input('tipe') !== 'minuman') {
+                    $rules['base'] = 'nullable';
+                }
+
+                $validator = Validator::make($request->all(), $rules);
             }
 
             if ($validator->fails()) {
+                Log::warning('PRODUK STORE - Validation failed', [
+                    'user_id' => $user->id,
+                    'role' => $user->role,
+                    'errors' => $validator->errors()->toArray(),
+                ]);
                 return back()->withErrors($validator)->withInput();
             }
 
             $affectedCabangIds = [];
+
+            if (in_array($user->role, ['manager', 'supervisor']) && $request->has('stok_etalase')) {
+                $assignedCabangIds = $user->cabang->pluck('id')->all();
+                $invalidCabangIds = [];
+
+                foreach ($request->input('stok_etalase') as $stok) {
+                    if (!in_array((int) ($stok['cabang_id'] ?? 0), $assignedCabangIds)) {
+                        $invalidCabangIds[] = $stok['cabang_id'] ?? null;
+                    }
+                }
+
+                if (!empty($invalidCabangIds)) {
+                    Log::warning('PRODUK STORE - Unauthorized cabang in stok_etalase', [
+                        'user_id' => $user->id,
+                        'role' => $user->role,
+                        'invalid_cabang_ids' => $invalidCabangIds,
+                        'assigned_cabang_ids' => $assignedCabangIds,
+                    ]);
+
+                    return back()->with('error', 'Anda tidak dapat mengatur stok untuk cabang yang tidak Anda kelola')->withInput();
+                }
+            }
 
             if ($buatDuaVarian) {
                 $kelompokNama = $request->input('kelompok_nama');
@@ -772,8 +845,6 @@ class ProdukController extends Controller
                         'harga_jual' => $request->input('harga_jual_ice'),
                     ],
                 ];
-
-                $createdProducts = [];
 
                 foreach ($variants as $variant) {
                     $skuParts = explode('-', $baseSku);
@@ -811,13 +882,26 @@ class ProdukController extends Controller
                     ];
 
                     $produk = Produk::create($produkData);
-                    $createdProducts[] = $produk;
+
+                    try {
+                        $produk->addAuditLog('created', [
+                            'payload' => $produkData,
+                            'performed_by_role' => $user->role,
+                        ]);
+                    } catch (\Throwable $logException) {
+                        Log::warning('Failed to write produk create audit log (dual variant)', [
+                            'produk_id' => $produk->id,
+                            'error' => $logException->getMessage(),
+                        ]);
+                    }
 
                     Log::info('Dual variant product created', [
                         'produk_id' => $produk->id,
                         'sku' => $produk->sku,
                         'nama' => $produk->nama,
                         'varian' => $variant['varian'],
+                        'user_id' => $user->id,
+                        'user_role' => $user->role,
                     ]);
                 }
 
@@ -828,6 +912,10 @@ class ProdukController extends Controller
             }
 
             $data = $validator->validated();
+
+            if (($data['tipe'] ?? null) !== 'minuman') {
+                $data['base'] = null;
+            }
 
             if (empty($data['kelompok_nama'])) {
                 $data['kelompok_nama'] = $data['nama'];
@@ -843,6 +931,18 @@ class ProdukController extends Controller
             }
 
             $produk = Produk::create($data);
+
+            try {
+                $produk->addAuditLog('created', [
+                    'payload' => $data,
+                    'performed_by_role' => $user->role,
+                ]);
+            } catch (\Throwable $logException) {
+                Log::warning('Failed to write produk create audit log', [
+                    'produk_id' => $produk->id,
+                    'error' => $logException->getMessage(),
+                ]);
+            }
 
             if ($request->has('stok_etalase')) {
                 foreach ($request->input('stok_etalase') as $stok) {
@@ -920,7 +1020,7 @@ class ProdukController extends Controller
                     'has_intersection' => count(array_intersect($assignedCabangIds, $produkCabangIds)) > 0,
                 ]);
 
-                if (!array_intersect($assignedCabangIds, $produkCabangIds)) {
+                if (!empty($produkCabangIds) && !array_intersect($assignedCabangIds, $produkCabangIds)) {
                     Log::warning('PRODUK EDIT - Unauthorized cabang access', [
                         'user_id' => $user->id,
                         'produk_id' => $id,
@@ -933,6 +1033,14 @@ class ProdukController extends Controller
 
             $kategoriList = KategoriProduk::select('id', 'nama', 'slug')->get();
             $satuanOptions = SatuanProduk::select('nama_satuan')->distinct()->pluck('nama_satuan')->values()->all();
+            $snackVarianOptions = Produk::where('tipe', 'snack')
+                ->whereNotNull('varian')
+                ->where('varian', '!=', '')
+                ->distinct()
+                ->orderBy('varian')
+                ->pluck('varian')
+                ->values()
+                ->all();
             $stokTersedia = $produk->stokEtalase->map(function ($s) {
                 return [
                     'id' => $s->id,
@@ -953,7 +1061,8 @@ class ProdukController extends Controller
                 'kategori' => $kategoriList,
                 'tipe_options' => ['beans', 'minuman', 'snack'],
                 'satuan_options' => $satuanOptions,
-                'stok_tersedia' => $stokTersedia
+                'stok_tersedia' => $stokTersedia,
+                'snack_varian_options' => $snackVarianOptions,
             ]);
         } catch (\Exception $e) {
             Log::error('Error loading edit produk form', ['error' => $e->getMessage()]);
@@ -982,6 +1091,22 @@ class ProdukController extends Controller
 
             $produk = Produk::with(['stokEtalase'])->findOrFail($id);
 
+            $beforeAttributes = $produk->only([
+                'sku',
+                'nama',
+                'kelompok_nama',
+                'varian',
+                'deskripsi',
+                'kategori_id',
+                'tipe',
+                'base',
+                'satuan_dasar',
+                'harga_modal',
+                'harga_jual',
+                'aktif',
+                'perlu_kalibrasi',
+            ]);
+
             Log::info('PRODUK UPDATE - Produk Loaded', [
                 'produk_id' => $produk->id,
                 'produk_nama' => $produk->nama,
@@ -998,7 +1123,7 @@ class ProdukController extends Controller
                     'produk_cabang_ids' => $produkCabangIds,
                 ]);
 
-                if (!array_intersect($assignedCabangIds, $produkCabangIds)) {
+                if (!empty($produkCabangIds) && !array_intersect($assignedCabangIds, $produkCabangIds)) {
                     Log::warning('PRODUK UPDATE - Unauthorized cabang access', [
                         'user_id' => $user->id,
                         'produk_id' => $id,
@@ -1007,13 +1132,13 @@ class ProdukController extends Controller
                 }
             }
 
-            $validator = Validator::make($request->all(), [
+            $rules = [
                 'sku' => 'required|string|max:50|unique:produk,sku,' . $id,
                 'nama' => 'required|string|max:255',
                 'kelompok_nama' => 'nullable|string|max:255',
                 'varian' => 'nullable|string|max:50',
                 'deskripsi' => 'nullable|string',
-                'kategori_id' => 'required|exists:kategori_produk,id',
+                'kategori_id' => 'nullable|exists:kategori_produk,id',
                 'tipe' => 'required|in:beans,minuman,snack',
                 'base' => 'nullable|in:coffee,milk,tea,others',
                 'satuan_dasar' => 'required|string|max:50',
@@ -1027,7 +1152,13 @@ class ProdukController extends Controller
                 'stok_etalase.*.stok_minimum' => 'required_with:stok_etalase|numeric|min:0',
                 'image' => 'nullable|image|max:2048',
                 'hapus_gambar' => 'boolean',
-            ]);
+            ];
+
+            if ($request->input('tipe') !== 'minuman') {
+                $rules['base'] = 'nullable';
+            }
+
+            $validator = Validator::make($request->all(), $rules);
 
             if ($validator->fails()) {
                 Log::warning('PRODUK UPDATE - Validation failed', [
@@ -1039,15 +1170,31 @@ class ProdukController extends Controller
 
             if (in_array($user->role, ['manager', 'supervisor']) && $request->has('stok_etalase')) {
                 $assignedCabangIds = $user->cabang->pluck('id')->all();
+                $invalidCabangIds = [];
+
                 foreach ($request->input('stok_etalase') as $stok) {
-                    if (!in_array($stok['cabang_id'], $assignedCabangIds)) {
-                        Log::warning('PRODUK UPDATE - Unauthorized cabang access for stok', ['user_id' => $user->id, 'cabang_id' => $stok['cabang_id']]);
-                        return back()->with('error', 'Anda tidak memiliki akses untuk mengedit stok di cabang tersebut');
+                    if (!in_array((int) ($stok['cabang_id'] ?? 0), $assignedCabangIds)) {
+                        $invalidCabangIds[] = $stok['cabang_id'] ?? null;
                     }
+                }
+
+                if (!empty($invalidCabangIds)) {
+                    Log::warning('PRODUK UPDATE - Unauthorized cabang in stok_etalase', [
+                        'user_id' => $user->id,
+                        'role' => $user->role,
+                        'invalid_cabang_ids' => $invalidCabangIds,
+                        'assigned_cabang_ids' => $assignedCabangIds,
+                    ]);
+
+                    return back()->with('error', 'Anda tidak memiliki akses untuk mengedit stok di cabang tersebut')->withInput();
                 }
             }
 
             $data = $validator->validated();
+
+            if (($data['tipe'] ?? null) !== 'minuman') {
+                $data['base'] = null;
+            }
 
             if (empty($data['kelompok_nama'])) {
                 $data['kelompok_nama'] = $data['nama'];
@@ -1073,6 +1220,31 @@ class ProdukController extends Controller
             $affectedCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
 
             $produk->update($data);
+
+            try {
+                $afterAttributes = $produk->only(array_keys($beforeAttributes));
+                $changes = [];
+                foreach ($afterAttributes as $key => $value) {
+                    if (($beforeAttributes[$key] ?? null) != $value) {
+                        $changes[$key] = [
+                            'before' => $beforeAttributes[$key] ?? null,
+                            'after' => $value,
+                        ];
+                    }
+                }
+
+                if (!empty($changes)) {
+                    $produk->addAuditLog('updated', [
+                        'changes' => $changes,
+                        'performed_by_role' => $user->role,
+                    ]);
+                }
+            } catch (\Throwable $logException) {
+                Log::warning('Failed to write produk update audit log', [
+                    'produk_id' => $produk->id,
+                    'error' => $logException->getMessage(),
+                ]);
+            }
 
             if ($request->has('stok_etalase')) {
                 $newCabangIds = array_column($request->input('stok_etalase'), 'cabang_id');
@@ -1141,7 +1313,7 @@ class ProdukController extends Controller
                     'produk_cabang_ids' => $produkCabangIds,
                 ]);
 
-                if (!array_intersect($assignedCabangIds, $produkCabangIds)) {
+                if (!empty($produkCabangIds) && !array_intersect($assignedCabangIds, $produkCabangIds)) {
                     Log::warning('PRODUK DESTROY - Unauthorized cabang access', [
                         'user_id' => $user->id,
                         'produk_id' => $id,

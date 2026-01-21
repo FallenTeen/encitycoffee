@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import AppLayout from '@/layouts/app-layout';
 import supervisor from '@/routes/supervisor';
 import { Head, Link, router, useForm } from '@inertiajs/react';
+import Swal from 'sweetalert2';
 
 interface Props {
   kasirs: {
@@ -138,10 +139,25 @@ export default function KasirIndex({ kasirs, cabang_list, filter_aktif }: Props)
                         <button
                           type="button"
                           className="text-destructive underline"
-                          onClick={() => {
-                            const ok = window.confirm(`Hapus kasir ${k.name}?`);
-                            if (!ok) return;
-                            router.delete(supervisor.kasir.destroy(k.id).url, { preserveScroll: true });
+                          onClick={async () => {
+                            const result = await Swal.fire({
+                              title: 'Hapus Kasir',
+                              text: `Apakah Anda yakin ingin menghapus kasir "${k.name}"?`,
+                              icon: 'warning',
+                              showCancelButton: true,
+                              confirmButtonText: 'Hapus',
+                              cancelButtonText: 'Batal',
+                              reverseButtons: true,
+                              focusCancel: true,
+                            });
+
+                            if (!result.isConfirmed) {
+                              return;
+                            }
+
+                            router.delete(supervisor.kasir.destroy(k.id).url, {
+                              preserveScroll: true,
+                            });
                           }}
                         >
                           Hapus

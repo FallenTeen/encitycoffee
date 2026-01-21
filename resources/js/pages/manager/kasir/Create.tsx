@@ -6,7 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/app-layout';
 import { Head, Link, useForm } from '@inertiajs/react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 
 interface Props {
   cabang_list: Array<{ id: number; kode?: string; nama?: string }>;
@@ -26,6 +27,8 @@ export default function ManagerKasirCreate({ cabang_list }: Props) {
     aktif: true,
     cabang_ids: [] as number[],
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false);
 
   return (
     <AppLayout title="Tambah Kasir">
@@ -59,22 +62,46 @@ export default function ManagerKasirCreate({ cabang_list }: Props) {
 
             <div className="space-y-1">
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={data.password}
-                onChange={(e) => setData('password', e.target.value)}
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={data.password}
+                  onChange={(e) => setData('password', e.target.value)}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground focus-visible:outline-none"
+                  aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+                  aria-pressed={showPassword}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
               <InputError message={errors.password} />
             </div>
             <div className="space-y-1">
               <Label htmlFor="password_confirmation">Konfirmasi Password</Label>
-              <Input
-                id="password_confirmation"
-                type="password"
-                value={data.password_confirmation}
-                onChange={(e) => setData('password_confirmation', e.target.value)}
-              />
+              <div className="relative">
+                <Input
+                  id="password_confirmation"
+                  type={showPasswordConfirmation ? 'text' : 'password'}
+                  value={data.password_confirmation}
+                  onChange={(e) => setData('password_confirmation', e.target.value)}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordConfirmation((prev) => !prev)}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground focus-visible:outline-none"
+                  aria-label={showPasswordConfirmation ? 'Sembunyikan password' : 'Tampilkan password'}
+                  aria-pressed={showPasswordConfirmation}
+                >
+                  {showPasswordConfirmation ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
               <InputError message={errors.password_confirmation} />
             </div>
 
@@ -121,4 +148,3 @@ export default function ManagerKasirCreate({ cabang_list }: Props) {
     </AppLayout>
   );
 }
-

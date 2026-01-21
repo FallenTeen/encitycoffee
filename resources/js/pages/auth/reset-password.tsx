@@ -1,5 +1,7 @@
 import { update } from '@/routes/password';
 import { Form, Head } from '@inertiajs/react';
+import { useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
@@ -14,6 +16,10 @@ interface ResetPasswordProps {
 }
 
 export default function ResetPassword({ token, email }: ResetPasswordProps) {
+    const [showPassword, setShowPassword] = useState(false);
+    const [showPasswordConfirmation, setShowPasswordConfirmation] =
+        useState(false);
+
     return (
         <AuthLayout
             title="Reset password"
@@ -47,15 +53,36 @@ export default function ResetPassword({ token, email }: ResetPasswordProps) {
 
                         <div className="grid gap-2">
                             <Label htmlFor="password">Password</Label>
-                            <Input
-                                id="password"
-                                type="password"
-                                name="password"
-                                autoComplete="new-password"
-                                className="mt-1 block w-full"
-                                autoFocus
-                                placeholder="Password"
-                            />
+                            <div className="relative">
+                                <Input
+                                    id="password"
+                                    type={showPassword ? 'text' : 'password'}
+                                    name="password"
+                                    autoComplete="new-password"
+                                    className="mt-1 block w-full pr-10"
+                                    autoFocus
+                                    placeholder="Password"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setShowPassword((prev) => !prev)
+                                    }
+                                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground focus-visible:outline-none"
+                                    aria-label={
+                                        showPassword
+                                            ? 'Hide password'
+                                            : 'Show password'
+                                    }
+                                    aria-pressed={showPassword}
+                                >
+                                    {showPassword ? (
+                                        <EyeOff className="h-4 w-4" />
+                                    ) : (
+                                        <Eye className="h-4 w-4" />
+                                    )}
+                                </button>
+                            </div>
                             <InputError message={errors.password} />
                         </div>
 
@@ -63,14 +90,41 @@ export default function ResetPassword({ token, email }: ResetPasswordProps) {
                             <Label htmlFor="password_confirmation">
                                 Confirm password
                             </Label>
-                            <Input
-                                id="password_confirmation"
-                                type="password"
-                                name="password_confirmation"
-                                autoComplete="new-password"
-                                className="mt-1 block w-full"
-                                placeholder="Confirm password"
-                            />
+                            <div className="relative">
+                                <Input
+                                    id="password_confirmation"
+                                    type={
+                                        showPasswordConfirmation
+                                            ? 'text'
+                                            : 'password'
+                                    }
+                                    name="password_confirmation"
+                                    autoComplete="new-password"
+                                    className="mt-1 block w-full pr-10"
+                                    placeholder="Confirm password"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setShowPasswordConfirmation(
+                                            (prev) => !prev,
+                                        )
+                                    }
+                                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground focus-visible:outline-none"
+                                    aria-label={
+                                        showPasswordConfirmation
+                                            ? 'Hide password'
+                                            : 'Show password'
+                                    }
+                                    aria-pressed={showPasswordConfirmation}
+                                >
+                                    {showPasswordConfirmation ? (
+                                        <EyeOff className="h-4 w-4" />
+                                    ) : (
+                                        <Eye className="h-4 w-4" />
+                                    )}
+                                </button>
+                            </div>
                             <InputError
                                 message={errors.password_confirmation}
                                 className="mt-2"

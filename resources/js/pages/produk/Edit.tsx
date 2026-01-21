@@ -53,17 +53,23 @@ interface Props {
   tipe_options: string[];
   satuan_options: string[];
   stok_tersedia: SatuanStok[];
+  snack_varian_options: string[];
 }
 
-export default function ProdukEdit({ produk, kategori, stok_tersedia }: Props) {
+export default function ProdukEdit({
+  produk,
+  kategori,
+  stok_tersedia,
+  snack_varian_options,
+}: Props) {
   const { data, setData, post, processing, errors } = useForm({
     _method: 'PUT',
+    tipe: produk.tipe,
     kategori_id: String(produk.kategori_id || ''),
     kelompok_nama: produk.kelompok_nama || produk.nama,
     varian: produk.varian || 'none',
     nama: produk.nama,
     sku: produk.sku,
-    tipe: produk.tipe,
     base: produk.base || 'none',
     deskripsi: produk.deskripsi || '',
     satuan_dasar: produk.satuan_dasar || 'pcs',
@@ -81,38 +87,44 @@ export default function ProdukEdit({ produk, kategori, stok_tersedia }: Props) {
     aktif: Boolean(produk.aktif),
   });
 
-  const KATEGORI_TIPE_MAP: Record<string, string> = {
-    'kopi-beans': 'beans',
-    'minuman-kopi': 'minuman',
-    'minuman-non-kopi': 'minuman',
-    snack: 'snack',
-  };
-
-  const [autoTipe, setAutoTipe] = useState<string>(produk.tipe || '');
-  const [showBaseField, setShowBaseField] = useState(produk.tipe === 'minuman');
+  const showBaseField = data.tipe === 'minuman';
 
   const [skuStatus, setSkuStatus] = useState<'idle' | 'checking' | 'taken' | 'available'>('idle');
   const [isGeneratingSku, setIsGeneratingSku] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const skuCheckTimeout = useRef<number | null>(null);
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
+  const [snackVarianMode, setSnackVarianMode] = useState<'none' | 'existing' | 'custom'>(() => {
+    if (produk.tipe !== 'snack') {
+      return 'none';
+    }
+    const value = produk.varian || '';
+    if (!value || value === 'none') {
+      return 'none';
+    }
+    if (snack_varian_options.includes(value)) {
+      return 'existing';
+    }
+    return 'custom';
+  });
+  const [snackVarianCustom, setSnackVarianCustom] = useState(() => {
+    if (produk.tipe !== 'snack') {
+      return '';
+    }
+    const value = produk.varian || '';
+    if (!value || value === 'none') {
+      return '';
+    }
+    if (snack_varian_options.includes(value)) {
+      return '';
+    }
+    return value;
+  });
 
   const currentImageUrl = produk?.image_path ? `/storage/${produk.image_path}` : null;
 
   const handleKategoriChange = (kategoriId: string) => {
     setData('kategori_id', kategoriId);
-
-    const selectedKat = kategori.find((k) => String(k.id) === kategoriId);
-    if (selectedKat) {
-      const tipe = KATEGORI_TIPE_MAP[selectedKat.slug] || '';
-      setAutoTipe(tipe);
-      setData('tipe', tipe);
-      setShowBaseField(tipe === 'minuman');
-
-      if (tipe !== 'minuman') {
-        setData('base', 'none');
-      }
-    }
   };
 
   const handleKelompokOrVarianChange = () => {
@@ -227,6 +239,10 @@ export default function ProdukEdit({ produk, kategori, stok_tersedia }: Props) {
 
             const nextErrors: Record<string, string> = {};
 
+            if (!data.tipe) {
+              nextErrors.tipe = 'Tipe produk wajib dipilih';
+            }
+
             if (!data.kelompok_nama.trim()) {
               nextErrors.kelompok_nama = 'Kelompok nama wajib diisi';
             }
@@ -243,6 +259,16 @@ export default function ProdukEdit({ produk, kategori, stok_tersedia }: Props) {
             const hargaJual = Number(data.harga_jual);
             if (!data.harga_jual || Number.isNaN(hargaJual) || hargaJual < 0) {
               nextErrors.harga_jual = 'Harga jual harus berupa angka dan tidak boleh negatif';
+            }
+
+            if (data.tipe === 'snack' && snackVarianMode === 'custom') {
+              const value = snackVarianCustom.trim();
+              if (!value) {
+                nextErrors.varian =
+                  'Isi varian snack baru atau pilih dari daftar yang tersedia';
+              } else if (value.length > 50) {
+                nextErrors.varian = 'Varian snack maksimal 50 karakter';
+              }
             }
 
             if (skuStatus === 'taken') {
@@ -267,21 +293,49 @@ export default function ProdukEdit({ produk, kategori, stok_tersedia }: Props) {
                   <CardDescription>Detail utama produk</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="kategori_id">Kategori Produk *</Label>
-                    <Select value={data.kategori_id} onValueChange={handleKategoriChange}>
-                      <SelectTrigger id="kategori_id">
-                        <SelectValue placeholder="Pilih kategori" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {kategori.map((k) => (
-                          <SelectItem key={k.id} value={String(k.id)}>
-                            {k.nama}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <InputError message={errors.kategori_id as string} />
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="tipe">Tipe Produk *</Label>
+                      <Select
+                        value={data.tipe}
+                        onValueChange={(value) => {
+                          setData('tipe', value);
+                          const isMinuman = value === 'minuman';
+                          if (!isMinuman) {
+                            setData('base', 'none');
+                          }
+                          setSnackVarianMode('none');
+                          setSnackVarianCustom('');
+                          setData('varian', value === 'snack' ? '' : 'none');
+                        }}
+                      >
+                        <SelectTrigger id="tipe">
+                          <SelectValue placeholder="Pilih tipe produk" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="snack">Snack</SelectItem>
+                          <SelectItem value="beans">Beans</SelectItem>
+                          <SelectItem value="minuman">Minuman</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <InputError message={clientErrors.tipe || (errors.tipe as string)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="kategori_id">Kategori Produk (opsional)</Label>
+                      <Select value={data.kategori_id} onValueChange={handleKategoriChange}>
+                        <SelectTrigger id="kategori_id">
+                          <SelectValue placeholder="Pilih kategori (jika ada)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {kategori.map((k) => (
+                            <SelectItem key={k.id} value={String(k.id)}>
+                              {k.nama}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <InputError message={errors.kategori_id as string} />
+                    </div>
                   </div>
 
                   <div className="space-y-2">
@@ -292,96 +346,131 @@ export default function ProdukEdit({ produk, kategori, stok_tersedia }: Props) {
                       onChange={(e) => setData('kelompok_nama', e.target.value)}
                       placeholder="Contoh: Caramel Latte"
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Nama base produk (tanpa varian)
-                    </p>
+                    {data.nama && (
+                      <p className="text-xs text-muted-foreground">
+                        <span className="font-medium">Nama base produk, varian : {data.nama}</span>
+                      </p>
+                    )}
                     <InputError
                       message={clientErrors.kelompok_nama || (errors.kelompok_nama as string)}
                     />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Varian</Label>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant={!data.varian || data.varian === 'none' ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => setData('varian', 'none')}
-                      >
-                        Tanpa Varian
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={data.varian === 'Hot' ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() =>
-                          setData('varian', data.varian === 'Hot' ? 'none' : 'Hot')
-                        }
-                        className="inline-flex items-center gap-1"
-                      >
-                        <Flame className="h-4 w-4" />
-                        <span>Hot</span>
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={data.varian === 'Ice' ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() =>
-                          setData('varian', data.varian === 'Ice' ? 'none' : 'Ice')
-                        }
-                        className="inline-flex items-center gap-1"
-                      >
-                        <Snowflake className="h-4 w-4" />
-                        <span>Ice</span>
-                      </Button>
-                    </div>
-                    <InputError message={errors.varian as string} />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="nama">Nama Lengkap (Auto) *</Label>
-                    <Input
-                      id="nama"
-                      value={data.nama}
-                      readOnly
-                      className="bg-muted cursor-not-allowed"
-                      placeholder="Akan terisi otomatis"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Nama dibuat otomatis dari Kelompok + Varian
-                    </p>
                     <InputError message={clientErrors.nama || (errors.nama as string)} />
                   </div>
+
+                  {data.tipe === 'snack' ? (
+                    <div className="space-y-2">
+                      <Label>Varian Snack (opsional)</Label>
+                      <Select
+                        value={
+                          snackVarianMode === 'existing'
+                            ? data.varian && data.varian !== 'none'
+                              ? data.varian
+                              : '__none'
+                            : snackVarianMode === 'custom'
+                            ? '__custom'
+                            : '__none'
+                        }
+                        onValueChange={(value) => {
+                          if (value === '__none') {
+                            setSnackVarianMode('none');
+                            setSnackVarianCustom('');
+                            setData('varian', '');
+                            return;
+                          }
+                          if (value === '__custom') {
+                            setSnackVarianMode('custom');
+                            setSnackVarianCustom('');
+                            setData('varian', '');
+                            return;
+                          }
+                          setSnackVarianMode('existing');
+                          setSnackVarianCustom('');
+                          setData('varian', value);
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Pilih varian snack atau kosongkan" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none">Tanpa varian</SelectItem>
+                          {snack_varian_options.map((v) => (
+                            <SelectItem key={v} value={v}>
+                              {v}
+                            </SelectItem>
+                          ))}
+                          <SelectItem value="__custom">Varian baru...</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {snackVarianMode === 'custom' && (
+                        <div className="space-y-2">
+                          <Label htmlFor="snack_varian_custom">Varian Snack Baru</Label>
+                          <Input
+                            id="snack_varian_custom"
+                            value={snackVarianCustom}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setSnackVarianCustom(value);
+                              setData('varian', value);
+                            }}
+                            placeholder="Contoh: Large, Small, Spicy"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Masukkan nama varian snack (maksimal 50 karakter)
+                          </p>
+                        </div>
+                      )}
+                      <InputError message={clientErrors.varian || (errors.varian as string)} />
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Label>Varian</Label>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant={!data.varian || data.varian === 'none' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setData('varian', 'none')}
+                        >
+                          Tanpa Varian
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={data.varian === 'Hot' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() =>
+                            setData('varian', data.varian === 'Hot' ? 'none' : 'Hot')
+                          }
+                          className="inline-flex items-center gap-1"
+                        >
+                          <Flame className="h-4 w-4" />
+                          <span>Hot</span>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={data.varian === 'Ice' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() =>
+                            setData('varian', data.varian === 'Ice' ? 'none' : 'Ice')
+                          }
+                          className="inline-flex items-center gap-1"
+                        >
+                          <Snowflake className="h-4 w-4" />
+                          <span>Ice</span>
+                        </Button>
+                      </div>
+                      <InputError message={errors.varian as string} />
+                    </div>
+                  )}
+
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader>
                   <CardTitle>Klasifikasi Produk</CardTitle>
-                  <CardDescription>Tipe dan base produk</CardDescription>
+                  <CardDescription>Base dan SKU produk</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="tipe">Tipe Produk *</Label>
-                    <Input
-                      id="tipe"
-                      value={
-                        autoTipe
-                          ? autoTipe === 'beans'
-                            ? 'Beans'
-                            : autoTipe === 'minuman'
-                              ? 'Minuman'
-                              : 'Snack'
-                          : ''
-                      }
-                      readOnly
-                      className="bg-muted cursor-not-allowed"
-                    />
-                    <p className="text-xs text-muted-foreground">Tipe otomatis dari kategori</p>
-                    <InputError message={errors.tipe as string} />
-                  </div>
-
                   {showBaseField && (
                     <div className="space-y-2">
                       <Label htmlFor="base">Base Produk *</Label>

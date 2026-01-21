@@ -1,6 +1,5 @@
 import { Head } from '@inertiajs/react';
 
-import AppearanceTabs from '@/components/appearance-tabs';
 import HeadingSmall from '@/components/heading-small';
 import { type BreadcrumbItem } from '@/types';
 
@@ -22,7 +21,10 @@ export default function Appearance() {
             <SettingsLayout>
                 <div className="space-y-6">
                     <HeadingSmall title="Appearance settings" description="Update your account's appearance settings" />
-                    <AppearanceTabs />
+                    <p className="text-sm text-muted-foreground">
+                        Tampilan aplikasi menggunakan mode terang (light mode) secara permanen.
+                        Pengaturan tema tidak dapat diubah.
+                    </p>
                 </div>
             </SettingsLayout>
         </AppLayout>
