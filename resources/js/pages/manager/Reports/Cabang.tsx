@@ -2,7 +2,7 @@ import AppLayout from '@/layouts/app-layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Head, useForm } from '@inertiajs/react';
+import { Head, Link, useForm } from '@inertiajs/react';
 
 interface CabangRow {
     cabang_id: number;
@@ -167,6 +167,7 @@ export default function ManagerCabangReport({ cabangs, metrics }: Props) {
                                             <th className="py-2 pr-4 text-right">Shift</th>
                                             <th className="py-2 pr-4 text-right">Rata-rata/Shift</th>
                                             <th className="py-2 pr-4 text-right">Rata-rata/Transaksi</th>
+                                            <th className="py-2 pr-4 text-left">Aksi</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -192,6 +193,18 @@ export default function ManagerCabangReport({ cabangs, metrics }: Props) {
                                                 </td>
                                                 <td className="py-2 pr-4 text-right align-top">
                                                     {formatRupiah(row.rata_rata_per_transaksi)}
+                                                </td>
+                                                <td className="py-2 pr-4 align-top">
+                                                    <Link
+                                                        href={`/manager/performa-shift?tanggal_mulai=${encodeURIComponent(
+                                                            metrics.tanggal_mulai,
+                                                        )}&tanggal_selesai=${encodeURIComponent(
+                                                            metrics.tanggal_selesai,
+                                                        )}&cabang_id=${row.cabang_id}`}
+                                                        className="text-xs underline text-muted-foreground"
+                                                    >
+                                                        Lihat shift
+                                                    </Link>
                                                 </td>
                                             </tr>
                                         ))}

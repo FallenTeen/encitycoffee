@@ -168,29 +168,56 @@ class ManagerController extends Controller
     {
         Gate::authorize('view-manager-laporan');
 
-        $tanggalMulai = $request->get('tanggal_mulai', Carbon::now()->subDays(30)->toDateString());
-        $tanggalAkhir = $request->get('tanggal_selesai', Carbon::now()->toDateString());
+        $user = Auth::user();
+        $cabangIds = $user->cabang->pluck('id')->all();
 
-        $performa = Shift::select('shift.id', 'shift.user_id', 'shift.cabang_id', 'shift.waktu_buka', 'shift.waktu_tutup')
+        $validated = $request->validate([
+            'tanggal_mulai' => 'nullable|date',
+            'tanggal_selesai' => 'nullable|date',
+            'cabang_id' => ['nullable', 'integer', Rule::in($cabangIds)],
+        ]);
+
+        $tanggalMulai = $validated['tanggal_mulai'] ?? Carbon::now()->subDays(30)->toDateString();
+        $tanggalAkhir = $validated['tanggal_selesai'] ?? Carbon::now()->toDateString();
+        $cabangIdFilter = $validated['cabang_id'] ?? null;
+
+        $query = Shift::select('shift.id', 'shift.user_id', 'shift.cabang_id', 'shift.waktu_buka', 'shift.waktu_tutup')
             ->with(['user', 'cabang'])
-            ->whereBetween('waktu_buka', [$tanggalMulai, $tanggalAkhir])
-            ->get()
-            ->map(function ($s) {
-                $penjualan = Transaksi::where('shift_id', $s->id)->where('status', 'selesai')->sum('total');
-                $jumlahTransaksi = Transaksi::where('shift_id', $s->id)->where('status', 'selesai')->count();
-                return [
-                    'shift_id' => $s->id,
-                    'kasir' => optional($s->user)->name,
-                    'cabang' => optional($s->cabang)->nama,
-                    'waktu_buka' => $s->waktu_buka,
-                    'waktu_tutup' => $s->waktu_tutup,
-                    'total_penjualan' => (float) $penjualan,
-                    'jumlah_transaksi' => (int) $jumlahTransaksi,
-                ];
-            });
+            ->whereIn('shift.cabang_id', $cabangIds)
+            ->whereBetween('waktu_buka', [$tanggalMulai, $tanggalAkhir]);
+
+        if ($cabangIdFilter) {
+            $query->where('shift.cabang_id', $cabangIdFilter);
+        }
+
+        $performa = $query->get()->map(function ($s) {
+            $penjualan = Transaksi::where('shift_id', $s->id)->where('status', 'selesai')->sum('total');
+            $jumlahTransaksi = Transaksi::where('shift_id', $s->id)->where('status', 'selesai')->count();
+            return [
+                'shift_id' => $s->id,
+                'kasir' => optional($s->user)->name,
+                'cabang' => optional($s->cabang)->nama,
+                'waktu_buka' => $s->waktu_buka,
+                'waktu_tutup' => $s->waktu_tutup,
+                'total_penjualan' => (float) $penjualan,
+                'jumlah_transaksi' => (int) $jumlahTransaksi,
+            ];
+        });
+
+        $filters = [
+            'tanggal_mulai' => $tanggalMulai,
+            'tanggal_selesai' => $tanggalAkhir,
+            'cabang_id' => $cabangIdFilter,
+        ];
+
+        $cabangOptions = Cabang::whereIn('id', $cabangIds)
+            ->orderBy('kode')
+            ->get(['id', 'kode', 'nama']);
 
         return Inertia::render('manager/Reports/PerformaShift', [
             'performance' => $performa,
+            'filters' => $filters,
+            'cabangOptions' => $cabangOptions,
         ]);
     }
 }

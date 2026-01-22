@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Controllers;
 
 use App\Models\Laporan;
@@ -85,8 +86,8 @@ class LaporanController extends Controller
                 'status' => $s->status,
                 'nama_kasir' => $s->nama_kasir,
                 'nama_kasir_list' => collect(preg_split('/,/', (string) $s->nama_kasir))
-                    ->map(fn ($n) => trim((string) $n))
-                    ->filter(fn ($n) => $n !== '')
+                    ->map(fn($n) => trim((string) $n))
+                    ->filter(fn($n) => $n !== '')
                     ->values()
                     ->all(),
                 'total_transaksi' => $totalTransaksi,
@@ -402,8 +403,8 @@ class LaporanController extends Controller
                 'status' => $shift->status,
                 'nama_kasir' => $shift->nama_kasir,
                 'nama_kasir_list' => collect(preg_split('/,/', (string) $shift->nama_kasir))
-                    ->map(fn ($n) => trim((string) $n))
-                    ->filter(fn ($n) => $n !== '')
+                    ->map(fn($n) => trim((string) $n))
+                    ->filter(fn($n) => $n !== '')
                     ->values()
                     ->all(),
             ],
@@ -492,7 +493,8 @@ class LaporanController extends Controller
             ->whereDate('transaksi.waktu_selesai', $tanggal)
             ->where('transaksi.status', 'selesai')
             ->select(
-                'item_transaksi.produk_id', 'produk.nama',
+                'item_transaksi.produk_id',
+                'produk.nama',
                 DB::raw('SUM(item_transaksi.jumlah) as total_terjual'),
                 DB::raw('SUM(item_transaksi.subtotal) as pendapatan')
             )
@@ -798,7 +800,8 @@ class LaporanController extends Controller
                     ->where('transaksi.status', 'selesai');
             })
             ->select(
-                'users.id', 'users.name',
+                'users.id',
+                'users.name',
                 DB::raw('COUNT(DISTINCT shift.id) as total_shift'),
                 DB::raw('SUM(CASE WHEN transaksi.id IS NOT NULL THEN 1 ELSE 0 END) as total_transaksi'),
                 DB::raw('SUM(transaksi.total) as total_penjualan'),
@@ -873,46 +876,46 @@ class LaporanController extends Controller
 
     public function ringkasanShift(Shift $shift, Request $request)
     {
-        $transaksi = Transaksi::where('shift_id', $shift->id)
-            ->where('status', 'selesai')
-            ->with('pembayaran')
-            ->get();
 
-        $totalTransaksi = $transaksi->count();
+        try {
+            $keuangan = DB::table('transaksi')
+                ->leftJoin('pembayaran', 'transaksi.id', '=', 'pembayaran.transaksi_id')
+                ->where('transaksi.shift_id', $shift->id)
+                ->where('transaksi.status', 'selesai')
+                ->select(
+                    DB::raw('COUNT(DISTINCT transaksi.id) as total_transaksi'),
+                    DB::raw('COALESCE(SUM(CASE WHEN pembayaran.metode_pembayaran = "tunai" THEN pembayaran.jumlah ELSE 0 END), 0) as total_pendapatan_tunai'),
+                    DB::raw('COALESCE(SUM(CASE WHEN pembayaran.metode_pembayaran = "qris" THEN pembayaran.jumlah ELSE 0 END), 0) as total_pendapatan_qris')
+                )
+                ->first();
+        } catch (\Exception $e) {
+            \Log::error('ringkasanShift query error', [
+                'shift_id' => $shift->id,
+                'error' => $e->getMessage()
+            ]);
 
-        $totalPendapatanTunai = 0.0;
-        $totalPendapatanQris = 0.0;
-
-        foreach ($transaksi as $t) {
-            $total = (float) ($t->total ?? 0);
-            if ($total <= 0) {
-                continue;
-            }
-
-            $totalQris = (float) $t->pembayaran
-                ->where('metode_pembayaran', 'qris')
-                ->sum('jumlah');
-
-            $pendapatanQris = min($totalQris, $total);
-            $pendapatanTunai = max(0.0, $total - $pendapatanQris);
-
-            $totalPendapatanTunai += $pendapatanTunai;
-            $totalPendapatanQris += $pendapatanQris;
+            $keuangan = (object)[
+                'total_transaksi' => 0,
+                'total_pendapatan_tunai' => 0,
+                'total_pendapatan_qris' => 0,
+            ];
         }
+
+        $totalTransaksi = max(1, (int) ($keuangan->total_transaksi ?? 0));
 
         return response()->json([
             'keuangan' => [
                 'shift_id' => (int) $shift->id,
-                'total_transaksi' => (int) $totalTransaksi,
-                'total_pendapatan_tunai' => (float) $totalPendapatanTunai,
-                'total_pendapatan_qris' => (float) $totalPendapatanQris,
+                'total_transaksi' => $totalTransaksi,
+                'total_pendapatan_tunai' => (float) ($keuangan->total_pendapatan_tunai ?? 0),
+                'total_pendapatan_qris' => (float) ($keuangan->total_pendapatan_qris ?? 0),
                 'saldo_awal' => (float) $shift->saldo_awal,
                 'saldo_akhir' => $shift->saldo_akhir !== null ? (float) $shift->saldo_akhir : null,
             ],
             'shift_id' => (int) $shift->id,
-            'total_transaksi' => (int) $totalTransaksi,
-            'total_pendapatan_tunai' => (float) $totalPendapatanTunai,
-            'total_pendapatan_qris' => (float) $totalPendapatanQris,
+            'total_transaksi' => $totalTransaksi,
+            'total_pendapatan_tunai' => (float) ($keuangan->total_pendapatan_tunai ?? 0),
+            'total_pendapatan_qris' => (float) ($keuangan->total_pendapatan_qris ?? 0),
         ]);
     }
 
@@ -958,7 +961,11 @@ class LaporanController extends Controller
         $lowStock = (clone $base)
             ->whereColumn('stok_etalase.jumlah', '<', 'stok_etalase.stok_minimum')
             ->select(
-                'stok_etalase.id', 'produk.nama', 'stok_etalase.jumlah', 'stok_etalase.stok_minimum', 'stok_etalase.cabang_id',
+                'stok_etalase.id',
+                'produk.nama',
+                'stok_etalase.jumlah',
+                'stok_etalase.stok_minimum',
+                'stok_etalase.cabang_id',
                 DB::raw('(stok_etalase.stok_minimum - stok_etalase.jumlah) as rekomendasi'),
                 DB::raw('(stok_etalase.jumlah * produk.harga_modal) as nilai')
             )
@@ -994,7 +1001,8 @@ class LaporanController extends Controller
             ->join('cabang', 'stok_etalase.cabang_id', '=', 'cabang.id')
             ->when($kategoriId, fn($q) => $q->where('produk.kategori_id', $kategoriId))
             ->select(
-                'cabang.id as cabang_id', 'cabang.nama as cabang',
+                'cabang.id as cabang_id',
+                'cabang.nama as cabang',
                 DB::raw('SUM(stok_etalase.jumlah * produk.harga_modal) as nilai_inventori'),
                 DB::raw('SUM(CASE WHEN stok_etalase.jumlah < stok_etalase.stok_minimum THEN 1 ELSE 0 END) as stok_rendah_count')
             )
@@ -1005,7 +1013,8 @@ class LaporanController extends Controller
             ->join('kategori_produk', 'produk.kategori_id', '=', 'kategori_produk.id')
             ->when($cabangId, fn($q) => $q->where('stok_etalase.cabang_id', $cabangId))
             ->select(
-                'kategori_produk.id as kategori_id', 'kategori_produk.nama as kategori',
+                'kategori_produk.id as kategori_id',
+                'kategori_produk.nama as kategori',
                 DB::raw('SUM(stok_etalase.jumlah * produk.harga_modal) as nilai_inventori'),
                 DB::raw('SUM(CASE WHEN stok_etalase.jumlah < stok_etalase.stok_minimum THEN 1 ELSE 0 END) as stok_rendah_count')
             )
@@ -1192,7 +1201,7 @@ class LaporanController extends Controller
         $csv = stream_get_contents($handle) ?: '';
         fclose($handle);
 
-        $disposition = 'attachment; filename="'.$filename.'"';
+        $disposition = 'attachment; filename="' . $filename . '"';
 
         return response($csv, 200, [
             'Content-Type' => 'text/csv; charset=UTF-8',
