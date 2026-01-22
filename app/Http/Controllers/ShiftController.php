@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Controllers;
 
 use App\Models\Shift;
@@ -165,60 +166,185 @@ class ShiftController extends Controller
 
     public function tutupShift(Request $request, Shift $shift)
     {
+        // ===================================================================
+        // VALIDASI INPUT
+        // ===================================================================
         $v = Validator::make($request->all(), [
             'saldo_akhir' => 'required|numeric|min:0',
-            'catatan' => 'nullable|string',
+            'total_tunai' => 'nullable|numeric|min:0',
+            'total_qris' => 'nullable|numeric|min:0',
+            'catatan' => 'nullable|string|max:500',
         ]);
 
         if ($v->fails()) {
-            return response()->json(['error' => $v->errors()], 422);
+            return response()->json([
+                'error' => 'Data tidak valid',
+                'details' => $v->errors()
+            ], 422);
         }
 
+        // ===================================================================
+        // GET USER & LOG REQUEST
+        // ===================================================================
         $user = $request->user() ?? auth()->user();
 
-        Log::info('tutupShift debug', [
+        Log::info('tutupShift request', [
+            'shift_id' => $shift->id,
             'shift_user_id' => $shift->user_id,
+            'shift_status' => $shift->status,
             'auth_user_id' => $user?->id,
-            'auth_id_helper' => auth()->id(),
-            'request_payload' => $request->all(),
-            'running_tests' => app()->runningUnitTests(),
+            'saldo_akhir' => $request->saldo_akhir,
         ]);
 
+        if (!$user) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
 
-        try {
-            Log::info('tutupShift raw', [
-                'shift_class' => get_class($shift),
+        // ===================================================================
+        // CHECK SHIFT STATUS - FLEXIBLE
+        // ===================================================================
+        // Jika sudah ditutup, return sukses dengan data yang ada
+        // (Untuk handle double-click atau retry dari mobile)
+        if ($shift->status === 'tutup') {
+            Log::info('Shift already closed, returning existing data', [
                 'shift_id' => $shift->id,
-                'attributes' => $shift->getAttributes(),
+                'user_id' => $user->id,
             ]);
-        } catch (\Throwable $e) {
-            Log::error('tutupShift raw logging failed', ['error' => $e->getMessage()]);
+
+            return response()->json([
+                'message' => 'Shift sudah ditutup sebelumnya',
+                'shift' => $shift
+            ], 200);
         }
 
-        if (! $user) {
-            return response()->json(['error' => 'Tidak memiliki akses'], 403);
+        if ($shift->status !== 'buka') {
+            return response()->json([
+                'error' => 'Shift tidak dapat ditutup (status: ' . $shift->status . ')'
+            ], 400);
         }
 
-
+        // ===================================================================
+        // PERMISSION CHECK - FLEXIBLE TAPI AMAN
+        // ===================================================================
         $isOwner = ((int) $shift->user_id === (int) $user->id);
-        $isSupervisor = method_exists($user, 'isSupervisor') && $user->isSupervisor();
-        if (! $isOwner && ! $isSupervisor) {
-            return response()->json(['error' => 'Tidak memiliki akses'], 403);
+        $userRole = strtolower((string) ($user->role ?? ''));
+
+        // Role-based permissions
+        $isSupervisor = $userRole === 'supervisor';
+        $isManager = $userRole === 'manager';
+        $isItSupport = $userRole === 'it_support';
+
+        // Base permission check
+        $hasPermission = $isOwner || $isSupervisor || $isManager || $isItSupport;
+
+        if (!$hasPermission) {
+            Log::warning('Unauthorized shift close attempt', [
+                'user_id' => $user->id,
+                'user_role' => $userRole,
+                'shift_id' => $shift->id,
+                'shift_user_id' => $shift->user_id,
+            ]);
+
+            return response()->json([
+                'error' => 'Anda tidak memiliki izin untuk menutup shift ini'
+            ], 403);
         }
 
+        // Cabang validation (kecuali IT Support)
+        if (!$isItSupport && !$isOwner) {
+            $cabangIds = $user->cabang()->pluck('cabang.id')->all();
+
+            if (!in_array($shift->cabang_id, $cabangIds, true)) {
+                Log::warning('Cross-cabang shift close attempt', [
+                    'user_id' => $user->id,
+                    'user_role' => $userRole,
+                    'shift_cabang_id' => $shift->cabang_id,
+                    'user_cabang_ids' => $cabangIds,
+                ]);
+
+                return response()->json([
+                    'error' => 'Anda tidak memiliki akses ke cabang ini'
+                ], 403);
+            }
+        }
+
+        // Log permission override
+        if (!$isOwner) {
+            Log::info('Shift closed by supervisor/manager', [
+                'shift_id' => $shift->id,
+                'shift_owner_id' => $shift->user_id,
+                'closed_by_user_id' => $user->id,
+                'closed_by_role' => $userRole,
+            ]);
+        }
+
+        // ===================================================================
+        // TUTUP SHIFT - DENGAN TRANSACTION & LOCK
+        // ===================================================================
         DB::beginTransaction();
         try {
-            $transaksiSelesai = $shift->transaksi()
+            // Pessimistic lock untuk prevent race condition
+            $shiftLocked = Shift::where('id', $shift->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$shiftLocked) {
+                DB::rollBack();
+                return response()->json([
+                    'error' => 'Shift tidak ditemukan'
+                ], 404);
+            }
+
+            // Double-check status setelah lock
+            if ($shiftLocked->status === 'tutup') {
+                DB::rollBack();
+
+                Log::info('Shift already closed after lock', [
+                    'shift_id' => $shiftLocked->id,
+                ]);
+
+                return response()->json([
+                    'message' => 'Shift sudah ditutup sebelumnya',
+                    'shift' => $shiftLocked
+                ], 200);
+            }
+
+            // ===================================================================
+            // HITUNG TOTAL DARI TRANSAKSI
+            // ===================================================================
+            $transaksiSelesai = $shiftLocked->transaksi()
                 ->where('status', 'selesai')
                 ->get();
 
-            $total_tunai = (float) $transaksiSelesai->sum('total_tunai');
-            $total_qris = (float) $transaksiSelesai->sum('total_qris');
+            // Jika user kirim total_tunai & total_qris, pakai itu
+            // Jika tidak, hitung dari transaksi
+            if ($request->filled('total_tunai') && $request->filled('total_qris')) {
+                $total_tunai = (float) $request->total_tunai;
+                $total_qris = (float) $request->total_qris;
 
-            $saldo_diharapkan = $shift->saldo_awal + $total_tunai;
+                Log::info('Using manual totals from request', [
+                    'total_tunai' => $total_tunai,
+                    'total_qris' => $total_qris,
+                ]);
+            } else {
+                $total_tunai = (float) $transaksiSelesai->sum('total_tunai');
+                $total_qris = (float) $transaksiSelesai->sum('total_qris');
+
+                Log::info('Calculated totals from transactions', [
+                    'total_tunai' => $total_tunai,
+                    'total_qris' => $total_qris,
+                    'transaction_count' => $transaksiSelesai->count(),
+                ]);
+            }
+
+            // Hitung saldo diharapkan dan selisih
+            $saldo_diharapkan = $shiftLocked->saldo_awal + $total_tunai;
             $selisih = $request->saldo_akhir - $saldo_diharapkan;
 
-            $shift->update([
+            // ===================================================================
+            // UPDATE SHIFT
+            // ===================================================================
+            $shiftLocked->update([
                 'saldo_akhir' => $request->saldo_akhir,
                 'saldo_diharapkan' => $saldo_diharapkan,
                 'selisih' => $selisih,
@@ -230,12 +356,41 @@ class ShiftController extends Controller
             ]);
 
             DB::commit();
+
+            Log::info('Shift closed successfully', [
+                'shift_id' => $shiftLocked->id,
+                'closed_by_user_id' => $user->id,
+                'saldo_awal' => $shiftLocked->saldo_awal,
+                'saldo_akhir' => $request->saldo_akhir,
+                'saldo_diharapkan' => $saldo_diharapkan,
+                'selisih' => $selisih,
+                'total_tunai' => $total_tunai,
+                'total_qris' => $total_qris,
+            ]);
+
+            // Reload shift untuk response
+            $shiftLocked->refresh();
+            $shiftLocked->load(['cabang', 'user']);
+
+            return response()->json([
+                'message' => 'Shift berhasil ditutup',
+                'shift' => $shiftLocked
+            ], 200);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['error' => $e->getMessage()], 500);
-        }
 
-        return response()->json(['shift' => $shift]);
+            Log::error('Failed to close shift', [
+                'shift_id' => $shift->id,
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'error' => 'Gagal menutup shift. Silakan coba lagi.',
+                'details' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function tampilkanShift(Shift $shift)
@@ -255,7 +410,7 @@ class ShiftController extends Controller
     public function daftarShift(Request $request)
     {
         $user = $request->user();
-        $query = Shift::with(['user','cabang']);
+        $query = Shift::with(['user', 'cabang']);
 
         if ($user->isKasir()) {
             $query->where('user_id', $user->id);

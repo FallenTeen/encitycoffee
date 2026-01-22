@@ -8,6 +8,7 @@ import AppLayout from '@/layouts/app-layout';
 import supervisor from '@/routes/supervisor';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
+import Swal from 'sweetalert2';
 
 interface Props {
   shift: {
@@ -67,6 +68,122 @@ export default function MonitoringShift({ shift, filter_aktif, statistik_ringkas
       ),
     [cabang_list],
   );
+
+  const handleOpenShift = async () => {
+    if (!data.cabang_id) {
+      await Swal.fire('Pilih cabang', 'Silakan pilih cabang pada filter terlebih dahulu.', 'info');
+      return;
+    }
+
+    const result = await Swal.fire({
+      title: 'Buka Shift',
+      text: 'Masukkan saldo awal untuk shift baru.',
+      icon: 'warning',
+      input: 'number',
+      inputLabel: 'Saldo awal',
+      inputAttributes: {
+        min: '0',
+        step: '1000',
+      },
+      showCancelButton: true,
+      confirmButtonText: 'Buka Shift',
+      cancelButtonText: 'Batal',
+      reverseButtons: true,
+      focusCancel: true,
+      preConfirm: (value) => {
+        if (value === null || value === undefined || String(value).trim() === '') {
+          Swal.showValidationMessage('Saldo awal wajib diisi');
+          return false;
+        }
+        const num = Number(value);
+        if (!Number.isFinite(num) || num < 0) {
+          Swal.showValidationMessage('Saldo awal tidak valid');
+          return false;
+        }
+        return num;
+      },
+    });
+
+    if (!result.isConfirmed) {
+      return;
+    }
+
+    const saldoAwal = Number(result.value);
+    const cabangId = Number(data.cabang_id);
+
+    router.post(
+      '/pos/shift/buka',
+      { saldo_awal: saldoAwal, cabang_id: cabangId },
+      {
+        preserveScroll: true,
+        onSuccess: () => {
+          Swal.fire('Berhasil', 'Shift berhasil dibuka.', 'success');
+          router.reload({
+            preserveUrl: true,
+            only: ['shift', 'statistik_ringkasan'],
+          });
+        },
+        onError: () => {
+          Swal.fire('Gagal', 'Gagal membuka shift. Silakan coba lagi.', 'error');
+        },
+      },
+    );
+  };
+
+  const handleCloseShift = async (shiftId: number) => {
+    const result = await Swal.fire({
+      title: 'Tutup Shift',
+      text: 'Masukkan saldo akhir untuk menutup shift ini.',
+      icon: 'warning',
+      input: 'number',
+      inputLabel: 'Saldo akhir',
+      inputAttributes: {
+        min: '0',
+        step: '1000',
+      },
+      showCancelButton: true,
+      confirmButtonText: 'Tutup Shift',
+      cancelButtonText: 'Batal',
+      reverseButtons: true,
+      focusCancel: true,
+      preConfirm: (value) => {
+        if (value === null || value === undefined || String(value).trim() === '') {
+          Swal.showValidationMessage('Saldo akhir wajib diisi');
+          return false;
+        }
+        const num = Number(value);
+        if (!Number.isFinite(num) || num < 0) {
+          Swal.showValidationMessage('Saldo akhir tidak valid');
+          return false;
+        }
+        return num;
+      },
+    });
+
+    if (!result.isConfirmed) {
+      return;
+    }
+
+    const saldoAkhir = Number(result.value);
+
+    router.post(
+      `/pos/shift/${shiftId}/tutup`,
+      { saldo_akhir: saldoAkhir },
+      {
+        preserveScroll: true,
+        onSuccess: () => {
+          Swal.fire('Berhasil', 'Shift berhasil ditutup.', 'success');
+          router.reload({
+            preserveUrl: true,
+            only: ['shift', 'statistik_ringkasan'],
+          });
+        },
+        onError: () => {
+          Swal.fire('Gagal', 'Gagal menutup shift. Silakan coba lagi.', 'error');
+        },
+      },
+    );
+  };
 
   useEffect(() => {
     if (!autoRefresh) return;
@@ -177,15 +294,21 @@ export default function MonitoringShift({ shift, filter_aktif, statistik_ringkas
                 <Checkbox checked={autoRefresh} onCheckedChange={(v) => setAutoRefresh(Boolean(v))} />
                 <span className="text-sm text-muted-foreground">Auto refresh (15s)</span>
               </div>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() =>
-                  router.reload({ preserveUrl: true, only: ['shift', 'statistik_ringkasan'] })
-                }
-              >
-                Refresh
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button type="button" size="sm" onClick={handleOpenShift}>
+                  Buka shift
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() =>
+                    router.reload({ preserveUrl: true, only: ['shift', 'statistik_ringkasan'] })
+                  }
+                >
+                  Refresh
+                </Button>
+              </div>
             </div>
           </form>
         </div>
@@ -222,9 +345,20 @@ export default function MonitoringShift({ shift, filter_aktif, statistik_ringkas
                     <td className="py-2 px-4">Rp {formatCurrency(s.total_penjualan ?? 0)}</td>
                     <td className="py-2 px-4">{s.status_selisih ?? '-'}</td>
                     <td className="py-2 px-4">
-                      <Link href={supervisor.shift.detail(s.id)} className="text-primary underline">
-                        Detail
-                      </Link>
+                      <div className="flex flex-wrap gap-2">
+                        <Link href={supervisor.shift.detail(s.id)} className="text-primary underline">
+                          Detail
+                        </Link>
+                        {s.status === 'buka' && (
+                          <button
+                            type="button"
+                            className="text-destructive underline"
+                            onClick={() => handleCloseShift(s.id)}
+                          >
+                            Tutup shift
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
