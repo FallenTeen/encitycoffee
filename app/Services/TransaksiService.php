@@ -35,7 +35,6 @@ class TransaksiService
         ?string $catatan = null,
         ?string $namaPelanggan = null
     ) {
-        // Validasi awal sesuai spesifikasi
         if ($shift->status !== 'buka') {
             throw new \Exception('Shift tidak dalam status buka');
         }
@@ -45,112 +44,105 @@ class TransaksiService
         if (empty($pembayaran)) {
             throw new \InvalidArgumentException('Pembayaran tidak boleh kosong');
         }
-        DB::beginTransaction();
-        try {
-            $nomorInvoice = $this->generateNomorInvoice($shift->cabang_id);
+        return DB::transaction(function () use ($shift, $items, $pembayaran, $diskon, $pajak, $catatan, $namaPelanggan) {
+            return $this->buatTransaksiTanpaTransaksi($shift, $items, $pembayaran, $diskon, $pajak, $catatan, $namaPelanggan);
+        });
+    }
 
-            $subtotal = 0;
-            $itemTransaksi = [];
-
-            foreach ($items as $item) {
-                $produk = Produk::findOrFail($item['produk_id']);
-                $subtotalItem = $produk->harga_jual * $item['jumlah'];
-                $subtotal += $subtotalItem;
-
-                $itemTransaksi[] = [
-                    'produk' => $produk,
-                    'jumlah' => $item['jumlah'],
-                    'harga_satuan' => $produk->harga_jual,
-                    'subtotal' => $subtotalItem,
-                    'catatan' => $item['catatan'] ?? null,
-                ];
-            }
-
-            $total = $subtotal - $diskon + $pajak;
-
-            $totalPembayaran = array_sum(array_column($pembayaran, 'jumlah'));
-            if ($totalPembayaran < $total) {
-                throw new \Exception('Jumlah pembayaran tidak mencukupi');
-            }
-
-            $transaksi = Transaksi::create([
-                'shift_id' => $shift->id,
-                'cabang_id' => $shift->cabang_id,
-                'user_id' => $shift->user_id,
-                'nama_pelanggan' => $namaPelanggan,
-                'nomor_invoice' => $nomorInvoice,
-                'subtotal' => $subtotal,
-                'diskon' => $diskon,
-                'pajak' => $pajak,
-                'total' => $total,
-                'status' => 'selesai',
-                'catatan' => $catatan,
-                'waktu_selesai' => Carbon::now(),
-            ]);
-
-            foreach ($itemTransaksi as $item) {
-                ItemTransaksi::create([
-                    'transaksi_id' => $transaksi->id,
-                    'produk_id' => $item['produk']->id,
-                    'jumlah' => $item['jumlah'],
-                    'harga_satuan' => $item['harga_satuan'],
-                    'subtotal' => $item['subtotal'],
-                    'catatan' => $item['catatan'],
-                ]);
-
-                if ($item['produk']->tipe === 'minuman') {
-                    $this->kurangiStokMinuman($shift, $item['produk'], $item['jumlah']);
-                }
-
-                if ($item['produk']->tipe === 'beans') {
-                    $stokEtalase = StokEtalase::where('cabang_id', $shift->cabang_id)
-                        ->where('produk_id', $item['produk']->id)
-                        ->where('tipe_stok', 'penjualan_retail')
-                        ->firstOrFail();
-
-                    $jumlahDalamSatuanDasar = $item['jumlah'];
-                    $this->stokService->kurangiStok(
-                        $stokEtalase,
-                        $jumlahDalamSatuanDasar,
-                        $shift->user,
-                        $shift->id,
-                        'keluar',
-                        "Transaksi #{$nomorInvoice}"
-                    );
-                }
-
-                if ($item['produk']->tipe === 'snack') {
-                    $stokEtalase = StokEtalase::where('cabang_id', $shift->cabang_id)
-                        ->where('produk_id', $item['produk']->id)
-                        ->where('tipe_stok', 'produksi_minuman')
-                        ->firstOrFail();
-
-                    $this->stokService->kurangiStok(
-                        $stokEtalase,
-                        $item['jumlah'],
-                        $shift->user,
-                        $shift->id,
-                        'keluar',
-                        "Transaksi #{$nomorInvoice}"
-                    );
-                }
-            }
-
-            foreach ($pembayaran as $bayar) {
-                Pembayaran::create([
-                    'transaksi_id' => $transaksi->id,
-                    'metode_pembayaran' => $bayar['metode'],
-                    'jumlah' => $bayar['jumlah'],
-                    'nomor_referensi' => $bayar['referensi'] ?? null,
-                ]);
-            }
-
-            DB::commit();
-            return $transaksi->load(['item.produk', 'pembayaran']);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            throw $e;
+    private function buatTransaksiTanpaTransaksi(
+        Shift $shift,
+        array $items,
+        array $pembayaran,
+        float $diskon = 0,
+        float $pajak = 0,
+        ?string $catatan = null,
+        ?string $namaPelanggan = null
+    ) {
+        $nomorInvoice = $this->generateNomorInvoice($shift->cabang_id);
+        $subtotal = 0;
+        $itemTransaksi = [];
+        foreach ($items as $item) {
+            $produk = Produk::findOrFail($item['produk_id']);
+            $subtotalItem = $produk->harga_jual * $item['jumlah'];
+            $subtotal += $subtotalItem;
+            $itemTransaksi[] = [
+                'produk' => $produk,
+                'jumlah' => $item['jumlah'],
+                'harga_satuan' => $produk->harga_jual,
+                'subtotal' => $subtotalItem,
+                'catatan' => $item['catatan'] ?? null,
+            ];
         }
+        $total = $subtotal - $diskon + $pajak;
+        $totalPembayaran = array_sum(array_column($pembayaran, 'jumlah'));
+        if ($totalPembayaran < $total) {
+            throw new \Exception('Jumlah pembayaran tidak mencukupi');
+        }
+        $transaksi = Transaksi::create([
+            'shift_id' => $shift->id,
+            'cabang_id' => $shift->cabang_id,
+            'user_id' => $shift->user_id,
+            'nama_pelanggan' => $namaPelanggan,
+            'nomor_invoice' => $nomorInvoice,
+            'subtotal' => $subtotal,
+            'diskon' => $diskon,
+            'pajak' => $pajak,
+            'total' => $total,
+            'status' => 'selesai',
+            'catatan' => $catatan,
+            'waktu_selesai' => Carbon::now(),
+        ]);
+        foreach ($itemTransaksi as $item) {
+            ItemTransaksi::create([
+                'transaksi_id' => $transaksi->id,
+                'produk_id' => $item['produk']->id,
+                'jumlah' => $item['jumlah'],
+                'harga_satuan' => $item['harga_satuan'],
+                'subtotal' => $item['subtotal'],
+                'catatan' => $item['catatan'],
+            ]);
+            if ($item['produk']->tipe === 'minuman') {
+                $this->kurangiStokMinuman($shift, $item['produk'], $item['jumlah']);
+            }
+            if ($item['produk']->tipe === 'beans') {
+                $stokEtalase = StokEtalase::where('cabang_id', $shift->cabang_id)
+                    ->where('produk_id', $item['produk']->id)
+                    ->where('tipe_stok', 'penjualan_retail')
+                    ->firstOrFail();
+                $jumlahDalamSatuanDasar = $item['jumlah'];
+                $this->stokService->kurangiStok(
+                    $stokEtalase,
+                    $jumlahDalamSatuanDasar,
+                    $shift->user,
+                    $shift->id,
+                    'keluar',
+                    "Transaksi #{$nomorInvoice}"
+                );
+            }
+            if ($item['produk']->tipe === 'snack') {
+                $stokEtalase = StokEtalase::where('cabang_id', $shift->cabang_id)
+                    ->where('produk_id', $item['produk']->id)
+                    ->where('tipe_stok', 'produksi_minuman')
+                    ->firstOrFail();
+                $this->stokService->kurangiStok(
+                    $stokEtalase,
+                    $item['jumlah'],
+                    $shift->user,
+                    $shift->id,
+                    'keluar',
+                    "Transaksi #{$nomorInvoice}"
+                );
+            }
+        }
+        foreach ($pembayaran as $bayar) {
+            Pembayaran::create([
+                'transaksi_id' => $transaksi->id,
+                'metode_pembayaran' => $bayar['metode'],
+                'jumlah' => $bayar['jumlah'],
+                'nomor_referensi' => $bayar['referensi'] ?? null,
+            ]);
+        }
+        return $transaksi->load(['item.produk', 'pembayaran']);
     }
 
     public function buatOpenBill(
@@ -473,9 +465,7 @@ class TransaksiService
             throw new \InvalidArgumentException('Pembayaran tidak boleh kosong');
         }
 
-        DB::beginTransaction();
-        try {
-            // Ambil semua item dari open bill
+        return DB::transaction(function () use ($openBill, $shift, $pembayaran, $diskon, $pajak, $catatan) {
             $items = $openBill->items()->with('produk')->get()->map(function ($item) {
                 return [
                     'produk_id' => $item->produk_id,
@@ -483,9 +473,7 @@ class TransaksiService
                     'catatan' => $item->catatan,
                 ];
             })->toArray();
-
-            // Buat transaksi baru menggunakan method existing
-            $transaksi = $this->buatTransaksi(
+            $transaksi = $this->buatTransaksiTanpaTransaksi(
                 $shift,
                 $items,
                 $pembayaran,
@@ -494,8 +482,6 @@ class TransaksiService
                 $catatan ?? $openBill->catatan,
                 $openBill->nama_pelanggan
             );
-
-            // Update status open bill menjadi closed
             $openBill->update(['status' => 'closed']);
             $openBill->addAuditLog('status_update', [
                 'from' => 'open',
@@ -505,12 +491,7 @@ class TransaksiService
                 'pajak' => $pajak,
                 'pembayaran' => $pembayaran,
             ]);
-
-            DB::commit();
             return $transaksi;
-        } catch (\Exception $e) {
-            DB::rollBack();
-            throw $e;
-        }
+        });
     }
 }

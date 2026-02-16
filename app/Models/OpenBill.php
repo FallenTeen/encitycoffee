@@ -23,6 +23,7 @@ class OpenBill extends Model
         'total',
         'status',
         'catatan',
+        'audit_log',
     ];
 
     protected $casts = [
