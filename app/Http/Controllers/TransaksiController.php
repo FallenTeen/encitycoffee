@@ -56,17 +56,47 @@ class TransaksiController extends Controller
 
             return response()->json($data);
         } else {
-            // Query transaksi untuk shift ini (riwayat)
-            $filter = [];
-            if ($request->filled('status')) {
-                $filter['status'] = $status;
+            // PERBAIKAN: Query langsung ke model Transaksi
+            // Ini lebih reliable daripada menggunakan service
+            $query = Transaksi::query()
+                ->where('shift_id', $shift->id)
+                ->with([
+                    'cabang:id,kode,nama',
+                    'user:id,name,email',
+                    'shift:id,status',
+                    'item.produk',
+                    'pembayaran'
+                ])
+                ->latest();
+
+            // Filter berdasarkan status jika diberikan
+            if (!empty($status)) {
+                // Map berbagai variasi status ke status yang benar di database
+                $statusMap = [
+                    'selesai' => 'selesai',
+                    'paid' => 'selesai',
+                    'completed' => 'selesai',
+                    'lunas' => 'selesai',
+                    'success' => 'selesai',
+                    'pending' => 'pending',
+                    'batal' => 'batal',
+                ];
+                
+                $mappedStatus = $statusMap[$status] ?? $status;
+                $query->where('status', $mappedStatus);
+                
+                Log::info('Filtering transaksi by status', [
+                    'requested_status' => $status,
+                    'mapped_status' => $mappedStatus,
+                ]);
             }
 
-            $data = $this->transaksiService->transaksiPerShift($shift, $filter, $perPage);
+            $data = $query->paginate($perPage);
             
             Log::info('Transaksi found', [
                 'status' => $status,
-                'count' => is_object($data) && method_exists($data, 'total') ? $data->total() : 'unknown',
+                'count' => $data->total(),
+                'current_page' => $data->currentPage(),
             ]);
 
             return response()->json($data);
