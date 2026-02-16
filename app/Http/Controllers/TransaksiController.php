@@ -26,14 +26,51 @@ class TransaksiController extends Controller
     {
         // Removed permission checks - all users can access all shifts and branches
 
-        $filter = [];
-        if ($request->filled('status')) {
-            $filter['status'] = $request->string('status')->toString();
-        }
-
+        $status = $request->string('status')->toString();
         $perPage = (int) $request->get('per_page', 15);
-        $data = $this->transaksiService->transaksiPerShift($shift, $filter, $perPage);
-        return response()->json($data);
+
+        Log::info('transaksiPerShift called', [
+            'shift_id' => $shift->id,
+            'status' => $status,
+            'per_page' => $perPage,
+        ]);
+
+        // PERBAIKAN: Pisahkan query berdasarkan status
+        // Jika status = 'open' → ambil dari tabel open_bill
+        // Jika status lainnya → ambil dari tabel transaksi
+        
+        if ($status === 'open') {
+            // Query open bills untuk shift ini
+            $query = OpenBill::query()
+                ->where('shift_id', $shift->id)
+                ->where('status', 'open')
+                ->with(['cabang:id,kode,nama', 'shift:id,status', 'user:id,name', 'items.produk'])
+                ->latest();
+
+            $data = $query->paginate($perPage);
+            
+            Log::info('Open bills found', [
+                'count' => $data->total(),
+                'current_page' => $data->currentPage(),
+            ]);
+
+            return response()->json($data);
+        } else {
+            // Query transaksi untuk shift ini (riwayat)
+            $filter = [];
+            if ($request->filled('status')) {
+                $filter['status'] = $status;
+            }
+
+            $data = $this->transaksiService->transaksiPerShift($shift, $filter, $perPage);
+            
+            Log::info('Transaksi found', [
+                'status' => $status,
+                'count' => is_object($data) && method_exists($data, 'total') ? $data->total() : 'unknown',
+            ]);
+
+            return response()->json($data);
+        }
     }
 
 
@@ -194,6 +231,13 @@ class TransaksiController extends Controller
                 $status = 'open';
                 $query->where('status', 'open');
             }
+        }
+
+        // PERBAIKAN: Filter by shift_id if provided (CRITICAL for filtering by active shift)
+        if ($request->filled('shift_id')) {
+            $shiftId = $request->integer('shift_id');
+            $query->where('shift_id', $shiftId);
+            Log::info('Filtering open bills by shift_id', ['shift_id' => $shiftId]);
         }
 
         // Removed branch filtering - all users can see all branches
