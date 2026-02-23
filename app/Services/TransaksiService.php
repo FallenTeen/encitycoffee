@@ -108,7 +108,10 @@ class TransaksiService
                 $stokEtalase = StokEtalase::where('cabang_id', $shift->cabang_id)
                     ->where('produk_id', $item['produk']->id)
                     ->where('tipe_stok', 'penjualan_retail')
-                    ->firstOrFail();
+                    ->first();
+                if (! $stokEtalase) {
+                    continue;
+                }
                 $jumlahDalamSatuanDasar = $item['jumlah'];
                 $this->stokService->kurangiStok(
                     $stokEtalase,
@@ -123,7 +126,10 @@ class TransaksiService
                 $stokEtalase = StokEtalase::where('cabang_id', $shift->cabang_id)
                     ->where('produk_id', $item['produk']->id)
                     ->where('tipe_stok', 'produksi_minuman')
-                    ->firstOrFail();
+                    ->first();
+                if (! $stokEtalase) {
+                    continue;
+                }
                 $this->stokService->kurangiStok(
                     $stokEtalase,
                     $item['jumlah'],
@@ -310,7 +316,10 @@ class TransaksiService
         $stokEtalase = StokEtalase::where('cabang_id', $shift->cabang_id)
             ->where('produk_id', $produk->id)
             ->where('tipe_stok', 'produksi_minuman')
-            ->firstOrFail();
+            ->first();
+        if (! $stokEtalase) {
+            return;
+        }
 
         $this->stokService->kurangiStok(
             $stokEtalase,
