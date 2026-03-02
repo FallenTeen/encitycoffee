@@ -81,7 +81,7 @@ class EnhancedDashboardController extends Controller
         }
 
         // Top Performing Branches (Last 7 days)
-        $topBranches = Cabang::select('cabang.*')
+        $topBranches = Cabang::select('cabang.id', 'cabang.nama')
             ->selectRaw('SUM(transaksi.total) as total_revenue')
             ->selectRaw('COUNT(transaksi.id) as transaction_count')
             ->leftJoin('transaksi', function ($join) {
@@ -89,7 +89,7 @@ class EnhancedDashboardController extends Controller
                     ->where('transaksi.status', 'selesai')
                     ->whereDate('transaksi.created_at', '>=', Carbon::today()->subDays(7));
             })
-            ->groupBy('cabang.id')
+            ->groupBy('cabang.id', 'cabang.nama')
             ->orderByDesc('total_revenue')
             ->limit(10)
             ->get();
@@ -218,7 +218,7 @@ class EnhancedDashboardController extends Controller
 
         // Branch Comparison (Last 30 days)
         $branchComparison = Cabang::whereIn('cabang.id', $assignedCabangIds)
-            ->select('cabang.*')
+            ->select('cabang.id', 'cabang.nama')
             ->selectRaw('SUM(transaksi.total) as total_revenue')
             ->selectRaw('COUNT(transaksi.id) as transaction_count')
             ->selectRaw('AVG(transaksi.total) as avg_transaction')
@@ -227,7 +227,7 @@ class EnhancedDashboardController extends Controller
                     ->where('transaksi.status', 'selesai')
                     ->whereDate('transaksi.created_at', '>=', Carbon::today()->subDays(30));
             })
-            ->groupBy('cabang.id')
+            ->groupBy('cabang.id', 'cabang.nama')
             ->orderByDesc('total_revenue')
             ->get();
 
@@ -252,7 +252,7 @@ class EnhancedDashboardController extends Controller
                     ->whereDate('created_at', '>=', Carbon::today()->subDays(30))
                     ->distinct();
             })
-            ->select('users.*')
+            ->select('users.id', 'users.name')
             ->selectRaw('SUM(transaksi.total) as total_revenue')
             ->selectRaw('COUNT(transaksi.id) as transaction_count')
             ->selectRaw('AVG(transaksi.total) as avg_transaction')
@@ -262,7 +262,7 @@ class EnhancedDashboardController extends Controller
                     ->where('transaksi.status', 'selesai')
                     ->whereDate('transaksi.created_at', '>=', Carbon::today()->subDays(30));
             })
-            ->groupBy('users.id')
+            ->groupBy('users.id', 'users.name')
             ->orderByDesc('total_revenue')
             ->limit(10)
             ->get();
