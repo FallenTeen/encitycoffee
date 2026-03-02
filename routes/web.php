@@ -18,6 +18,7 @@ use App\Http\Controllers\KategoriProdukController;
 use App\Http\Controllers\LaporanController;
 use Inertia\Inertia;
 use App\Http\Controllers\TransaksiController;
+use App\Http\Controllers\EnhancedDashboardController;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Cabang;
 use App\Services\StokService;
@@ -34,14 +35,34 @@ Route::get('/', function () {
 // AUTHENTICATED ROUTES
 // ============================================================================
 Route::middleware('auth')->group(function () {
-    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/dashboard', [EnhancedDashboardController::class, 'index'])->name('dashboard');
+    // ------------------------------------------------------------------------
+    // ENHANCED DASHBOARD ROUTES (all authenticated users)
+    // Prefix: /dashboard
+    // ------------------------------------------------------------------------
+    Route::middleware('auth')->prefix('dashboard')->name('dashboard.')->group(function () {
+        Route::get('/admin', [EnhancedDashboardController::class, 'adminDashboard'])->name('admin')->middleware('role:admin,it_support');
+        Route::get('/manager', [EnhancedDashboardController::class, 'managerDashboard'])->name('manager')->middleware('role:manager');
+        Route::get('/supervisor', [EnhancedDashboardController::class, 'supervisorDashboard'])->name('supervisor')->middleware('role:supervisor');
+        Route::get('/kasir', [EnhancedDashboardController::class, 'kasirDashboard'])->name('kasir')->middleware('role:kasir');
+        
+        // Real-time data endpoint
+        Route::get('/realtime-data', [EnhancedDashboardController::class, 'getRealtimeData'])->name('realtime-data');
+        
+        // Legacy dashboard routes (for backward compatibility)
+        Route::get('/legacy', [DashboardController::class, 'index'])->name('legacy');
+        Route::get('/legacy/admin', [DashboardController::class, 'admin'])->name('legacy.admin')->middleware('role:admin');
+        Route::get('/legacy/manager', [DashboardController::class, 'manager'])->name('legacy.manager')->middleware('role:manager');
+        Route::get('/legacy/supervisor', [DashboardController::class, 'supervisor'])->name('legacy.supervisor')->middleware('role:supervisor');
+        Route::get('/legacy/kasir', [DashboardController::class, 'kasir'])->name('legacy.kasir')->middleware('role:kasir');
+    });
 
     // ------------------------------------------------------------------------
     // IT SUPPORT ROUTES (it_support only)
     // Prefix: /admin
     // ------------------------------------------------------------------------
     Route::middleware('role:it_support')->prefix('admin')->name('admin.')->group(function () {
-        Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+        Route::get('/dashboard', [EnhancedDashboardController::class, 'adminDashboard'])->name('dashboard');
         Route::get('/system-logs', [SystemController::class, 'logs'])->name('system.logs');
         Route::get('/users', [UserController::class, 'index'])->name('users.index');
         Route::get('/users/create', [UserController::class, 'create'])->name('users.create');
@@ -58,6 +79,15 @@ Route::middleware('auth')->group(function () {
         Route::put('/cabang/{cabang}', [CabangController::class, 'update'])->name('cabang.update');
         Route::delete('/cabang/{cabang}', [CabangController::class, 'destroy'])->name('cabang.destroy');
         Route::get('/cabang/{cabang}', [CabangController::class, 'show'])->name('cabang.show');
+        
+        // Soft delete management routes
+        Route::get('/deleted-transactions', function () {
+            return Inertia::render('admin/DeletedItemsManager', ['type' => 'transaksi']);
+        })->name('deleted-transactions');
+        
+        Route::get('/deleted-bills', function () {
+            return Inertia::render('admin/DeletedItemsManager', ['type' => 'open-bill']);
+        })->name('deleted-bills');
     });
 
     // ------------------------------------------------------------------------
@@ -65,7 +95,9 @@ Route::middleware('auth')->group(function () {
     // Prefix: /manager
     // ------------------------------------------------------------------------
     Route::middleware('role:manager,it_support')->prefix('manager')->name('manager.')->group(function () {
-        Route::get('/dashboard', [ManagerController::class, 'dashboard'])->name('dashboard');
+        Route::get('/dashboard', function () {
+            return redirect()->route('dashboard.manager');
+        })->name('dashboard');
         Route::get('/laporan-cabang', [ManagerController::class, 'laporanCabang'])->name('laporan.cabang');
         Route::get('/performa-shift', [ManagerController::class, 'perfomaShift'])->name('performa.shift');
         Route::get('/kasir', [KasirController::class, 'indexManager'])->name('kasir.index');
@@ -163,6 +195,8 @@ Route::middleware('auth')->group(function () {
     // CRITICAL: Static routes BEFORE dynamic routes
     // ------------------------------------------------------------------------
     Route::middleware('role:supervisor,manager,it_support, kasir')->prefix('transaksi')->name('transaksi.')->group(function () {
+        Route::get('/export-pdf', [TransaksiController::class, 'exportPdf'])->name('export.pdf');
+        Route::get('/export-excel', [TransaksiController::class, 'exportExcel'])->name('export.excel');
         Route::get('/', [TransaksiController::class, 'index'])->name('index');
         Route::get('/open-bill', [TransaksiController::class, 'daftarOpenBill'])->name('open-bill.index');
         Route::get('/shift/{shift}', [TransaksiController::class, 'byShift'])->name('by-shift');
@@ -170,6 +204,16 @@ Route::middleware('auth')->group(function () {
         Route::get('/{transaksi}/show', [TransaksiController::class, 'show'])->name('show');
         Route::get('/{transaksi}/print', [TransaksiController::class, 'printStruk'])->name('print');
         Route::put('/{transaksi}/batal', [TransaksiController::class, 'void'])->name('void');
+        
+        // IT Support only routes for soft delete management
+        Route::middleware('role:it_support')->group(function () {
+            Route::delete('/{transaksi}/soft-delete', [TransaksiController::class, 'softDeleteTransaksi'])->name('soft-delete');
+            Route::post('/{id}/restore', [TransaksiController::class, 'restoreTransaksi'])->name('restore');
+            Route::get('/deleted/list', [TransaksiController::class, 'deletedTransaksi'])->name('deleted.list');
+            Route::delete('/open-bill/{openBill}/soft-delete', [TransaksiController::class, 'softDeleteOpenBill'])->name('open-bill.soft-delete');
+            Route::post('/open-bill/{id}/restore', [TransaksiController::class, 'restoreOpenBill'])->name('open-bill.restore');
+            Route::get('/open-bill/deleted/list', [TransaksiController::class, 'deletedOpenBills'])->name('open-bill.deleted.list');
+        });
     });
 
     // ------------------------------------------------------------------------
@@ -178,7 +222,9 @@ Route::middleware('auth')->group(function () {
     // CRITICAL: Static routes BEFORE dynamic routes
     // ------------------------------------------------------------------------
     Route::middleware('role:supervisor,manager,it_support')->prefix('supervisor')->name('supervisor.')->group(function () {
-        Route::get('/dashboard', [SupervisorController::class, 'dashboard'])->name('dashboard');
+        Route::get('/dashboard', function () {
+            return redirect()->route('dashboard.supervisor');
+        })->name('dashboard');
         Route::get('/monitoring-shift', [SupervisorController::class, 'monitoringShift'])->name('monitoring.shift');
         Route::get('/laporan-stok', [SupervisorController::class, 'laporanStok'])->name('stok.report');
         Route::get('/shift/{shift}', [SupervisorController::class, 'shiftDetails'])->name('shift.detail');

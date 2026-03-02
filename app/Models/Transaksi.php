@@ -4,10 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Transaksi extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $table = 'transaksi';
 
@@ -24,6 +25,8 @@ class Transaksi extends Model
         'status',
         'catatan',
         'waktu_selesai',
+        'deleted_by',
+        'delete_reason',
     ];
 
     protected $casts = [
