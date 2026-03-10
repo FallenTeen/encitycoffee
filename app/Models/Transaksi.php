@@ -86,4 +86,44 @@ class Transaksi extends Model
     {
         return $this->pembayaran()->where('metode_pembayaran', 'qris')->sum('jumlah');
     }
+
+    /**
+     * Get formatted waktu_selesai with WIB timezone for receipt printing
+     */
+    public function getWaktuSelesaiFormattedAttribute()
+    {
+        if (!$this->waktu_selesai) {
+            return null;
+        }
+        
+        // Convert to WIB timezone (UTC+7)
+        $waktuWIB = $this->waktu_selesai->copy()->setTimezone('Asia/Jakarta');
+        
+        // Format: 10 Mar 2024 14:30 (short and clear for receipt)
+        return $waktuWIB->format('d M Y H:i');
+    }
+
+    /**
+     * Get formatted created_at with WIB timezone for receipt printing
+     */
+    public function getCreatedAtFormattedAttribute()
+    {
+        // Convert to WIB timezone (UTC+7)
+        $waktuWIB = $this->created_at->copy()->setTimezone('Asia/Jakarta');
+        
+        // Format: 10 Mar 2024 14:30 (short and clear for receipt)
+        return $waktuWIB->format('d M Y H:i');
+    }
+
+    /**
+     * Get formatted updated_at with WIB timezone for receipt printing
+     */
+    public function getUpdatedAtFormattedAttribute()
+    {
+        // Convert to WIB timezone (UTC+7)
+        $waktuWIB = $this->updated_at->copy()->setTimezone('Asia/Jakarta');
+        
+        // Format: 10 Mar 2024 14:30 (short and clear for receipt)
+        return $waktuWIB->format('d M Y H:i');
+    }
 }

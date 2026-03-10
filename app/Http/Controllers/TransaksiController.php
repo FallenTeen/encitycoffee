@@ -481,6 +481,14 @@ HTML;
     public function tampilkanTransaksi(Transaksi $transaksi)
     {
         $transaksi->load(['item.produk', 'pembayaran', 'shift', 'cabang']);
+        
+        // Append formatted datetime fields for receipt printing
+        $transaksi->append([
+            'waktu_selesai_formatted',
+            'created_at_formatted', 
+            'updated_at_formatted'
+        ]);
+        
         return response()->json($transaksi);
     }
 
