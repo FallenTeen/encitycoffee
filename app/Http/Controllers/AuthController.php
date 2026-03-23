@@ -11,16 +11,24 @@ use Inertia\Inertia;
 
 class AuthController extends Controller
 {
+    private function backofficeUrl(string $path): string
+    {
+        $base = rtrim((string) config('app.backoffice_url'), '/');
+        $path = ltrim($path, '/');
+
+        return $base . '/' . $path;
+    }
+
     public function showLogin()
     {
         if (Auth::check()) {
             $user = Auth::user();
 
             return match($user->role) {
-                'it_support' => redirect()->route('admin.dashboard'),
-                'manager' => redirect()->route('manager.dashboard'),
-                'supervisor' => redirect()->route('supervisor.dashboard'),
-                default => redirect()->route('dashboard'),
+                'it_support' => redirect()->away($this->backofficeUrl('admin/dashboard')),
+                'manager' => redirect()->away($this->backofficeUrl('manager/dashboard')),
+                'supervisor' => redirect()->away($this->backofficeUrl('supervisor/dashboard')),
+                default => redirect()->away($this->backofficeUrl('dashboard')),
             };
         }
 
@@ -80,10 +88,10 @@ class AuthController extends Controller
         $request->session()->regenerate();
 
         return match($user->role) {
-            'it_support' => redirect()->route('admin.dashboard'),
-            'manager' => redirect()->route('manager.dashboard'),
-            'supervisor' => redirect()->route('supervisor.dashboard'),
-            default => redirect()->route('dashboard'),
+            'it_support' => redirect()->away($this->backofficeUrl('admin/dashboard')),
+            'manager' => redirect()->away($this->backofficeUrl('manager/dashboard')),
+            'supervisor' => redirect()->away($this->backofficeUrl('supervisor/dashboard')),
+            default => redirect()->away($this->backofficeUrl('dashboard')),
         };
     }
 
@@ -105,7 +113,7 @@ class AuthController extends Controller
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return redirect()->route('login')->with('success', 'Berhasil logout');
+        return redirect()->away($this->backofficeUrl('login'))->with('success', 'Berhasil logout');
     }
 
     public function me(Request $request)

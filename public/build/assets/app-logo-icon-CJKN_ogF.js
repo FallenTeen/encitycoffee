@@ -1,0 +1,1 @@
+import{c,j as l}from"./app-CeflkLfn.js";function p(i){const o=c.c(6);let t,e;o[0]!==i?({alt:e,...t}=i,o[0]=i,o[1]=t,o[2]=e):(t=o[1],e=o[2]);const r=e===void 0?"EncityCoffee Logo":e;let s;return o[3]!==r||o[4]!==t?(s=l.jsx("img",{src:"/logo.svg",alt:r,...t}),o[3]=r,o[4]=t,o[5]=s):s=o[5],s}export{p as A};
