@@ -2,6 +2,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Cabang;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
@@ -27,7 +28,7 @@ class CabangController extends Controller
 
     public function daftarApi()
     {
-    
+
         $cabangs = Cabang::select(
                 'id',
                 'kode',
@@ -53,7 +54,7 @@ class CabangController extends Controller
             'success' => true,
             'data' => $cabangs,
         ]);
-    
+
     }
 
     public function create()
@@ -85,15 +86,29 @@ class CabangController extends Controller
     public function edit(Cabang $cabang)
     {
         Gate::authorize('edit-cabang');
-        $users_count = $cabang->users()->count();
+
+        $users = $cabang->users()
+            ->select('users.id', 'users.name', 'users.email', 'users.role', 'users.aktif')
+            ->orderBy('users.name')
+            ->get();
+
+        $available_users = User::whereNotIn('id', $users->pluck('id'))
+            ->whereIn('role', ['kasir', 'manager', 'supervisor'])
+            ->where('aktif', true)
+            ->select('id', 'name', 'email', 'role')
+            ->orderBy('name')
+            ->get();
+
         $shift_count = $cabang->shift()->count();
 
         $cabang->setAttribute('status', (bool) $cabang->aktif);
 
         return Inertia::render('admin/cabang/Edit', [
-            'cabang' => $cabang,
-            'users_count' => $users_count,
-            'shift_count' => $shift_count,
+            'cabang'          => $cabang,
+            'users'           => $users,
+            'users_count'     => $users->count(),
+            'shift_count'     => $shift_count,
+            'available_users' => $available_users,
         ]);
     }
 
@@ -120,6 +135,26 @@ class CabangController extends Controller
         return redirect()->route('admin.cabang.index')->with('success', 'Cabang berhasil diupdate');
     }
 
+    public function attachUser(Request $request, Cabang $cabang)
+    {
+        Gate::authorize('edit-cabang');
+        $validated = $request->validate([
+            'user_id' => 'required|integer|exists:users,id',
+        ]);
+
+        $cabang->users()->syncWithoutDetaching([$validated['user_id']]);
+
+        return back()->with('success', 'User berhasil ditambahkan ke cabang.');
+    }
+
+    public function detachUser(Cabang $cabang, User $user)
+    {
+        Gate::authorize('edit-cabang');
+        $cabang->users()->detach($user->id);
+
+        return back()->with('success', 'User berhasil dihapus dari cabang.');
+    }
+
     public function destroy(Cabang $cabang)
     {
         Gate::authorize('delete-cabang');
@@ -143,7 +178,11 @@ class CabangController extends Controller
     public function show(Cabang $cabang)
     {
         Gate::authorize('view-it-support');
-        $users_count = $cabang->users()->count();
+        $users = $cabang->users()
+            ->select('users.id', 'users.name', 'users.email', 'users.role', 'users.aktif')
+            ->orderBy('users.name')
+            ->get();
+        $users_count = $users->count();
         $shift_count = $cabang->shift()->count();
         $stok_info = $cabang->stokEtalase()->with('produk')->get();
 
@@ -151,6 +190,7 @@ class CabangController extends Controller
 
         return Inertia::render('admin/cabang/Show', [
             'cabang' => $cabang,
+            'users' => $users,
             'users_count' => $users_count,
             'shift_count' => $shift_count,
             'stok_info' => $stok_info,

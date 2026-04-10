@@ -32,9 +32,28 @@ class LandingController extends Controller
     {
         $cabang = Cabang::where('kode', $slug)->aktif()->firstOrFail();
         
-        $categories = KategoriProduk::with(['produk' => function ($query) {
+        $rawCategories = KategoriProduk::with(['produk' => function ($query) {
             $query->aktif();
         }])->get();
+
+        $categories = $rawCategories->map(function ($kategori) {
+            return [
+                'id' => $kategori->id,
+                'nama' => $kategori->nama,
+                'slug' => $kategori->slug,
+                'produk' => $kategori->produk->map(function ($produk) {
+                    $imagePath = $produk->image_path;
+
+                    return [
+                        'id' => $produk->id,
+                        'nama' => $produk->nama,
+                        'deskripsi' => $produk->deskripsi,
+                        'harga_jual' => $produk->harga_jual,
+                        'image_url' => $imagePath ? url('storage/' . ltrim($imagePath, '/')) : null,
+                    ];
+                })->values(),
+            ];
+        })->values();
 
         $selectedCategory = null;
         if ($kategoriSlug) {

@@ -107,9 +107,16 @@ export default function EnhancedSupervisor({ auth, ...props }: EnhancedSuperviso
 
     const { data: realtimeData } = useRealtimeData('supervisor', 'shifts', Number(refreshInterval));
 
+    const activeShiftsCount =
+        typeof realtimeData?.active_shifts === 'number'
+            ? realtimeData.active_shifts
+            : Array.isArray(realtimeData?.active_shifts)
+                ? realtimeData.active_shifts.length
+                : null;
+
     const updatedOperationalMetrics = {
         ...props.operationalMetrics,
-        active_staff: realtimeData?.active_shifts ?? props.operationalMetrics.active_staff,
+        active_staff: activeShiftsCount ?? props.operationalMetrics.active_staff,
     };
 
     const hourlyPerformanceData = {

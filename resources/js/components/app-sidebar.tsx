@@ -66,6 +66,7 @@ function getMainNavItems(role?: string): NavGroup[] {
                 { title: 'Daftar Produk', href: '/produk', icon: Package },
                 { title: 'Transaksi', href: '/transaksi', icon: ShoppingCart },
                 { title: 'Bill', href: '/transaksi/open-bill', icon: ShoppingCart },
+                { title: 'Produk Favorit', href: '/laporan/produk-favorit', icon: TrendingUp },
             ],
         });
         groups.push({
@@ -95,6 +96,7 @@ function getMainNavItems(role?: string): NavGroup[] {
                 { title: 'Daftar Produk', href: '/produk', icon: Package },
                 { title: 'Transaksi', href: '/transaksi', icon: ShoppingCart },
                 { title: 'Bill', href: '/transaksi/open-bill', icon: ShoppingCart },
+                { title: 'Produk Favorit', href: '/laporan/produk-favorit', icon: TrendingUp },
             ],
         });
         groups.push({
@@ -121,6 +123,7 @@ function getMainNavItems(role?: string): NavGroup[] {
                 { title: 'Kategori', href: '/produk/kategori', icon: FolderTree },
                 { title: 'Daftar Produk', href: '/produk', icon: Package },
                 { title: 'Transaksi', href: '/transaksi', icon: ShoppingCart },
+                { title: 'Produk Favorit', href: '/laporan/produk-favorit', icon: TrendingUp },
             ],
         });
         groups.push({
@@ -140,6 +143,7 @@ function getMainNavItems(role?: string): NavGroup[] {
                 { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
                 { title: 'Transaksi', href: '/transaksi', icon: ShoppingCart },
                 { title: 'Bill', href: '/transaksi/open-bill', icon: ShoppingCart },
+                { title: 'Produk Favorit', href: '/laporan/produk-favorit', icon: TrendingUp },
             ],
         });
         groups.push({

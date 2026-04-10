@@ -20,13 +20,25 @@ export default function AppLayout({
     className,
     children,
 }: AppLayoutProps) {
+    const safeTitle =
+        typeof title === 'string'
+            ? title
+            : typeof title === 'number'
+                ? String(title)
+                : undefined;
+    const safeDescription =
+        typeof description === 'string'
+            ? description
+            : typeof description === 'number'
+                ? String(description)
+                : undefined;
     const headerContent =
         header ||
-        (title || description ? (
+        (safeTitle || safeDescription ? (
             <div className="space-y-1">
-                {title && <h1 className="text-xl font-semibold">{title}</h1>}
-                {description && (
-                    <p className="text-sm text-muted-foreground">{description}</p>
+                {safeTitle && <h1 className="text-xl font-semibold">{safeTitle}</h1>}
+                {safeDescription && (
+                    <p className="text-sm text-muted-foreground">{safeDescription}</p>
                 )}
             </div>
         ) : null);

@@ -24,10 +24,13 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\Cabang;
 use App\Services\StokService;
 
+ $mainDomain = config('app.domain') ?: parse_url((string) config('app.url'), PHP_URL_HOST);
+ $backofficeDomain = config('app.backoffice_domain') ?: ($mainDomain ? ('web.' . $mainDomain) : null);
+
 // ============================================================================
 // LANDING PAGE ROUTES (main domain)
 // ============================================================================
-Route::domain(config('app.domain'))->group(function () {
+Route::domain($mainDomain ?: '__invalid.local')->group(function () {
     Route::get('/', [LandingController::class, 'home'])->name('landing.home');
     Route::get('/about', [LandingController::class, 'about'])->name('landing.about');
     Route::get('/menu', [LandingController::class, 'menu'])->name('landing.menu');
@@ -38,7 +41,7 @@ Route::domain(config('app.domain'))->group(function () {
 // ============================================================================
 // BACKOFFICE ROUTES (backoffice domain)
 // ============================================================================
-Route::domain(config('app.backoffice_domain'))->group(function () {
+Route::domain($backofficeDomain ?: '__invalid.local')->group(function () {
 
     Route::get('/', function () {
         if (Auth::check()) {
@@ -62,10 +65,11 @@ Route::domain(config('app.backoffice_domain'))->group(function () {
             Route::get('/manager', [EnhancedDashboardController::class, 'managerDashboard'])->name('manager')->middleware('role:manager');
             Route::get('/supervisor', [EnhancedDashboardController::class, 'supervisorDashboard'])->name('supervisor')->middleware('role:supervisor');
             Route::get('/kasir', [EnhancedDashboardController::class, 'kasirDashboard'])->name('kasir')->middleware('role:kasir');
-            
-            // Real-time data endpoint
+
+            // Real-time data endpoints
             Route::get('/realtime-data', [EnhancedDashboardController::class, 'getRealtimeData'])->name('realtime-data');
-            
+            Route::get('/realtime', [EnhancedDashboardController::class, 'getRealtimeData']);
+
             // Legacy dashboard routes (for backward compatibility)
             Route::get('/legacy', [DashboardController::class, 'index'])->name('legacy');
             Route::get('/legacy/admin', [DashboardController::class, 'admin'])->name('legacy.admin')->middleware('role:admin');
@@ -96,12 +100,14 @@ Route::domain(config('app.backoffice_domain'))->group(function () {
             Route::put('/cabang/{cabang}', [CabangController::class, 'update'])->name('cabang.update');
             Route::delete('/cabang/{cabang}', [CabangController::class, 'destroy'])->name('cabang.destroy');
             Route::get('/cabang/{cabang}', [CabangController::class, 'show'])->name('cabang.show');
-            
+            Route::post('/cabang/{cabang}/users', [CabangController::class, 'attachUser'])->name('cabang.users.attach');
+            Route::delete('/cabang/{cabang}/users/{user}', [CabangController::class, 'detachUser'])->name('cabang.users.detach');
+
             // Soft delete management routes
             Route::get('/deleted-transactions', function () {
                 return Inertia::render('admin/DeletedItemsManager', ['type' => 'transaksi']);
             })->name('deleted-transactions');
-            
+
             Route::get('/deleted-bills', function () {
                 return Inertia::render('admin/DeletedItemsManager', ['type' => 'open-bill']);
             })->name('deleted-bills');
@@ -198,6 +204,7 @@ Route::domain(config('app.backoffice_domain'))->group(function () {
             Route::get('/transaksi', [LaporanController::class, 'transaksi'])->name('transaksi');
             Route::get('/harian', [LaporanController::class, 'harian'])->name('harian');
             Route::get('/penjualan-produk', [LaporanController::class, 'penjualanProduk'])->name('penjualan-produk');
+        Route::get('/produk-favorit', [LaporanController::class, 'produkFavorit'])->name('produk-favorit');
             Route::get('/pendapatan-kategori', [LaporanController::class, 'pendapatanKategori'])->name('pendapatan-kategori');
             Route::get('/stok', [LaporanController::class, 'stok'])->name('stok');
             Route::get('/kinerja-kasir', [LaporanController::class, 'kinerjaKasir'])->name('kinerja-kasir');
@@ -221,7 +228,7 @@ Route::domain(config('app.backoffice_domain'))->group(function () {
             Route::get('/{transaksi}/show', [TransaksiController::class, 'show'])->name('show');
             Route::get('/{transaksi}/print', [TransaksiController::class, 'printStruk'])->name('print');
             Route::put('/{transaksi}/batal', [TransaksiController::class, 'void'])->name('void');
-            
+
             // IT Support only routes for soft delete management
             Route::middleware('role:it_support')->group(function () {
                 Route::delete('/{transaksi}/soft-delete', [TransaksiController::class, 'softDeleteTransaksi'])->name('soft-delete');

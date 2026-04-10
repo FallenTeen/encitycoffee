@@ -221,7 +221,7 @@ class LaporanController extends Controller
             ->limit(100)
             ->get(['id', 'cabang_id', 'waktu_buka', 'waktu_tutup', 'status', 'nama_kasir']);
 
-        if ($request->expectsJson()) {
+        if ($request->expectsJson() || $request->boolean('expectsJson') || $request->routeIs('laporan.export*')) {
             return response()->json([
                 'transaksi' => $transaksi,
                 'statistik' => $statistik,
@@ -529,7 +529,7 @@ class LaporanController extends Controller
             ->orderByDesc('total_penjualan')
             ->get();
 
-        if ($request->expectsJson()) {
+        if ($request->expectsJson() || $request->boolean('expectsJson') || $request->routeIs('laporan.export*')) {
             return response()->json([
                 'tanggal' => $tanggal,
                 'shift_hari_ini' => $shiftHariIni,
@@ -645,7 +645,7 @@ class LaporanController extends Controller
             ->orderBy('tanggal')
             ->get();
 
-        if ($request->expectsJson()) {
+        if ($request->expectsJson() || $request->boolean('expectsJson') || $request->routeIs('laporan.export*')) {
             return response()->json([
                 'filters' => [
                     'cabang_id' => $cabangId,
@@ -670,6 +670,167 @@ class LaporanController extends Controller
                 'ringkasan_tipe' => $ringkasanTipe,
                 'trend_harian' => $trendHarian,
             ],
+        ]);
+    }
+
+    public function produkFavorit(Request $request)
+    {
+        Gate::authorize('view-laporan');
+
+        $user      = Auth::user();
+        $cabangIds = $this->tentukanCabangIds($user);
+
+        $validated = $request->validate([
+            'interval'         => 'nullable|string|in:hari,minggu,bulan,range',
+            'tanggal_ref'      => 'nullable|date',
+            'tanggal_mulai'    => 'nullable|date',
+            'tanggal_selesai'  => 'nullable|date|after_or_equal:tanggal_mulai',
+            'cabang_id'        => ['nullable', 'integer', Rule::in($cabangIds)],
+        ]);
+
+        $interval = $validated['interval'] ?? 'hari';
+        $cabangId = $request->integer('cabang_id') ?: null;
+
+        $refDate = isset($validated['tanggal_ref'])
+            ? Carbon::parse($validated['tanggal_ref'])
+            : now();
+
+        if ($interval === 'range') {
+            $start = isset($validated['tanggal_mulai'])
+                ? Carbon::parse($validated['tanggal_mulai'])->startOfDay()
+                : $refDate->copy()->startOfDay();
+            $end = isset($validated['tanggal_selesai'])
+                ? Carbon::parse($validated['tanggal_selesai'])->endOfDay()
+                : $start->copy()->endOfDay();
+        } elseif ($interval === 'minggu') {
+            $start = $refDate->copy()->startOfWeek();
+            $end   = $refDate->copy()->endOfWeek();
+        } elseif ($interval === 'bulan') {
+            $start = $refDate->copy()->startOfMonth();
+            $end   = $refDate->copy()->endOfMonth();
+        } else {
+            $start    = $refDate->copy()->startOfDay();
+            $end      = $refDate->copy()->endOfDay();
+            $interval = 'hari';
+        }
+
+        // ── Base query builder (di-clone dua kali) ─────────────────────────────
+        $baseQuery = function () use ($start, $end, $cabangId) {
+            $q = ItemTransaksi::query()
+                ->join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
+                ->join('produk',    'item_transaksi.produk_id',    '=', 'produk.id')
+                ->where('transaksi.status', 'selesai')
+                ->whereBetween('transaksi.waktu_selesai', [$start, $end]);
+            if ($cabangId) {
+                $q->where('transaksi.cabang_id', $cabangId);
+            }
+            return $q;
+        };
+
+        // ── 1. Agregat per produk ───────────────────────────────────────────────
+        $itemsRaw = $baseQuery()
+            ->select(
+                'item_transaksi.produk_id',
+                'produk.nama',
+                DB::raw('SUM(item_transaksi.jumlah)    as total_terjual'),
+                DB::raw('MAX(produk.harga_jual)         as harga'),
+                DB::raw('SUM(item_transaksi.subtotal)   as total_hasil')
+            )
+            ->groupBy('item_transaksi.produk_id', 'produk.nama')
+            ->orderByDesc('total_terjual')
+            ->get();
+
+        // ── 2. Breakdown harian per produk ──────────────────────────────────────
+        $dailyRaw = $baseQuery()
+            ->select(
+                'item_transaksi.produk_id',
+                DB::raw('DATE(transaksi.waktu_selesai) as tanggal'),
+                DB::raw('SUM(item_transaksi.jumlah)    as jumlah')
+            )
+            ->groupBy('item_transaksi.produk_id', DB::raw('DATE(transaksi.waktu_selesai)'))
+            ->orderBy('item_transaksi.produk_id')
+            ->orderBy('tanggal')
+            ->get()
+            ->groupBy('produk_id');   // Collection keyed by produk_id
+
+        // ── 3. Merge & format ───────────────────────────────────────────────────
+        $totalQty    = (int)   ($itemsRaw->sum('total_terjual') ?? 0);
+        $totalHasil  = (float) ($itemsRaw->sum('total_hasil')   ?? 0.0);
+
+        $items = $itemsRaw->values()->map(function ($row, $index) use ($dailyRaw) {
+            $breakdown = $dailyRaw->get($row->produk_id, collect());
+
+            // Peak day = hari dengan jumlah terjual terbanyak
+            $peakRow = $breakdown->sortByDesc('jumlah')->first();
+
+            return [
+                'nomor'           => $index + 1,
+                'produk_id'       => $row->produk_id,
+                'nama'            => $row->nama,
+                'total_terjual'   => (int)   ($row->total_terjual ?? 0),
+                'harga'           => (float) ($row->harga         ?? 0),
+                'total_hasil'     => (float) ($row->total_hasil   ?? 0),
+
+                // Array [{tanggal, jumlah}] urut tanggal — untuk mini-chart jika diperlukan
+                'daily_breakdown' => $breakdown
+                    ->map(fn($d) => [
+                        'tanggal' => $d->tanggal,
+                        'jumlah'  => (int) $d->jumlah,
+                    ])
+                    ->values()
+                    ->all(),
+
+                // Hari puncak penjualan
+                'peak_day' => $peakRow ? [
+                    'tanggal' => $peakRow->tanggal,          // "2025-03-15"
+                    'jumlah'  => (int) $peakRow->jumlah,
+                ] : null,
+            ];
+        });
+
+        // ── 4. Ringkasan & filters ──────────────────────────────────────────────
+        $ringkasan = [
+            'interval'              => $interval,
+            'tanggal_mulai'         => $start->toDateString(),
+            'tanggal_selesai'       => $end->toDateString(),
+            'total_jumlah_terjual'  => $totalQty,
+            'total_hasil'           => $totalHasil,
+        ];
+
+        $filters = [
+            'interval'        => $interval,
+            'tanggal_ref'     => $refDate->toDateString(),
+            'tanggal_mulai'   => $start->toDateString(),
+            'tanggal_selesai' => $end->toDateString(),
+            'cabang_id'       => $cabangId,
+        ];
+
+        // ── 5. JSON response (export) ───────────────────────────────────────────
+        if (
+            $request->expectsJson()
+            || $request->boolean('expectsJson')
+            || $request->routeIs('laporan.export*')
+        ) {
+            return response()->json([
+                'items'     => $items,
+                'ringkasan' => $ringkasan,
+                'filters'   => $filters,
+            ]);
+        }
+
+        // ── 6. Inertia render ───────────────────────────────────────────────────
+        $cabangOptions = Cabang::whereIn('id', $cabangIds)
+            ->select('id', 'nama')
+            ->orderBy('nama')
+            ->get();
+
+        return Inertia::render('laporan/ProdukFavorit', [
+            'data' => [
+                'items'     => $items,
+                'ringkasan' => $ringkasan,
+            ],
+            'filters'       => $filters,
+            'cabangOptions' => $cabangOptions,
         ]);
     }
 
@@ -1083,7 +1244,7 @@ class LaporanController extends Controller
     {
         Gate::authorize('view-laporan');
         $validated = $request->validate([
-            'jenis' => 'required|in:penjualan_produk,stok,kinerja_kasir',
+            'jenis' => 'required|in:penjualan_produk,stok,kinerja_kasir,produk_favorit',
             'cabang_id' => 'nullable|integer',
             'user_id' => 'nullable|integer',
             'tanggal_mulai' => 'nullable|date',
@@ -1098,8 +1259,10 @@ class LaporanController extends Controller
             $response = $this->penjualanProduk($request->merge(['expectsJson' => true]));
         } elseif ($jenis === 'stok') {
             $response = $this->stok($request->merge(['expectsJson' => true]));
-        } else {
+        } elseif ($jenis === 'kinerja_kasir') {
             $response = $this->kinerjaKasir($request->merge(['expectsJson' => true]));
+        } else {
+            $response = $this->produkFavorit($request->merge(['expectsJson' => true]));
         }
 
         $payload = method_exists($response, 'getData')
@@ -1121,7 +1284,7 @@ class LaporanController extends Controller
     {
         Gate::authorize('view-laporan');
         $validated = $request->validate([
-            'jenis' => 'required|in:penjualan_produk,stok,kinerja_kasir',
+            'jenis' => 'required|in:penjualan_produk,stok,kinerja_kasir,produk_favorit',
             'cabang_id' => 'nullable|integer',
             'user_id' => 'nullable|integer',
             'tanggal_mulai' => 'nullable|date',
@@ -1161,7 +1324,7 @@ class LaporanController extends Controller
                     $row['stok_rendah_count'] ?? 0,
                 ];
             };
-        } else {
+        } elseif ($jenis === 'kinerja_kasir') {
             $response = $this->kinerjaKasir($request->merge(['expectsJson' => true]));
             $payload = method_exists($response, 'getData') ? $response->getData(true) : [];
             $data = $payload['data'] ?? [];
@@ -1187,6 +1350,21 @@ class LaporanController extends Controller
                     $row['rata_rata_per_shift'] ?? 0,
                     $row['penjualan_per_jam'] ?? 0,
                     $row['selisih_total'] ?? 0,
+                ];
+            };
+        } else {
+            $response = $this->produkFavorit($request->merge(['expectsJson' => true]));
+            $payload = method_exists($response, 'getData') ? $response->getData(true) : [];
+            $rows = $payload['items'] ?? [];
+            $filename = 'laporan_produk_favorit.csv';
+            $header = ['No', 'Produk', 'Jumlah Terjual', 'Harga', 'Total Hasil'];
+            $extract = function ($row) {
+                return [
+                    $row['nomor'] ?? '',
+                    $row['nama'] ?? '',
+                    $row['total_terjual'] ?? 0,
+                    $row['harga'] ?? 0,
+                    $row['total_hasil'] ?? 0,
                 ];
             };
         }

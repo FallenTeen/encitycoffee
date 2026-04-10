@@ -36,10 +36,11 @@ function formatRupiah(value: number | string | null | undefined) {
 export default function LaporanPenjualanProduk({ data }: PageProps) {
     const { url } = usePage();
     const queryIndex = String(url).indexOf('?');
-    const queryString = queryIndex >= 0 ? String(url).substring(queryIndex) : '';
+    const rawQuery = queryIndex >= 0 ? String(url).substring(queryIndex + 1) : '';
+    const querySuffix = rawQuery ? `&${rawQuery}` : '';
 
-    const exportPdfHref = `/laporan/export-pdf?jenis=penjualan_produk${queryString}`;
-    const exportExcelHref = `/laporan/export-excel?jenis=penjualan_produk${queryString}`;
+    const exportPdfHref = `/laporan/export-pdf?jenis=penjualan_produk${querySuffix}`;
+    const exportExcelHref = `/laporan/export-excel?jenis=penjualan_produk${querySuffix}`;
 
     const topProduk = data?.top_produk ?? [];
 
