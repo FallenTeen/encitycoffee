@@ -11,6 +11,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Head, router, useForm } from '@inertiajs/react';
+import { formatDateTime } from '@/utils/formatters';
 
 interface ShiftRow {
     id: number;
@@ -253,7 +254,8 @@ export default function LaporanShift({ shift, statistik_ringkasan, filter_aktif 
                                                     #{row.id} ({row.status})
                                                 </div>
                                                 <div className="text-xs text-muted-foreground">
-                                                    {row.waktu_buka} - {row.waktu_tutup ?? '-'}
+                                                    {formatDateTime(row.waktu_buka)} -{' '}
+                                                    {row.waktu_tutup ? formatDateTime(row.waktu_tutup) : '-'}
                                                 </div>
                                             </td>
                                             <td className="py-2 pr-4 align-top">

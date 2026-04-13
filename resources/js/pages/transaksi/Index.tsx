@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
@@ -16,6 +17,10 @@ interface Props {
     data: Array<{
       id: number;
       nomor_invoice?: string;
+      nama_pelanggan?: string | null;
+      subtotal?: string | number;
+      diskon?: string | number | null;
+      diskon_persen?: string | number | null;
       total?: string | number;
       status?: string;
       created_at?: string;
@@ -31,6 +36,12 @@ interface Props {
   };
   filter_aktif: {
     status: string;
+    diskon_status?: string;
+    min_diskon?: number | null;
+    max_diskon?: number | null;
+    sort_by?: string;
+    sort_dir?: string;
+    search?: string;
     per_page: number;
     tanggal_mulai?: string;
     tanggal_selesai?: string;
@@ -133,6 +144,12 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth }: Props
   const [customMulai,   setCustomMulai]   = useState(serverMulai);
   const [customSelesai, setCustomSelesai] = useState(serverSelesai);
   const [status,        setStatus]        = useState(filter_aktif?.status ?? '');
+  const [diskonStatus,  setDiskonStatus]  = useState(filter_aktif?.diskon_status ?? '');
+  const [search,        setSearch]        = useState(filter_aktif?.search ?? '');
+  const [sortBy,        setSortBy]        = useState(filter_aktif?.sort_by ?? 'tanggal');
+  const [sortDir,       setSortDir]       = useState(filter_aktif?.sort_dir ?? 'desc');
+  const [minDiskon,     setMinDiskon]     = useState(filter_aktif?.min_diskon ?? null);
+  const [maxDiskon,     setMaxDiskon]     = useState(filter_aktif?.max_diskon ?? null);
   const [perPage,       setPerPage]       = useState(String(filter_aktif?.per_page ?? 15));
   const [isLoading,     setIsLoading]     = useState(false);
   const [dateError,     setDateError]     = useState<string | null>(null);
@@ -183,6 +200,12 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth }: Props
       '/transaksi',
       {
         ...(currentStatus ? { status: currentStatus } : {}),
+        ...(diskonStatus ? { diskon_status: diskonStatus } : {}),
+        ...(search.trim() ? { search: search.trim() } : {}),
+        ...(sortBy ? { sort_by: sortBy } : {}),
+        ...(sortDir ? { sort_dir: sortDir } : {}),
+        ...(minDiskon !== null && minDiskon !== undefined ? { min_diskon: minDiskon } : {}),
+        ...(maxDiskon !== null && maxDiskon !== undefined ? { max_diskon: maxDiskon } : {}),
         per_page:        currentPerPage,
         tanggal_mulai:   dates.mulai,
         tanggal_selesai: dates.selesai,
@@ -223,6 +246,12 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth }: Props
     setCustomMulai(today);
     setCustomSelesai(today);
     setStatus('');
+    setDiskonStatus('');
+    setSearch('');
+    setSortBy('tanggal');
+    setSortDir('desc');
+    setMinDiskon(null);
+    setMaxDiskon(null);
     setPerPage('15');
     setDateError(null);
     doSubmit(dates, '', '15');
@@ -231,11 +260,18 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth }: Props
   function buildExportParams() {
     const err = validateCustomDates();
     if (err) { setDateError(err); return null; }
-    return new URLSearchParams({
+    const params = new URLSearchParams({
       status:          status || '',
+      diskon_status:   diskonStatus || '',
+      sort_by:         sortBy || '',
+      sort_dir:        sortDir || '',
+      search:          search.trim() || '',
       tanggal_mulai:   resolvedDates.mulai,
       tanggal_selesai: resolvedDates.selesai,
-    }).toString();
+    });
+    if (minDiskon !== null && minDiskon !== undefined) params.set('min_diskon', String(minDiskon));
+    if (maxDiskon !== null && maxDiskon !== undefined) params.set('max_diskon', String(maxDiskon));
+    return params.toString();
   }
 
   async function handleSoftDelete() {
@@ -360,6 +396,19 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth }: Props
 
           {/* Status, per halaman, actions */}
           <div className="flex flex-wrap items-end gap-3 border-t pt-4">
+            <div className="min-w-[14rem] flex-1 space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Pencarian</label>
+              <Input
+                className="h-9"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Invoice / nama pelanggan / nominal..."
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSubmit();
+                }}
+              />
+            </div>
+
             <div className="min-w-[10rem] space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Status</label>
               <Select value={status || '__all__'} onValueChange={(v) => setStatus(v === '__all__' ? '' : v)}>
@@ -371,6 +420,67 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth }: Props
                   <SelectItem value="batal">Batal</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="min-w-[12rem] space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Diskon</label>
+              <Select value={diskonStatus || '__all__'} onValueChange={(v) => setDiskonStatus(v === '__all__' ? '' : v)}>
+                <SelectTrigger className="h-9"><SelectValue placeholder="Semua" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">Semua</SelectItem>
+                  <SelectItem value="discounted">Berdiskon</SelectItem>
+                  <SelectItem value="no_discount">Tanpa Diskon</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="min-w-[12rem] space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Sorting</label>
+              <Select value={`${sortBy}:${sortDir}`} onValueChange={(v) => {
+                const [by, dir] = v.split(':');
+                setSortBy(by);
+                setSortDir(dir);
+              }}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="tanggal:desc">Tanggal terbaru</SelectItem>
+                  <SelectItem value="tanggal:asc">Tanggal terlama</SelectItem>
+                  <SelectItem value="diskon:desc">Diskon terbesar</SelectItem>
+                  <SelectItem value="diskon:asc">Diskon terkecil</SelectItem>
+                  <SelectItem value="total:desc">Total terbesar</SelectItem>
+                  <SelectItem value="total:asc">Total terkecil</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="w-40 space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Min diskon (Rp)</label>
+              <Input
+                className="h-9"
+                inputMode="numeric"
+                value={minDiskon ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const n = v === '' ? null : Number(v);
+                  setMinDiskon(n === null || Number.isFinite(n) ? n : null);
+                }}
+                placeholder="0"
+              />
+            </div>
+
+            <div className="w-40 space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Max diskon (Rp)</label>
+              <Input
+                className="h-9"
+                inputMode="numeric"
+                value={maxDiskon ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const n = v === '' ? null : Number(v);
+                  setMaxDiskon(n === null || Number.isFinite(n) ? n : null);
+                }}
+                placeholder="0"
+              />
             </div>
 
             <div className="w-28 space-y-1">
@@ -434,6 +544,8 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth }: Props
                     { label: 'Invoice', cls: 'text-left' },
                     { label: 'Cabang',  cls: 'text-left' },
                     { label: 'Kasir',   cls: 'text-left' },
+                    { label: 'Pelanggan', cls: 'text-left' },
+                    { label: 'Diskon',  cls: 'text-left' },
                     { label: 'Total',   cls: 'text-right' },
                     { label: 'Status',  cls: 'text-left' },
                     { label: 'Waktu',   cls: 'text-left' },
@@ -453,6 +565,41 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth }: Props
                     </td>
                     <td className="py-3 px-4">{t.cabang?.nama ?? t.cabang?.kode ?? '-'}</td>
                     <td className="py-3 px-4">{t.user?.name ?? '-'}</td>
+                    <td className="py-3 px-4">
+                      <div className="max-w-[16rem] truncate text-xs text-muted-foreground" title={t.nama_pelanggan ?? ''}>
+                        {t.nama_pelanggan ? t.nama_pelanggan : '-'}
+                      </div>
+                    </td>
+                    <td className="py-3 px-4">
+                      {(() => {
+                        const diskonNominal = parseFloat(String(t.diskon ?? 0));
+                        const isDiskon = !Number.isNaN(diskonNominal) && diskonNominal > 0;
+                        const persenRaw = t.diskon_persen !== null && t.diskon_persen !== undefined ? parseFloat(String(t.diskon_persen)) : null;
+                        const subtotal = parseFloat(String(t.subtotal ?? 0));
+                        const persen = persenRaw !== null && !Number.isNaN(persenRaw)
+                          ? persenRaw
+                          : (subtotal > 0 && isDiskon ? (diskonNominal / subtotal) * 100 : 0);
+
+                        if (!isDiskon) {
+                          return (
+                            <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                              Tanpa Diskon
+                            </span>
+                          );
+                        }
+
+                        return (
+                          <div className="space-y-0.5">
+                            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                              Berdiskon
+                            </span>
+                            <div className="text-xs text-muted-foreground">
+                              Rp {formatCurrency(diskonNominal)} ({Number.isFinite(persen) ? persen.toFixed(2) : '0.00'}%)
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="py-3 px-4 text-right font-medium tabular-nums">
                       Rp {formatCurrency(t.total)}
                     </td>
@@ -494,7 +641,7 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth }: Props
 
                 {(transaksis?.data ?? []).length === 0 && (
                   <tr>
-                    <td colSpan={7} className="py-20 text-center">
+                    <td colSpan={9} className="py-20 text-center">
                       <div className="flex flex-col items-center gap-2 text-muted-foreground">
                         <CalendarRange className="h-10 w-10 opacity-20" />
                         <p className="text-sm font-medium">Tidak ada transaksi</p>

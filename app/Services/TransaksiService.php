@@ -19,18 +19,22 @@ class TransaksiService
 {
     private $stokService;
     private $kalibrasiService;
+    private ReceiptDiscountService $receiptDiscountService;
 
-    public function __construct(StokService $stokService, KalibrasiService $kalibrasiService)
+    public function __construct(StokService $stokService, KalibrasiService $kalibrasiService, ReceiptDiscountService $receiptDiscountService)
     {
         $this->stokService = $stokService;
         $this->kalibrasiService = $kalibrasiService;
+        $this->receiptDiscountService = $receiptDiscountService;
     }
 
     public function buatTransaksi(
         Shift $shift,
         array $items,
         array $pembayaran,
-        float $diskon = 0,
+        ?float $diskonNominal = null,
+        ?float $diskonPersen = null,
+        array $pembulatan = [],
         float $pajak = 0,
         ?string $catatan = null,
         ?string $namaPelanggan = null
@@ -44,8 +48,8 @@ class TransaksiService
         if (empty($pembayaran)) {
             throw new \InvalidArgumentException('Pembayaran tidak boleh kosong');
         }
-        return DB::transaction(function () use ($shift, $items, $pembayaran, $diskon, $pajak, $catatan, $namaPelanggan) {
-            return $this->buatTransaksiTanpaTransaksi($shift, $items, $pembayaran, $diskon, $pajak, $catatan, $namaPelanggan);
+        return DB::transaction(function () use ($shift, $items, $pembayaran, $diskonNominal, $diskonPersen, $pembulatan, $pajak, $catatan, $namaPelanggan) {
+            return $this->buatTransaksiTanpaTransaksi($shift, $items, $pembayaran, $diskonNominal, $diskonPersen, $pembulatan, $pajak, $catatan, $namaPelanggan);
         });
     }
 
@@ -53,7 +57,9 @@ class TransaksiService
         Shift $shift,
         array $items,
         array $pembayaran,
-        float $diskon = 0,
+        ?float $diskonNominal = null,
+        ?float $diskonPersen = null,
+        array $pembulatan = [],
         float $pajak = 0,
         ?string $catatan = null,
         ?string $namaPelanggan = null
@@ -73,7 +79,30 @@ class TransaksiService
                 'catatan' => $item['catatan'] ?? null,
             ];
         }
-        $total = $subtotal - $diskon + $pajak;
+
+        $discountInput = [
+            'total_awal' => $subtotal,
+            'pajak' => $pajak,
+        ];
+        if ($diskonNominal !== null) {
+            $discountInput['diskon_nominal'] = $diskonNominal;
+        }
+        if ($diskonPersen !== null) {
+            $discountInput['diskon_persen'] = $diskonPersen;
+        }
+        if (! array_key_exists('diskon_nominal', $discountInput) && ! array_key_exists('diskon_persen', $discountInput)) {
+            $discountInput['diskon_nominal'] = 0;
+        }
+        if (! empty($pembulatan)) {
+            $discountInput['pembulatan'] = $pembulatan;
+        }
+
+        $calc = $this->receiptDiscountService->preview($discountInput);
+
+        $diskonFinal = (float) $calc['diskon_nominal'];
+        $diskonPersenFinal = $calc['diskon_persen'] !== null ? (float) $calc['diskon_persen'] : null;
+        $total = (float) $calc['total_akhir'];
+
         $totalPembayaran = array_sum(array_column($pembayaran, 'jumlah'));
         if ($totalPembayaran < $total) {
             throw new \Exception('Jumlah pembayaran tidak mencukupi');
@@ -85,13 +114,27 @@ class TransaksiService
             'nama_pelanggan' => $namaPelanggan,
             'nomor_invoice' => $nomorInvoice,
             'subtotal' => $subtotal,
-            'diskon' => $diskon,
+            'diskon' => $diskonFinal,
+            'diskon_persen' => $diskonPersenFinal,
+            'diskon_rounding_mode' => $calc['pembulatan']['mode'] ?? null,
+            'diskon_rounding_unit' => $calc['pembulatan']['unit'] ?? null,
+            'diskon_rounding_delta' => $calc['pembulatan']['diskon_delta'] ?? 0,
             'pajak' => $pajak,
             'total' => $total,
             'status' => 'selesai',
             'catatan' => $catatan,
             'waktu_selesai' => Carbon::now(),
         ]);
+
+        $this->auditDiscountIfNeeded('Transaksi', (int) $transaksi->id, [
+            'subtotal' => $subtotal,
+            'pajak' => $pajak,
+            'diskon_nominal' => $calc['diskon_nominal'],
+            'diskon_persen' => $calc['diskon_persen'],
+            'total_akhir' => $calc['total_akhir'],
+            'pembulatan' => $calc['pembulatan'],
+        ]);
+
         foreach ($itemTransaksi as $item) {
             ItemTransaksi::create([
                 'transaksi_id' => $transaksi->id,
@@ -154,7 +197,9 @@ class TransaksiService
     public function buatOpenBill(
         Shift $shift,
         array $items,
-        float $diskon = 0,
+        ?float $diskonNominal = null,
+        ?float $diskonPersen = null,
+        array $pembulatan = [],
         float $pajak = 0,
         ?string $catatan = null,
         ?string $namaPelanggan = null
@@ -187,7 +232,27 @@ class TransaksiService
                 ];
             }
 
-            $total = $subtotal - $diskon + $pajak;
+            $discountInput = [
+                'total_awal' => $subtotal,
+                'pajak' => $pajak,
+            ];
+            if ($diskonNominal !== null) {
+                $discountInput['diskon_nominal'] = $diskonNominal;
+            }
+            if ($diskonPersen !== null) {
+                $discountInput['diskon_persen'] = $diskonPersen;
+            }
+            if (! array_key_exists('diskon_nominal', $discountInput) && ! array_key_exists('diskon_persen', $discountInput)) {
+                $discountInput['diskon_nominal'] = 0;
+            }
+            if (! empty($pembulatan)) {
+                $discountInput['pembulatan'] = $pembulatan;
+            }
+
+            $calc = $this->receiptDiscountService->preview($discountInput);
+            $diskonFinal = (float) $calc['diskon_nominal'];
+            $diskonPersenFinal = $calc['diskon_persen'] !== null ? (float) $calc['diskon_persen'] : null;
+            $total = (float) $calc['total_akhir'];
 
             $openBill = OpenBill::create([
                 'shift_id' => $shift->id,
@@ -196,11 +261,24 @@ class TransaksiService
                 'nama_pelanggan' => $namaPelanggan,
                 'nomor_open_bill' => $nomorOpenBill,
                 'subtotal' => $subtotal,
-                'diskon' => $diskon,
+                'diskon' => $diskonFinal,
+                'diskon_persen' => $diskonPersenFinal,
+                'diskon_rounding_mode' => $calc['pembulatan']['mode'] ?? null,
+                'diskon_rounding_unit' => $calc['pembulatan']['unit'] ?? null,
+                'diskon_rounding_delta' => $calc['pembulatan']['diskon_delta'] ?? 0,
                 'pajak' => $pajak,
                 'total' => $total,
                 'status' => 'open',
                 'catatan' => $catatan,
+            ]);
+
+            $this->auditDiscountIfNeeded('OpenBill', (int) $openBill->id, [
+                'subtotal' => $subtotal,
+                'pajak' => $pajak,
+                'diskon_nominal' => $calc['diskon_nominal'],
+                'diskon_persen' => $calc['diskon_persen'],
+                'total_akhir' => $calc['total_akhir'],
+                'pembulatan' => $calc['pembulatan'],
             ]);
 
             foreach ($itemOpenBill as $item) {
@@ -225,7 +303,9 @@ class TransaksiService
     public function updateOpenBill(
         OpenBill $openBill,
         array $items,
-        float $diskon = 0,
+        ?float $diskonNominal = null,
+        ?float $diskonPersen = null,
+        array $pembulatan = [],
         float $pajak = 0,
         ?string $catatan = null,
         ?string $namaPelanggan = null
@@ -261,20 +341,57 @@ class TransaksiService
                 ];
             }
 
-            $total = $subtotal - $diskon + $pajak;
+            $discountInput = [
+                'total_awal' => $subtotal,
+                'pajak' => $pajak,
+            ];
+            if ($diskonNominal !== null) {
+                $discountInput['diskon_nominal'] = $diskonNominal;
+            }
+            if ($diskonPersen !== null) {
+                $discountInput['diskon_persen'] = $diskonPersen;
+            }
+            if (! array_key_exists('diskon_nominal', $discountInput) && ! array_key_exists('diskon_persen', $discountInput)) {
+                $discountInput['diskon_nominal'] = 0;
+            }
+            if (! empty($pembulatan)) {
+                $discountInput['pembulatan'] = $pembulatan;
+            }
+
+            $calc = $this->receiptDiscountService->preview($discountInput);
+            $diskonFinal = (float) $calc['diskon_nominal'];
+            $diskonPersenFinal = $calc['diskon_persen'] !== null ? (float) $calc['diskon_persen'] : null;
+            $total = (float) $calc['total_akhir'];
 
             $openBill->update([
                 'subtotal' => $subtotal,
-                'diskon' => $diskon,
+                'diskon' => $diskonFinal,
+                'diskon_persen' => $diskonPersenFinal,
+                'diskon_rounding_mode' => $calc['pembulatan']['mode'] ?? null,
+                'diskon_rounding_unit' => $calc['pembulatan']['unit'] ?? null,
+                'diskon_rounding_delta' => $calc['pembulatan']['diskon_delta'] ?? 0,
                 'pajak' => $pajak,
                 'total' => $total,
                 'status' => 'open',
                 'catatan' => $catatan,
                 'nama_pelanggan' => $namaPelanggan,
             ]);
+
+            $this->auditDiscountIfNeeded('OpenBill', (int) $openBill->id, [
+                'subtotal' => $subtotal,
+                'pajak' => $pajak,
+                'diskon_nominal' => $calc['diskon_nominal'],
+                'diskon_persen' => $calc['diskon_persen'],
+                'total_akhir' => $calc['total_akhir'],
+                'pembulatan' => $calc['pembulatan'],
+            ]);
             $openBill->addAuditLog('content_update', [
                 'subtotal' => $subtotal,
-                'diskon' => $diskon,
+                'diskon' => $diskonFinal,
+                'diskon_persen' => $diskonPersenFinal,
+                'diskon_rounding_mode' => $calc['pembulatan']['mode'] ?? null,
+                'diskon_rounding_unit' => $calc['pembulatan']['unit'] ?? null,
+                'diskon_rounding_delta' => $calc['pembulatan']['diskon_delta'] ?? 0,
                 'pajak' => $pajak,
                 'total' => $total,
                 'catatan' => $catatan,
@@ -300,6 +417,37 @@ class TransaksiService
         } catch (\Exception $e) {
             DB::rollBack();
             throw $e;
+        }
+    }
+
+    private function auditDiscountIfNeeded(string $subjectType, int $subjectId, array $payload): void
+    {
+        $diskonNominal = isset($payload['diskon_nominal']) ? (float) $payload['diskon_nominal'] : 0.0;
+        $diskonPersen = isset($payload['diskon_persen']) ? (float) $payload['diskon_persen'] : 0.0;
+        $pembulatan = is_array(($payload['pembulatan'] ?? null)) ? $payload['pembulatan'] : [];
+        $applied = (bool) ($pembulatan['applied'] ?? false);
+        if ($diskonNominal <= 0.0 && $diskonPersen <= 0.0 && ! $applied) {
+            return;
+        }
+
+        $actorId = auth()->id();
+        if (! $actorId) {
+            return;
+        }
+
+        try {
+            DB::table('audit_logs')->insert([
+                'actor_user_id' => (int) $actorId,
+                'method' => 'DISCOUNT',
+                'path' => 'pos/discount',
+                'ip' => null,
+                'user_agent' => null,
+                'subject_type' => $subjectType,
+                'subject_id' => $subjectId,
+                'payload' => json_encode($payload),
+                'created_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
         }
     }
 
@@ -458,8 +606,10 @@ class TransaksiService
     public function convertOpenBillToTransaksi(
         OpenBill $openBill,
         array $pembayaran,
-        float $diskon = 0,
-        float $pajak = 0,
+        ?float $diskonNominal = null,
+        ?float $diskonPersen = null,
+        array $pembulatan = [],
+        ?float $pajak = null,
         ?string $catatan = null
     ) {
         // Validasi awal
@@ -474,7 +624,7 @@ class TransaksiService
             throw new \InvalidArgumentException('Pembayaran tidak boleh kosong');
         }
 
-        return DB::transaction(function () use ($openBill, $shift, $pembayaran, $diskon, $pajak, $catatan) {
+        return DB::transaction(function () use ($openBill, $shift, $pembayaran, $diskonNominal, $diskonPersen, $pembulatan, $pajak, $catatan) {
             $items = $openBill->items()->with('produk')->get()->map(function ($item) {
                 return [
                     'produk_id' => $item->produk_id,
@@ -482,12 +632,23 @@ class TransaksiService
                     'catatan' => $item->catatan,
                 ];
             })->toArray();
+
+            $diskonNominalFinal = $diskonNominal ?? ($openBill->diskon !== null ? (float) $openBill->diskon : null);
+            $diskonPersenFinal = $diskonPersen ?? ($openBill->diskon_persen !== null ? (float) $openBill->diskon_persen : null);
+            $pembulatanFinal = ! empty($pembulatan) ? $pembulatan : [
+                'mode' => $openBill->diskon_rounding_mode,
+                'unit' => $openBill->diskon_rounding_unit,
+            ];
+            $pajakFinal = $pajak ?? ($openBill->pajak !== null ? (float) $openBill->pajak : 0);
+
             $transaksi = $this->buatTransaksiTanpaTransaksi(
                 $shift,
                 $items,
                 $pembayaran,
-                $diskon,
-                $pajak,
+                $diskonNominalFinal,
+                $diskonPersenFinal,
+                $pembulatanFinal,
+                $pajakFinal,
                 $catatan ?? $openBill->catatan,
                 $openBill->nama_pelanggan
             );
@@ -496,8 +657,10 @@ class TransaksiService
                 'from' => 'open',
                 'to' => 'closed',
                 'transaksi_id' => $transaksi->id ?? null,
-                'diskon' => $diskon,
-                'pajak' => $pajak,
+                'diskon' => $diskonNominalFinal,
+                'diskon_persen' => $diskonPersenFinal,
+                'pembulatan' => $pembulatanFinal,
+                'pajak' => $pajakFinal,
                 'pembayaran' => $pembayaran,
             ]);
             return $transaksi;

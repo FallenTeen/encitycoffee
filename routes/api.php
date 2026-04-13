@@ -9,6 +9,7 @@ use App\Http\Controllers\KalibrasiController;
 use App\Http\Controllers\ProdukController;
 use App\Http\Controllers\StokController;
 use App\Http\Controllers\TransaksiController;
+use App\Http\Controllers\DiscountController;
 use App\Http\Controllers\LaporanController;
 use App\Http\Controllers\SinkronisasiController;
 use App\Models\Cabang;
@@ -368,7 +369,20 @@ Route::prefix('pos')->group(function () {
                 Route::put('open-bill/{openBill}', [TransaksiController::class, 'updateOpenBill']);
                 Route::post('open-bill/{openBill}/bayar', [TransaksiController::class, 'bayarOpenBill']);
                 Route::delete('open-bill/{openBill}', [TransaksiController::class, 'hapusOpenBill']);
+                Route::put('open-bill/{openBill}/discount', [DiscountController::class, 'applyToOpenBill'])
+                    ->middleware([
+                        \App\Http\Middleware\EnsureDiscountPermission::class.':kasir,supervisor,manager,it_support',
+                        \App\Http\Middleware\AuditDiscountActivity::class.':OpenBill',
+                        'throttle:pos-discount',
+                    ]);
             });
+
+            Route::post('discount/preview', [DiscountController::class, 'preview'])
+                ->middleware([
+                    \App\Http\Middleware\EnsureDiscountPermission::class.':kasir,supervisor,manager,it_support',
+                    \App\Http\Middleware\AuditDiscountActivity::class.':DiscountPreview',
+                    'throttle:pos-discount',
+                ]);
 
             Route::prefix('laporan')->group(function () {
                 Route::get('shift/{shift}/ringkasan', [LaporanController::class, 'ringkasanShift']);

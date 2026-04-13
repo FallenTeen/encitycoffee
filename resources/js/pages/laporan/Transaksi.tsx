@@ -1,5 +1,6 @@
 import { Head } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
+import { formatDateTime } from '@/utils/formatters';
 
 export default function LaporanTransaksi({
     transaksi,
@@ -67,7 +68,7 @@ export default function LaporanTransaksi({
                                 <option value="">Semua Shift</option>
                                 {(shift_options ?? []).map((s: any) => (
                                     <option key={s.id} value={s.id}>
-                                        #{s.id} ({s.status}) {s.waktu_buka}
+                                        #{s.id} ({s.status}) {formatDateTime(s.waktu_buka)}
                                     </option>
                                 ))}
                             </select>
@@ -158,7 +159,7 @@ export default function LaporanTransaksi({
                                     <tr key={row.id} className="border-b last:border-0">
                                         <td className="py-2 pr-4 align-top">
                                             <div className="font-medium">
-                                                {row.waktu_selesai ?? '-'}
+                                                {row.waktu_selesai ? formatDateTime(row.waktu_selesai) : '-'}
                                             </div>
                                         </td>
                                         <td className="py-2 pr-4 align-top">

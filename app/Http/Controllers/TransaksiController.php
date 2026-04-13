@@ -6,6 +6,7 @@ use App\Models\OpenBill;
 use App\Models\Shift;
 use App\Services\TransaksiService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Log;
 
@@ -18,30 +19,19 @@ class TransaksiController extends Controller
         $this->transaksiService = $transaksiService;
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // INDEX
-    // ─────────────────────────────────────────────────────────────
-
-    public function index(Request $request)
+    private function buildTransaksiQueryForBackoffice(Request $request, array $validated)
     {
-        $validated = $request->validate([
-            'status'          => ['nullable', 'in:pending,selesai,batal'],
-            'per_page'        => ['nullable', 'integer', 'min:1', 'max:100'],
-            'tanggal_mulai'   => ['nullable', 'date', 'before_or_equal:today'],
-            'tanggal_selesai' => ['nullable', 'date', 'after_or_equal:tanggal_mulai', 'before_or_equal:today'],
-        ]);
-
         $user  = $request->user();
         $query = Transaksi::query()
             ->with(['cabang:id,kode,nama', 'user:id,name,email', 'shift:id,status'])
             ->latest();
 
-        if (method_exists($user, 'isItSupport') && !($user->isItSupport() || $user->isManager())) {
+        if (method_exists($user, 'isItSupport') && ! ($user->isItSupport() || $user->isManager())) {
             $cabangIds = $user->cabang()->pluck('cabang.id')->all();
             $query->whereIn('cabang_id', $cabangIds);
         }
 
-        if (!empty($validated['status'])) {
+        if (! empty($validated['status'])) {
             $query->where('status', $validated['status']);
         }
 
@@ -55,6 +45,77 @@ class TransaksiController extends Controller
             $query->whereDate('created_at', $tanggalMulai);
         }
 
+        if (! empty($validated['diskon_status'])) {
+            $diskonStatus = (string) $validated['diskon_status'];
+            if ($diskonStatus === 'discounted') {
+                $query->where('diskon', '>', 0);
+            } elseif ($diskonStatus === 'no_discount') {
+                $query->where(function ($q) {
+                    $q->whereNull('diskon')->orWhere('diskon', '<=', 0);
+                });
+            }
+        }
+
+        if (array_key_exists('min_diskon', $validated) && $validated['min_diskon'] !== null) {
+            $query->where('diskon', '>=', (float) $validated['min_diskon']);
+        }
+        if (array_key_exists('max_diskon', $validated) && $validated['max_diskon'] !== null) {
+            $query->where('diskon', '<=', (float) $validated['max_diskon']);
+        }
+
+        if (! empty($validated['search'])) {
+            $search = $request->string('search')->toString();
+            $digits = preg_replace('/[^\d]/', '', $search);
+            $numeric = $digits !== null && $digits !== '' ? (int) $digits : null;
+
+            $query->where(function ($q) use ($search, $numeric) {
+                $q->where('nomor_invoice', 'like', '%'.$search.'%')
+                    ->orWhere('nama_pelanggan', 'like', '%'.$search.'%');
+
+                if ($numeric !== null) {
+                    $q->orWhereRaw('ROUND(total) = ?', [$numeric])
+                        ->orWhereRaw('ROUND(subtotal) = ?', [$numeric])
+                        ->orWhereRaw('ROUND(diskon) = ?', [$numeric]);
+                }
+            });
+        }
+
+        $sortBy = (string) ($validated['sort_by'] ?? '');
+        $sortDir = strtolower((string) ($validated['sort_dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
+        if ($sortBy === 'diskon') {
+            $query->orderBy('diskon', $sortDir)->orderBy('created_at', 'desc');
+        } elseif ($sortBy === 'total') {
+            $query->orderBy('total', $sortDir)->orderBy('created_at', 'desc');
+        } elseif ($sortBy === 'tanggal') {
+            $query->orderBy('created_at', $sortDir)->orderBy('id', 'desc');
+        }
+
+        return $query;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // INDEX
+    // ─────────────────────────────────────────────────────────────
+
+    public function index(Request $request)
+    {
+        $validated = $request->validate([
+            'status'          => ['nullable', 'in:pending,selesai,batal'],
+            'per_page'        => ['nullable', 'integer', 'min:1', 'max:100'],
+            'tanggal_mulai'   => ['nullable', 'date', 'before_or_equal:today'],
+            'tanggal_selesai' => ['nullable', 'date', 'after_or_equal:tanggal_mulai', 'before_or_equal:today'],
+            'diskon_status'   => ['nullable', 'in:discounted,no_discount'],
+            'min_diskon'      => ['nullable', 'numeric', 'min:0'],
+            'max_diskon'      => ['nullable', 'numeric', 'min:0'],
+            'sort_by'         => ['nullable', 'in:tanggal,total,diskon'],
+            'sort_dir'        => ['nullable', 'in:asc,desc'],
+            'search'          => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $tanggalMulai   = $validated['tanggal_mulai']   ?? null;
+        $tanggalSelesai = $validated['tanggal_selesai'] ?? null;
+        $query = $this->buildTransaksiQueryForBackoffice($request, $validated);
+
         $perPage    = (int) ($validated['per_page'] ?? 15);
         $transaksis = $query->paginate($perPage)->withQueryString();
 
@@ -62,6 +123,12 @@ class TransaksiController extends Controller
             'transaksis'   => $transaksis,
             'filter_aktif' => [
                 'status'          => $validated['status'] ?? '',
+                'diskon_status'   => $validated['diskon_status'] ?? '',
+                'min_diskon'      => $validated['min_diskon'] ?? null,
+                'max_diskon'      => $validated['max_diskon'] ?? null,
+                'sort_by'         => $validated['sort_by'] ?? '',
+                'sort_dir'        => $validated['sort_dir'] ?? 'desc',
+                'search'          => $validated['search'] ?? '',
                 'per_page'        => $perPage,
                 'tanggal_mulai'   => $tanggalMulai,
                 'tanggal_selesai' => $tanggalSelesai,
@@ -82,14 +149,16 @@ class TransaksiController extends Controller
             'status'          => ['nullable', 'in:pending,selesai,batal'],
             'tanggal_mulai'   => ['required', 'date', 'before_or_equal:today'],
             'tanggal_selesai' => ['required', 'date', 'after_or_equal:tanggal_mulai', 'before_or_equal:today'],
+            'diskon_status'   => ['nullable', 'in:discounted,no_discount'],
+            'min_diskon'      => ['nullable', 'numeric', 'min:0'],
+            'max_diskon'      => ['nullable', 'numeric', 'min:0'],
+            'sort_by'         => ['nullable', 'in:tanggal,total,diskon'],
+            'sort_dir'        => ['nullable', 'in:asc,desc'],
+            'search'          => ['nullable', 'string', 'max:100'],
         ]);
 
-        $akhirHari = now()->parse($validated['tanggal_selesai'])->endOfDay()->toDateTimeString();
-
-        $rows = Transaksi::with(['cabang', 'user'])
-            ->when(!empty($validated['status']), fn ($q) => $q->where('status', $validated['status']))
-            ->whereBetween('created_at', [$validated['tanggal_mulai'], $akhirHari])
-            ->orderByDesc('created_at')
+        $rows = $this->buildTransaksiQueryForBackoffice($request, $validated)
+            ->with(['cabang', 'user'])
             ->get();
 
         $storeName  = config('app.name', 'Toko');
@@ -105,7 +174,7 @@ class TransaksiController extends Controller
         // Build baris tabel
         $tbody = '';
         if ($rows->isEmpty()) {
-            $tbody = '<tr><td colspan="7" style="text-align:center;padding:40px;color:#94a3b8;font-style:italic">Tidak ada transaksi pada periode ini</td></tr>';
+            $tbody = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#94a3b8;font-style:italic">Tidak ada transaksi pada periode ini</td></tr>';
         } else {
             foreach ($rows as $i => $t) {
                 $status = $t->status ?? '';
@@ -115,12 +184,25 @@ class TransaksiController extends Controller
                     'batal'   => 'background:#fee2e2;color:#991b1b',
                     default   => 'background:#f1f5f9;color:#475569',
                 };
+
+                $diskonNominal = (float) ($t->diskon ?? 0);
+                $isDiskon = $diskonNominal > 0;
+                $diskonPersen = $t->diskon_persen !== null ? (float) $t->diskon_persen : null;
+                if ($diskonPersen === null) {
+                    $subtotal = (float) ($t->subtotal ?? 0);
+                    $diskonPersen = $subtotal > 0 ? round(($diskonNominal / $subtotal) * 100, 4) : 0;
+                }
+                $diskonLabel = $isDiskon
+                    ? ('Ya - Rp ' . number_format($diskonNominal, 0, ',', '.') . ' (' . rtrim(rtrim(number_format($diskonPersen, 4, '.', ''), '0'), '.') . '%)')
+                    : 'Tidak';
+
                 $tbody .= '<tr style="' . ($i % 2 === 1 ? 'background:#f8fafc' : '') . '">'
                     . '<td>' . ($i + 1) . '</td>'
                     . '<td style="font-family:monospace;font-size:11px">' . htmlspecialchars($t->nomor_invoice ?? ('#' . $t->id)) . '</td>'
                     . '<td>' . htmlspecialchars(optional($t->cabang)->nama ?? optional($t->cabang)->kode ?? '-') . '</td>'
                     . '<td>' . htmlspecialchars(optional($t->user)->name ?? '-') . '</td>'
                     . '<td style="text-align:right">' . number_format((float) ($t->total ?? 0), 0, ',', '.') . '</td>'
+                    . '<td style="font-size:11px">' . htmlspecialchars($diskonLabel) . '</td>'
                     . '<td><span style="' . $badgeStyle . ';padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600">' . htmlspecialchars(ucfirst($status ?: '-')) . '</span></td>'
                     . '<td style="font-size:11px">' . htmlspecialchars(optional($t->created_at)?->format('d/m/Y H:i') ?? '-') . '</td>'
                     . '</tr>';
@@ -206,6 +288,7 @@ class TransaksiController extends Controller
       <th style="width:17%">Cabang</th>
       <th style="width:15%">Kasir</th>
       <th style="width:14%">Total (Rp)</th>
+      <th style="width:16%">Didiskon</th>
       <th style="width:10%">Status</th>
       <th style="width:14%">Waktu</th>
     </tr>
@@ -246,14 +329,16 @@ HTML;
             'status'          => ['nullable', 'in:pending,selesai,batal'],
             'tanggal_mulai'   => ['required', 'date', 'before_or_equal:today'],
             'tanggal_selesai' => ['required', 'date', 'after_or_equal:tanggal_mulai', 'before_or_equal:today'],
+            'diskon_status'   => ['nullable', 'in:discounted,no_discount'],
+            'min_diskon'      => ['nullable', 'numeric', 'min:0'],
+            'max_diskon'      => ['nullable', 'numeric', 'min:0'],
+            'sort_by'         => ['nullable', 'in:tanggal,total,diskon'],
+            'sort_dir'        => ['nullable', 'in:asc,desc'],
+            'search'          => ['nullable', 'string', 'max:100'],
         ]);
 
-        $akhirHari = now()->parse($validated['tanggal_selesai'])->endOfDay()->toDateTimeString();
-
-        $rows = Transaksi::with(['cabang', 'user'])
-            ->when(!empty($validated['status']), fn ($q) => $q->where('status', $validated['status']))
-            ->whereBetween('created_at', [$validated['tanggal_mulai'], $akhirHari])
-            ->orderByDesc('created_at')
+        $rows = $this->buildTransaksiQueryForBackoffice($request, $validated)
+            ->with(['cabang', 'user'])
             ->get();
 
         $handle = fopen('php://temp', 'r+');
@@ -269,16 +354,27 @@ HTML;
         fputcsv($handle, []); // baris kosong pemisah
 
         // Kolom header
-        fputcsv($handle, ['No', 'Invoice', 'Cabang', 'Kasir', 'Total (Rp)', 'Status', 'Waktu']);
+        fputcsv($handle, ['No', 'Invoice', 'Cabang', 'Kasir', 'Total (Rp)', 'Didiskon', 'Diskon (Rp)', 'Diskon (%)', 'Status', 'Waktu']);
 
         // Data
         foreach ($rows as $i => $t) {
+            $diskonNominal = (float) ($t->diskon ?? 0);
+            $isDiskon = $diskonNominal > 0;
+            $diskonPersen = $t->diskon_persen !== null ? (float) $t->diskon_persen : null;
+            if ($diskonPersen === null) {
+                $subtotal = (float) ($t->subtotal ?? 0);
+                $diskonPersen = $subtotal > 0 ? round(($diskonNominal / $subtotal) * 100, 4) : 0;
+            }
+
             fputcsv($handle, [
                 $i + 1,
                 $t->nomor_invoice ?? ('#' . $t->id),
                 optional($t->cabang)->nama ?? optional($t->cabang)->kode ?? '-',
                 optional($t->user)->name ?? '-',
                 (float) ($t->total ?? 0),
+                $isDiskon ? 'Ya' : 'Tidak',
+                $diskonNominal,
+                $isDiskon ? $diskonPersen : 0,
                 $t->status ?? '-',
                 optional($t->created_at)?->format('d/m/Y H:i:s') ?? '-',
             ]);
@@ -453,6 +549,10 @@ HTML;
             'pembayaran.*.jumlah'    => 'required|numeric|min:0',
             'pembayaran.*.referensi' => 'nullable|string',
             'diskon'                 => 'nullable|numeric|min:0',
+            'diskon_persen'          => 'nullable|numeric|min:0|max:100',
+            'pembulatan'             => 'nullable|array',
+            'pembulatan.mode'        => 'nullable|in:none,nearest,up,down',
+            'pembulatan.unit'        => 'nullable|integer|min:1|max:1000000',
             'pajak'                  => 'nullable|numeric|min:0',
             'catatan'                => 'nullable|string',
         ]);
@@ -467,7 +567,9 @@ HTML;
                 $shift,
                 $validated['items'],
                 $validated['pembayaran'],
-                (float) ($validated['diskon'] ?? 0),
+                array_key_exists('diskon', $validated) ? (float) $validated['diskon'] : null,
+                array_key_exists('diskon_persen', $validated) ? (float) $validated['diskon_persen'] : null,
+                $validated['pembulatan'] ?? [],
                 (float) ($validated['pajak']  ?? 0),
                 $validated['catatan']          ?? null,
                 $validated['nama_pelanggan']   ?? null,
@@ -575,6 +677,10 @@ HTML;
             'items.*.jumlah'    => 'required|integer|min:1',
             'items.*.catatan'   => 'nullable|string',
             'diskon'            => 'nullable|numeric|min:0',
+            'diskon_persen'     => 'nullable|numeric|min:0|max:100',
+            'pembulatan'        => 'nullable|array',
+            'pembulatan.mode'   => 'nullable|in:none,nearest,up,down',
+            'pembulatan.unit'   => 'nullable|integer|min:1|max:1000000',
             'pajak'             => 'nullable|numeric|min:0',
             'catatan'           => 'nullable|string',
         ]);
@@ -587,7 +693,9 @@ HTML;
         try {
             $openBill = $this->transaksiService->buatOpenBill(
                 $shift, $validated['items'],
-                (float) ($validated['diskon']       ?? 0),
+                array_key_exists('diskon', $validated) ? (float) $validated['diskon'] : null,
+                array_key_exists('diskon_persen', $validated) ? (float) $validated['diskon_persen'] : null,
+                $validated['pembulatan'] ?? [],
                 (float) ($validated['pajak']        ?? 0),
                 $validated['catatan']               ?? null,
                 $validated['nama_pelanggan']        ?? null,
@@ -641,6 +749,10 @@ HTML;
             'items.*.jumlah'    => 'required|integer|min:1',
             'items.*.catatan'   => 'nullable|string',
             'diskon'            => 'nullable|numeric|min:0',
+            'diskon_persen'     => 'nullable|numeric|min:0|max:100',
+            'pembulatan'        => 'nullable|array',
+            'pembulatan.mode'   => 'nullable|in:none,nearest,up,down',
+            'pembulatan.unit'   => 'nullable|integer|min:1|max:1000000',
             'pajak'             => 'nullable|numeric|min:0',
             'catatan'           => 'nullable|string',
         ]);
@@ -653,7 +765,9 @@ HTML;
         try {
             $updated = $this->transaksiService->updateOpenBill(
                 $openBill, $validated['items'],
-                (float) ($validated['diskon']     ?? 0),
+                array_key_exists('diskon', $validated) ? (float) $validated['diskon'] : null,
+                array_key_exists('diskon_persen', $validated) ? (float) $validated['diskon_persen'] : null,
+                $validated['pembulatan'] ?? [],
                 (float) ($validated['pajak']      ?? 0),
                 $validated['catatan']             ?? null,
                 $validated['nama_pelanggan']      ?? null,
@@ -693,6 +807,10 @@ HTML;
             'pembayaran.*.jumlah'    => 'required|numeric|min:0',
             'pembayaran.*.referensi' => 'nullable|string',
             'diskon'                 => 'nullable|numeric|min:0',
+            'diskon_persen'          => 'nullable|numeric|min:0|max:100',
+            'pembulatan'             => 'nullable|array',
+            'pembulatan.mode'        => 'nullable|in:none,nearest,up,down',
+            'pembulatan.unit'        => 'nullable|integer|min:1|max:1000000',
             'pajak'                  => 'nullable|numeric|min:0',
             'catatan'                => 'nullable|string',
         ]);
@@ -705,8 +823,10 @@ HTML;
         try {
             $transaksi = $this->transaksiService->convertOpenBillToTransaksi(
                 $openBill, $validated['pembayaran'],
-                (float) ($validated['diskon']  ?? 0),
-                (float) ($validated['pajak']   ?? 0),
+                array_key_exists('diskon', $validated) ? (float) $validated['diskon'] : null,
+                array_key_exists('diskon_persen', $validated) ? (float) $validated['diskon_persen'] : null,
+                $validated['pembulatan'] ?? [],
+                array_key_exists('pajak', $validated) ? (float) $validated['pajak'] : null,
                 $validated['catatan']          ?? null,
             );
             return response()->json([

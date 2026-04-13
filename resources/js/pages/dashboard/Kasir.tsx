@@ -1,6 +1,7 @@
 import { Head } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { formatDateTime } from '@/utils/formatters';
 
 interface KasirProps {
   user?: { name: string };
@@ -35,7 +36,7 @@ export default function Kasir({ user, currentShift = null, lastTransactions = []
                   {currentShift ? (
                       <div className="space-y-1 text-sm">
                           <div>ID Shift: {currentShift.id}</div>
-                          <div>Waktu Buka: {currentShift.waktu_buka}</div>
+                          <div>Waktu Buka: {formatDateTime(currentShift.waktu_buka)}</div>
                           <div>
                               Saldo Awal: Rp{' '}
                               {currentShift.saldo_awal.toLocaleString('id-ID')}
@@ -73,7 +74,7 @@ export default function Kasir({ user, currentShift = null, lastTransactions = []
                                       Rp {t.total.toLocaleString('id-ID')}
                                   </div>
                                   <div className="text-xs text-muted-foreground">
-                                      {t.created_at}
+                                      {formatDateTime(t.created_at)}
                                   </div>
                               </CardContent>
                           </Card>

@@ -2,8 +2,11 @@
 
 namespace App\Providers;
 
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 
 class AppServiceProvider extends ServiceProvider
@@ -25,6 +28,14 @@ class AppServiceProvider extends ServiceProvider
         if ($backofficeDomain && request()->getHost() === $backofficeDomain) {
             URL::forceRootUrl(config('app.backoffice_url'));
         }
+
+        RateLimiter::for('pos-discount', function (Request $request) {
+            $userId = optional($request->user())->id;
+            $key = $userId ? 'user:'.$userId : 'ip:'.$request->ip();
+            return [
+                Limit::perMinute(120)->by($key),
+            ];
+        });
 
         // DASHBOARD
         Gate::define('view-admin-dashboard', function ($user) {

@@ -132,8 +132,8 @@ class EnhancedDashboardController extends Controller
             'low_stock_items' => (int) (Schema::hasTable('stok_etalase')
                 ? DB::table('stok_etalase')->whereColumn('jumlah', '<=', 'stok_minimum')->count()
                 : 0),
-            'expiring_products' => (int) (Schema::hasTable('batch_stoks')
-                ? DB::table('batch_stoks')->whereDate('tanggal_kadaluarsa', '<=', Carbon::now()->addDays(30))->count()
+            'expiring_products' => (int) (Schema::hasTable('batch_stok')
+                ? DB::table('batch_stok')->whereDate('tanggal_kadaluarsa', '<=', Carbon::now()->addDays(30))->count()
                 : 0),
             'active_users' => (int) User::where('aktif', true)->count(),
             'system_uptime' => '99.9%', // This would typically come from monitoring
@@ -163,9 +163,40 @@ class EnhancedDashboardController extends Controller
             abort(403, 'Unauthorized access');
         }
 
+        $validated = $request->validate([
+            'range' => ['nullable', 'in:7d,14d,30d,90d,custom'],
+            'tanggal_mulai' => ['nullable', 'date', 'before_or_equal:today'],
+            'tanggal_selesai' => ['nullable', 'date', 'after_or_equal:tanggal_mulai', 'before_or_equal:today'],
+        ]);
+
         $today = Carbon::today();
         $thisMonth = Carbon::now()->startOfMonth();
         $assignedCabangIds = $user->cabang->pluck('id')->toArray();
+
+        $range = (string) ($validated['range'] ?? '14d');
+        $endDate = Carbon::today();
+        if ($range !== 'custom') {
+            $days = (int) rtrim($range, 'd');
+            $days = max(1, min(90, $days));
+            $startDate = $endDate->copy()->subDays($days - 1);
+        } else {
+            $startDate = ! empty($validated['tanggal_mulai'])
+                ? Carbon::parse($validated['tanggal_mulai'])
+                : $endDate->copy()->subDays(13);
+            $endDate = ! empty($validated['tanggal_selesai'])
+                ? Carbon::parse($validated['tanggal_selesai'])
+                : $endDate;
+
+            if ($endDate->lt($startDate)) {
+                [$startDate, $endDate] = [$endDate, $startDate];
+            }
+            if ($startDate->diffInDays($endDate) > 89) {
+                $startDate = $endDate->copy()->subDays(89);
+            }
+        }
+
+        $periodStart = $startDate->copy()->startOfDay();
+        $periodEnd = $endDate->copy()->endOfDay();
 
         // Key Performance Indicators
         $kpis = [
@@ -187,45 +218,121 @@ class EnhancedDashboardController extends Controller
             'low_stock_items' => (int) (Schema::hasTable('stok_etalase')
                 ? DB::table('stok_etalase')->whereIn('cabang_id', $assignedCabangIds)->whereColumn('jumlah', '<=', 'stok_minimum')->count()
                 : 0),
-            'expiring_products' => (int) (Schema::hasTable('batch_stoks')
-                ? DB::table('batch_stoks')->whereHas('stokEtalase', function ($q) use ($assignedCabangIds) {
-                    $q->whereIn('cabang_id', $assignedCabangIds);
-                })->whereDate('tanggal_kadaluarsa', '<=', Carbon::now()->addDays(30))->count()
+            'expiring_products' => (int) (Schema::hasTable('batch_stok')
+                ? DB::table('batch_stok')
+                    ->join('stok_etalase', 'batch_stok.stok_etalase_id', '=', 'stok_etalase.id')
+                    ->whereIn('stok_etalase.cabang_id', $assignedCabangIds)
+                    ->whereDate('batch_stok.tanggal_kadaluarsa', '<=', Carbon::now()->addDays(30))
+                    ->count()
                 : 0),
         ];
 
-        // Daily Performance Trends (Last 14 days)
-        $dailyPerformance = [];
-        for ($i = 13; $i >= 0; $i--) {
-            $date = Carbon::today()->subDays($i);
-            $revenue = (float) Transaksi::whereIn('cabang_id', $assignedCabangIds)
-                ->where('status', 'selesai')
-                ->whereDate('created_at', $date)
-                ->sum('total');
+        $dailyAgg = Transaksi::whereIn('cabang_id', $assignedCabangIds)
+            ->where('status', 'selesai')
+            ->whereBetween('created_at', [$periodStart, $periodEnd])
+            ->selectRaw('DATE(created_at) as date')
+            ->selectRaw('SUM(total) as revenue')
+            ->selectRaw('COUNT(*) as transactions')
+            ->selectRaw('SUM(COALESCE(diskon, 0)) as discount_amount')
+            ->selectRaw('SUM(CASE WHEN COALESCE(diskon, 0) > 0 THEN 1 ELSE 0 END) as discounted_transactions')
+            ->selectRaw('SUM(CASE WHEN COALESCE(diskon, 0) <= 0 THEN 1 ELSE 0 END) as non_discounted_transactions')
+            ->groupByRaw('DATE(created_at)')
+            ->orderBy('date')
+            ->get()
+            ->keyBy('date');
 
-            $transactions = (int) Transaksi::whereIn('cabang_id', $assignedCabangIds)
-                ->where('status', 'selesai')
-                ->whereDate('created_at', $date)
-                ->count();
+        $dailyPerformance = [];
+        $discountComparisonDaily = [];
+        $cursor = $startDate->copy();
+        while ($cursor->lte($endDate)) {
+            $key = $cursor->format('Y-m-d');
+            $row = $dailyAgg->get($key);
+            $revenue = $row ? (float) $row->revenue : 0.0;
+            $transactions = $row ? (int) $row->transactions : 0;
+            $discountAmount = $row ? (float) $row->discount_amount : 0.0;
+            $discountedTransactions = $row ? (int) $row->discounted_transactions : 0;
+            $nonDiscountedTransactions = $row ? (int) $row->non_discounted_transactions : 0;
 
             $dailyPerformance[] = [
-                'date' => $date->format('Y-m-d'),
-                'day' => $date->format('d M'),
+                'date' => $key,
+                'day' => $cursor->format('d M'),
                 'revenue' => $revenue,
                 'transactions' => $transactions,
             ];
+
+            $discountComparisonDaily[] = [
+                'date' => $key,
+                'day' => $cursor->format('d M'),
+                'discount_amount' => $discountAmount,
+                'discounted_transactions' => $discountedTransactions,
+                'non_discounted_transactions' => $nonDiscountedTransactions,
+                'gross_revenue' => $revenue + $discountAmount,
+                'net_revenue' => $revenue,
+            ];
+
+            $cursor->addDay();
         }
 
-        // Branch Comparison (Last 30 days)
+        $discountTotals = Transaksi::whereIn('cabang_id', $assignedCabangIds)
+            ->where('status', 'selesai')
+            ->whereBetween('created_at', [$periodStart, $periodEnd])
+            ->selectRaw('SUM(total) as net_revenue')
+            ->selectRaw('SUM(COALESCE(diskon, 0)) as discount_amount')
+            ->selectRaw('SUM(CASE WHEN COALESCE(diskon, 0) > 0 THEN 1 ELSE 0 END) as discounted_transactions')
+            ->selectRaw('SUM(CASE WHEN COALESCE(diskon, 0) <= 0 THEN 1 ELSE 0 END) as non_discounted_transactions')
+            ->first();
+
+        $netRevenue = (float) ($discountTotals->net_revenue ?? 0);
+        $discountAmount = (float) ($discountTotals->discount_amount ?? 0);
+        $grossRevenue = $netRevenue + $discountAmount;
+        $discountSharePercent = $grossRevenue > 0 ? round(($discountAmount / $grossRevenue) * 100, 2) : 0.0;
+
+        $discountMetrics = [
+            'tanggal_mulai' => $startDate->format('Y-m-d'),
+            'tanggal_selesai' => $endDate->format('Y-m-d'),
+            'gross_revenue' => $grossRevenue,
+            'net_revenue' => $netRevenue,
+            'discount_amount' => $discountAmount,
+            'discount_share_percent' => $discountSharePercent,
+            'discounted_transactions' => (int) ($discountTotals->discounted_transactions ?? 0),
+            'non_discounted_transactions' => (int) ($discountTotals->non_discounted_transactions ?? 0),
+        ];
+
+        $discountByCategory = DB::table('item_transaksi')
+            ->join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
+            ->join('produk', 'item_transaksi.produk_id', '=', 'produk.id')
+            ->join('kategori_produk', 'produk.kategori_id', '=', 'kategori_produk.id')
+            ->whereIn('transaksi.cabang_id', $assignedCabangIds)
+            ->where('transaksi.status', 'selesai')
+            ->whereBetween('transaksi.created_at', [$periodStart, $periodEnd])
+            ->select('kategori_produk.nama as category')
+            ->selectRaw('SUM((item_transaksi.subtotal / NULLIF(transaksi.subtotal, 0)) * COALESCE(transaksi.diskon, 0)) as discount_amount')
+            ->groupBy('kategori_produk.id', 'kategori_produk.nama')
+            ->orderByDesc('discount_amount')
+            ->limit(10)
+            ->get();
+
+        $discountByCustomerType = DB::table('transaksi')
+            ->whereIn('cabang_id', $assignedCabangIds)
+            ->where('status', 'selesai')
+            ->whereBetween('created_at', [$periodStart, $periodEnd])
+            ->selectRaw("CASE WHEN nama_pelanggan IS NULL OR nama_pelanggan = '' THEN 'Tanpa Nama' ELSE 'Dengan Nama' END as customer_type")
+            ->selectRaw('SUM(COALESCE(diskon, 0)) as discount_amount')
+            ->selectRaw('COUNT(*) as transaction_count')
+            ->groupBy('customer_type')
+            ->orderByDesc('discount_amount')
+            ->get();
+
+        // Branch Comparison
         $branchComparison = Cabang::whereIn('cabang.id', $assignedCabangIds)
             ->select('cabang.id', 'cabang.nama')
             ->selectRaw('SUM(transaksi.total) as total_revenue')
             ->selectRaw('COUNT(transaksi.id) as transaction_count')
             ->selectRaw('AVG(transaksi.total) as avg_transaction')
-            ->leftJoin('transaksi', function ($join) {
+            ->leftJoin('transaksi', function ($join) use ($periodStart) {
                 $join->on('cabang.id', '=', 'transaksi.cabang_id')
                     ->where('transaksi.status', 'selesai')
-                    ->whereDate('transaksi.created_at', '>=', Carbon::today()->subDays(30));
+                    ->whereDate('transaksi.created_at', '>=', $periodStart);
             })
             ->groupBy('cabang.id', 'cabang.nama')
             ->orderByDesc('total_revenue')
@@ -238,29 +345,29 @@ class EnhancedDashboardController extends Controller
             ->join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
             ->whereIn('transaksi.cabang_id', $assignedCabangIds)
             ->where('transaksi.status', 'selesai')
-            ->whereDate('transaksi.created_at', '>=', $thisMonth)
+            ->whereBetween('transaksi.created_at', [$periodStart, $periodEnd])
             ->select('kategori_produk.nama as category', DB::raw('SUM(item_transaksi.subtotal) as total_revenue'), DB::raw('SUM(item_transaksi.jumlah) as total_quantity'))
             ->groupBy('kategori_produk.id', 'kategori_produk.nama')
             ->orderByDesc('total_revenue')
             ->get();
 
-        // Staff Performance (Last 30 days)
+        // Staff Performance
         $staffPerformance = User::whereIn('users.id', function ($query) use ($assignedCabangIds) {
                 $query->select('user_id')
                     ->from('transaksi')
                     ->whereIn('cabang_id', $assignedCabangIds)
-                    ->whereDate('created_at', '>=', Carbon::today()->subDays(30))
+                    ->whereDate('created_at', '>=', Carbon::today()->subDays(90))
                     ->distinct();
             })
             ->select('users.id', 'users.name')
             ->selectRaw('SUM(transaksi.total) as total_revenue')
             ->selectRaw('COUNT(transaksi.id) as transaction_count')
             ->selectRaw('AVG(transaksi.total) as avg_transaction')
-            ->leftJoin('transaksi', function ($join) use ($assignedCabangIds) {
+            ->leftJoin('transaksi', function ($join) use ($assignedCabangIds, $periodStart) {
                 $join->on('users.id', '=', 'transaksi.user_id')
                     ->whereIn('transaksi.cabang_id', $assignedCabangIds)
                     ->where('transaksi.status', 'selesai')
-                    ->whereDate('transaksi.created_at', '>=', Carbon::today()->subDays(30));
+                    ->whereDate('transaksi.created_at', '>=', $periodStart);
             })
             ->groupBy('users.id', 'users.name')
             ->orderByDesc('total_revenue')
@@ -280,7 +387,16 @@ class EnhancedDashboardController extends Controller
 
         return Inertia::render('dashboard/EnhancedManager', [
             'kpis' => $kpis,
+            'filters' => [
+                'range' => $range,
+                'tanggal_mulai' => $startDate->format('Y-m-d'),
+                'tanggal_selesai' => $endDate->format('Y-m-d'),
+            ],
             'dailyPerformance' => $dailyPerformance,
+            'discountMetrics' => $discountMetrics,
+            'discountComparisonDaily' => $discountComparisonDaily,
+            'discountByCategory' => $discountByCategory,
+            'discountByCustomerType' => $discountByCustomerType,
             'branchComparison' => $branchComparison,
             'categoryPerformance' => $categoryPerformance,
             'staffPerformance' => $staffPerformance,
@@ -300,8 +416,39 @@ class EnhancedDashboardController extends Controller
             abort(403, 'Unauthorized access');
         }
 
+        $validated = $request->validate([
+            'range' => ['nullable', 'in:7d,14d,30d,90d,custom'],
+            'tanggal_mulai' => ['nullable', 'date', 'before_or_equal:today'],
+            'tanggal_selesai' => ['nullable', 'date', 'after_or_equal:tanggal_mulai', 'before_or_equal:today'],
+        ]);
+
         $today = Carbon::today();
         $assignedCabangIds = $user->cabang->pluck('id')->toArray();
+
+        $range = (string) ($validated['range'] ?? '14d');
+        $endDate = Carbon::today();
+        if ($range !== 'custom') {
+            $days = (int) rtrim($range, 'd');
+            $days = max(1, min(90, $days));
+            $startDate = $endDate->copy()->subDays($days - 1);
+        } else {
+            $startDate = ! empty($validated['tanggal_mulai'])
+                ? Carbon::parse($validated['tanggal_mulai'])
+                : $endDate->copy()->subDays(13);
+            $endDate = ! empty($validated['tanggal_selesai'])
+                ? Carbon::parse($validated['tanggal_selesai'])
+                : $endDate;
+
+            if ($endDate->lt($startDate)) {
+                [$startDate, $endDate] = [$endDate, $startDate];
+            }
+            if ($startDate->diffInDays($endDate) > 89) {
+                $startDate = $endDate->copy()->subDays(89);
+            }
+        }
+
+        $periodStart = $startDate->copy()->startOfDay();
+        $periodEnd = $endDate->copy()->endOfDay();
 
         // Current Shift Status
         $currentShifts = Shift::whereIn('cabang_id', $assignedCabangIds)
@@ -394,6 +541,91 @@ class EnhancedDashboardController extends Controller
                 ->count(),
         ];
 
+        $dailyAgg = Transaksi::whereIn('cabang_id', $assignedCabangIds)
+            ->where('status', 'selesai')
+            ->whereBetween('created_at', [$periodStart, $periodEnd])
+            ->selectRaw('DATE(created_at) as date')
+            ->selectRaw('SUM(total) as revenue')
+            ->selectRaw('COUNT(*) as transactions')
+            ->selectRaw('SUM(COALESCE(diskon, 0)) as discount_amount')
+            ->selectRaw('SUM(CASE WHEN COALESCE(diskon, 0) > 0 THEN 1 ELSE 0 END) as discounted_transactions')
+            ->selectRaw('SUM(CASE WHEN COALESCE(diskon, 0) <= 0 THEN 1 ELSE 0 END) as non_discounted_transactions')
+            ->groupByRaw('DATE(created_at)')
+            ->orderBy('date')
+            ->get()
+            ->keyBy('date');
+
+        $discountComparisonDaily = [];
+        $cursor = $startDate->copy();
+        while ($cursor->lte($endDate)) {
+            $key = $cursor->format('Y-m-d');
+            $row = $dailyAgg->get($key);
+            $revenue = $row ? (float) $row->revenue : 0.0;
+            $discountAmount = $row ? (float) $row->discount_amount : 0.0;
+
+            $discountComparisonDaily[] = [
+                'date' => $key,
+                'day' => $cursor->format('d M'),
+                'discount_amount' => $discountAmount,
+                'discounted_transactions' => $row ? (int) $row->discounted_transactions : 0,
+                'non_discounted_transactions' => $row ? (int) $row->non_discounted_transactions : 0,
+                'gross_revenue' => $revenue + $discountAmount,
+                'net_revenue' => $revenue,
+            ];
+
+            $cursor->addDay();
+        }
+
+        $discountTotals = Transaksi::whereIn('cabang_id', $assignedCabangIds)
+            ->where('status', 'selesai')
+            ->whereBetween('created_at', [$periodStart, $periodEnd])
+            ->selectRaw('SUM(total) as net_revenue')
+            ->selectRaw('SUM(COALESCE(diskon, 0)) as discount_amount')
+            ->selectRaw('SUM(CASE WHEN COALESCE(diskon, 0) > 0 THEN 1 ELSE 0 END) as discounted_transactions')
+            ->selectRaw('SUM(CASE WHEN COALESCE(diskon, 0) <= 0 THEN 1 ELSE 0 END) as non_discounted_transactions')
+            ->first();
+
+        $netRevenue = (float) ($discountTotals->net_revenue ?? 0);
+        $discountAmount = (float) ($discountTotals->discount_amount ?? 0);
+        $grossRevenue = $netRevenue + $discountAmount;
+        $discountSharePercent = $grossRevenue > 0 ? round(($discountAmount / $grossRevenue) * 100, 2) : 0.0;
+
+        $discountMetrics = [
+            'tanggal_mulai' => $startDate->format('Y-m-d'),
+            'tanggal_selesai' => $endDate->format('Y-m-d'),
+            'gross_revenue' => $grossRevenue,
+            'net_revenue' => $netRevenue,
+            'discount_amount' => $discountAmount,
+            'discount_share_percent' => $discountSharePercent,
+            'discounted_transactions' => (int) ($discountTotals->discounted_transactions ?? 0),
+            'non_discounted_transactions' => (int) ($discountTotals->non_discounted_transactions ?? 0),
+        ];
+
+        $discountByCategory = DB::table('item_transaksi')
+            ->join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
+            ->join('produk', 'item_transaksi.produk_id', '=', 'produk.id')
+            ->join('kategori_produk', 'produk.kategori_id', '=', 'kategori_produk.id')
+            ->whereIn('transaksi.cabang_id', $assignedCabangIds)
+            ->where('transaksi.status', 'selesai')
+            ->whereBetween('transaksi.created_at', [$periodStart, $periodEnd])
+            ->select('kategori_produk.nama as category')
+            ->selectRaw('SUM((item_transaksi.subtotal / NULLIF(transaksi.subtotal, 0)) * COALESCE(transaksi.diskon, 0)) as discount_amount')
+            ->groupBy('kategori_produk.id', 'kategori_produk.nama')
+            ->orderByDesc('discount_amount')
+            ->limit(10)
+            ->get();
+
+        $discountByCustomerType = DB::table('transaksi')
+            ->whereIn('cabang_id', $assignedCabangIds)
+            ->where('status', 'selesai')
+            ->whereBetween('created_at', [$periodStart, $periodEnd])
+            ->selectRaw("CASE WHEN nama_pelanggan IS NULL OR nama_pelanggan = '' THEN 'Tanpa Nama' ELSE 'Dengan Nama' END as customer_type")
+            ->selectRaw('SUM(COALESCE(diskon, 0)) as discount_amount')
+            ->selectRaw('COUNT(*) as transaction_count')
+            ->groupBy('customer_type')
+            ->orderByDesc('discount_amount')
+            ->get();
+
         return Inertia::render('dashboard/EnhancedSupervisor', [
             'currentShifts' => $currentShifts,
             'staffStatus' => $staffStatus,
@@ -402,6 +634,15 @@ class EnhancedDashboardController extends Controller
             'recentTransactions' => $recentTransactions,
             'operationalMetrics' => $operationalMetrics,
             'performanceAlerts' => $performanceAlerts,
+            'filters' => [
+                'range' => $range,
+                'tanggal_mulai' => $startDate->format('Y-m-d'),
+                'tanggal_selesai' => $endDate->format('Y-m-d'),
+            ],
+            'discountMetrics' => $discountMetrics,
+            'discountComparisonDaily' => $discountComparisonDaily,
+            'discountByCategory' => $discountByCategory,
+            'discountByCustomerType' => $discountByCustomerType,
         ]);
     }
 
@@ -593,6 +834,22 @@ class EnhancedDashboardController extends Controller
                     'today_revenue' => (float) Transaksi::whereIn('cabang_id', $assignedCabangIds)->where('status', 'selesai')->whereDate('created_at', $today)->sum('total'),
                     'active_transactions' => (int) Transaksi::whereIn('cabang_id', $assignedCabangIds)->where('status', 'pending')->count(),
                 ];
+            case 'discount':
+                $row = Transaksi::whereIn('cabang_id', $assignedCabangIds)
+                    ->where('status', 'selesai')
+                    ->whereDate('created_at', $today)
+                    ->selectRaw('SUM(total) as net_revenue')
+                    ->selectRaw('SUM(COALESCE(diskon, 0)) as discount_amount')
+                    ->selectRaw('SUM(CASE WHEN COALESCE(diskon, 0) > 0 THEN 1 ELSE 0 END) as discounted_transactions')
+                    ->first();
+                $net = (float) ($row->net_revenue ?? 0);
+                $discount = (float) ($row->discount_amount ?? 0);
+                return [
+                    'today_net_revenue' => $net,
+                    'today_gross_revenue' => $net + $discount,
+                    'today_discount_amount' => $discount,
+                    'today_discounted_transactions' => (int) ($row->discounted_transactions ?? 0),
+                ];
             case 'operations':
                 return [
                     'active_shifts' => (int) Shift::whereIn('cabang_id', $assignedCabangIds)->where('status', 'buka')->count(),
@@ -619,6 +876,22 @@ class EnhancedDashboardController extends Controller
                 return [
                     'active_shifts' => Shift::whereIn('cabang_id', $assignedCabangIds)->where('status', 'buka')->with(['cabang', 'user'])->get(),
                     'recent_transactions' => Transaksi::whereIn('cabang_id', $assignedCabangIds)->with(['cabang', 'user'])->orderByDesc('created_at')->limit(5)->get(),
+                ];
+            case 'discount':
+                $row = Transaksi::whereIn('cabang_id', $assignedCabangIds)
+                    ->where('status', 'selesai')
+                    ->whereDate('created_at', $today)
+                    ->selectRaw('SUM(total) as net_revenue')
+                    ->selectRaw('SUM(COALESCE(diskon, 0)) as discount_amount')
+                    ->selectRaw('SUM(CASE WHEN COALESCE(diskon, 0) > 0 THEN 1 ELSE 0 END) as discounted_transactions')
+                    ->first();
+                $net = (float) ($row->net_revenue ?? 0);
+                $discount = (float) ($row->discount_amount ?? 0);
+                return [
+                    'today_net_revenue' => $net,
+                    'today_gross_revenue' => $net + $discount,
+                    'today_discount_amount' => $discount,
+                    'today_discounted_transactions' => (int) ($row->discounted_transactions ?? 0),
                 ];
             case 'staff':
                 return [
