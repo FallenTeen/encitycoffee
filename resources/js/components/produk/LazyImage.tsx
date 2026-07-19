@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils';
 import { useEffect, useRef, useState } from 'react';
+import { useStorage } from '@/hooks/useStorage';
 
 interface LazyImageProps {
     src?: string | null;
@@ -18,6 +19,7 @@ export default function LazyImage({
     const [isLoaded, setIsLoaded] = useState(false);
     const [hasError, setHasError] = useState(false);
     const containerRef = useRef<HTMLDivElement | null>(null);
+    const { resolveImageUrl } = useStorage();
 
     useEffect(() => {
         if (!src) return;
@@ -55,7 +57,16 @@ export default function LazyImage({
         };
     }, [src]);
 
-    if (!src || hasError) {
+    // Resolve URL
+    const resolvedSrc = (() => {
+        if (!src) return null;
+        if (src.startsWith('http://') || src.startsWith('https://')) {
+            return src;
+        }
+        return resolveImageUrl(src);
+    })();
+
+    if (!resolvedSrc || hasError) {
         return (
             <div
                 ref={containerRef}
@@ -88,7 +99,7 @@ export default function LazyImage({
             )}
             {isVisible && (
                 <img
-                    src={src}
+                    src={resolvedSrc}
                     alt={alt}
                     onLoad={() => setIsLoaded(true)}
                     onError={() => setHasError(true)}

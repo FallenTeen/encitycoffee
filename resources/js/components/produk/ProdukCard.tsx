@@ -5,6 +5,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Eye, Pencil, Trash2 } from 'lucide-react';
 import { router } from '@inertiajs/react';
 import Swal from 'sweetalert2';
+import SafeImage from '@/components/SafeImage';
 
 interface ProdukItem {
     id: number;
@@ -86,17 +87,13 @@ export default function ProdukCard({ produk, canManageProduk = false, formatHarg
                 <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-2">
-                            {produk.image_path ? (
-                                <img
-                                    src={`/storage/${produk.image_path}`}
-                                    alt={produk.nama}
-                                    className="h-12 w-12 rounded-lg object-cover flex-shrink-0"
-                                />
-                            ) : (
-                                <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted text-xs text-muted-foreground flex-shrink-0">
-                                    No img
-                                </div>
-                            )}
+                            <SafeImage
+                                src={produk.image_path ? `/storage/${produk.image_path}` : null}
+                                alt={produk.nama}
+                                className="h-12 w-12 rounded-lg object-cover flex-shrink-0"
+                                fallbackClassName="h-12 w-12 rounded-lg flex items-center justify-center"
+                                showIcon={true}
+                            />
                             <div className="min-w-0">
                                 <h3 className="font-semibold text-sm truncate">
                                     {produk.varian

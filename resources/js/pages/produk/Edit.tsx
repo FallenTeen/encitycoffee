@@ -16,6 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Head, Link, useForm } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Flame, Loader2, Snowflake, Sparkles, Trash2 } from 'lucide-react';
+import SafeImage from '@/components/SafeImage';
 
 interface Kategori {
   id: number;
@@ -618,10 +619,12 @@ export default function ProdukEdit({
                 <CardContent className="space-y-3">
                   {currentImageUrl && !data.hapus_gambar && !previewImage && (
                     <div className="space-y-2">
-                      <img
+                      <SafeImage
                         src={currentImageUrl}
                         alt="Gambar produk"
                         className="h-40 w-full rounded-md border object-cover"
+                        fallbackClassName="h-40 w-full rounded-md border"
+                        showIcon={false}
                       />
                       <div className="flex items-center gap-2">
                         <Checkbox

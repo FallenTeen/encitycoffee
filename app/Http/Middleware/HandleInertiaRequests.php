@@ -78,6 +78,14 @@ class HandleInertiaRequests extends Middleware
                 'user' => $userData,
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            // Storage configuration for images - used by SafeImage and other image components
+            'storage' => [
+                // Base URL for storage files (e.g., '/storage' or custom CDN URL)
+                // Can be configured via STORAGE_BASE_URL in .env
+                'base_url' => env('STORAGE_BASE_URL', '/storage'),
+                // Disk name for public storage
+                'public_disk' => 'public',
+            ],
         ];
     }
 }

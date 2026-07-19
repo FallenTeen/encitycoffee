@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Head } from '@inertiajs/react';
+import SafeImage from '@/components/SafeImage';
 
 export default function Home() {
     const titleRef = useRef<HTMLDivElement>(null);
@@ -389,10 +390,10 @@ export default function Home() {
                             <div className="ec-ring ec-ring--1" />
                             <div className="ec-logo-flip">
                                 <div className="ec-logo-face ec-logo-face--front">
-                                    <img src="/logo_encity_roastery_gunungan_1.png" alt="Encity Roastery" />
+                                    <SafeImage src="/logo_encity_roastery_gunungan_1.png" alt="Encity Roastery" className="h-full w-auto" showIcon={false} />
                                 </div>
                                 <div className="ec-logo-face ec-logo-face--back">
-                                    <img src="/logo_encity_roastery_gunungan_1.png" alt="Encity Roastery" />
+                                    <SafeImage src="/logo_encity_roastery_gunungan_1.png" alt="Encity Roastery" className="h-full w-auto" showIcon={false} />
                                 </div>
                             </div>
                         </div>
@@ -409,10 +410,10 @@ export default function Home() {
                             <div className="ec-ring ec-ring--1" />
                             <div className="ec-logo-flip">
                                 <div className="ec-logo-face ec-logo-face--front">
-                                    <img src="/liliuba_hitam.png" alt="Li Liu Ba Coffee" />
+                                    <SafeImage src="/liliuba_hitam.png" alt="Li Liu Ba Coffee" className="h-full w-auto" showIcon={false} />
                                 </div>
                                 <div className="ec-logo-face ec-logo-face--back">
-                                    <img src="/liliuba_hitam.png" alt="Li Liu Ba Coffee" />
+                                    <SafeImage src="/liliuba_hitam.png" alt="Li Liu Ba Coffee" className="h-full w-auto" showIcon={false} />
                                 </div>
                             </div>
                         </div>

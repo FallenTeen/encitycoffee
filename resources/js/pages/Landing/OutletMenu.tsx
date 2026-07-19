@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Head, Link } from '@inertiajs/react';
+import SafeImage from '@/components/SafeImage';
 
 interface Category {
     id: number;
@@ -657,11 +658,12 @@ export default function OutletMenu({ cabang, categories, selectedCategory, kateg
                                                 {/* Image — only if available */}
                                                 {product.image_url && (
                                                     <div className="ec-product-media">
-                                                        <img
+                                                        <SafeImage
                                                             src={product.image_url}
                                                             alt={product.nama}
                                                             className="ec-product-img"
-                                                            loading="lazy"
+                                                            fallbackClassName="ec-product-img"
+                                                            showIcon={false}
                                                         />
                                                         {/* Zoom overlay */}
                                                         <div

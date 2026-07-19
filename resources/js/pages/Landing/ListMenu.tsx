@@ -1,5 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Head, Link } from '@inertiajs/react';
+import { cn } from '@/lib/utils';
+import SafeImage from '@/components/SafeImage';
 
 interface Cabang {
     id: number;
@@ -78,472 +80,60 @@ export default function ListMenu({ cabangList, selectedCabang, namaCabang, produ
 
     return (
         <>
-            <Head title={selectedCabang ? `Menu — ${selectedCabang.nama}` : 'Menu — Encity Company'} />
-            <style>{`
-                * {
-                    box-sizing: border-box;
-                }
+            <Head title={selectedCabang ? `Menu - ${selectedCabang.nama}` : 'Menu - Encity Coffee'} />
 
-                .kiosk {
-                    min-height: 100vh;
-                    background: #FAFAF9;
-                    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-                    color: #111827;
-                    padding: 32px;
-                }
+            {/*
+                Layout notes:
+                - On md+ (kiosk / cashier display: desktop or tablet) the whole page is
+                  pinned to the viewport height and never scrolls. The left "now viewing"
+                  panel and the right menu panel share that exact height, so the left
+                  panel physically cannot move. Only the product list inside the right
+                  panel scrolls; the "menu" header + category tabs stay put above it.
+                - Below md (a customer opening the link on their phone) everything reverts
+                  to a normal, naturally scrolling single column.
+            */}
+            <div className="flex min-h-screen flex-col bg-neutral-50 font-sans text-gray-900 md:h-screen md:overflow-hidden">
+                {/* Topbar — thin and sticky so it stays disposable/out of the way while scrolling */}
+                <header className="sticky top-0 z-30 flex-none border-b border-gray-200 bg-white/95 px-3 py-1.5 backdrop-blur supports-[backdrop-filter]:bg-white/80 sm:px-4">
+                    <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-baseline gap-1.5 truncate">
+                            <span className="text-sm font-extrabold tracking-tight text-gray-900 sm:text-base">
+                                Encity Coffee
+                            </span>
+                            {selectedCabang ? (
+                                <span className="truncate text-xs text-gray-500 sm:text-sm">· {selectedCabang.nama}</span>
+                            ) : null}
+                        </div>
 
-                .kiosk__topbar {
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    gap: 16px;
-                    max-width: 1440px;
-                    margin: 0 auto 24px;
-                    flex-wrap: wrap;
-                }
-
-                .kiosk__brand {
-                    display: flex;
-                    align-items: baseline;
-                    gap: 10px;
-                }
-
-                .kiosk__brand-name {
-                    font-size: 1.15rem;
-                    font-weight: 800;
-                    letter-spacing: -0.01em;
-                    color: #111827;
-                }
-
-                .kiosk__brand-outlet {
-                    font-size: 0.85rem;
-                    color: #6B7280;
-                }
-
-                .kiosk__cabang-select {
-                    border-radius: 12px;
-                    border: 1px solid #E5E7EB;
-                    background: #ffffff;
-                    padding: 0.55rem 0.85rem;
-                    font-size: 0.85rem;
-                    color: #374151;
-                    font-family: inherit;
-                }
-
-                .kiosk__tabs {
-                    display: flex;
-                    gap: 6px;
-                    overflow-x: auto;
-                    max-width: 1440px;
-                    margin: 0 auto 24px;
-                    padding-bottom: 4px;
-                    scrollbar-width: none;
-                }
-
-                .kiosk__tabs::-webkit-scrollbar {
-                    display: none;
-                }
-
-                .kiosk__tab {
-                    flex: 0 0 auto;
-                    padding: 0.55rem 1.1rem;
-                    border-radius: 999px;
-                    border: 1px solid #E5E7EB;
-                    background: #ffffff;
-                    color: #4B5563;
-                    font-size: 0.85rem;
-                    font-weight: 600;
-                    letter-spacing: 0.01em;
-                    text-transform: lowercase;
-                    cursor: pointer;
-                    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-                }
-
-                .kiosk__tab:hover {
-                    border-color: #BFDBFE;
-                }
-
-                .kiosk__tab--active {
-                    background: #111827;
-                    border-color: #111827;
-                    color: #ffffff;
-                }
-
-                .kiosk__layout {
-                    display: grid;
-                    grid-template-columns: 1fr;
-                    gap: 24px;
-                    max-width: 1440px;
-                    margin: 0 auto;
-                }
-
-                @media (min-width: 960px) {
-                    .kiosk__layout {
-                        grid-template-columns: 40fr 60fr;
-                        align-items: start;
-                    }
-                }
-
-                /* -------------------- LEFT: promo hero -------------------- */
-                .kiosk__hero {
-                    position: sticky;
-                    top: 32px;
-                    border-radius: 24px;
-                    background: linear-gradient(160deg, #E3F1FC 0%, #CFE8F8 55%, #BFDFF5 100%);
-                    border: 1px solid #E5E7EB;
-                    padding: 32px 28px;
-                    min-height: 520px;
-                    display: flex;
-                    flex-direction: column;
-                    justify-content: space-between;
-                    overflow: hidden;
-                }
-
-                .kiosk__hero-eyebrow {
-                    display: inline-flex;
-                    align-self: flex-start;
-                    background: rgba(255, 255, 255, 0.7);
-                    border: 1px solid rgba(255, 255, 255, 0.9);
-                    color: #1E3A5F;
-                    font-size: 0.7rem;
-                    font-weight: 700;
-                    letter-spacing: 0.08em;
-                    text-transform: uppercase;
-                    padding: 6px 12px;
-                    border-radius: 999px;
-                }
-
-                .kiosk__hero-title {
-                    font-size: 2rem;
-                    line-height: 1.15;
-                    font-weight: 800;
-                    color: #0F2B47;
-                    margin: 18px 0 8px;
-                    letter-spacing: -0.02em;
-                }
-
-                .kiosk__hero-copy {
-                    color: #33526C;
-                    line-height: 1.6;
-                    font-size: 0.95rem;
-                    max-width: 34ch;
-                }
-
-                .kiosk__hero-art {
-                    position: relative;
-                    flex: 1;
-                    margin: 24px -4px 0;
-                    display: flex;
-                    align-items: flex-end;
-                    justify-content: center;
-                    gap: 14px;
-                }
-
-                .kiosk__hero-bottle {
-                    background: rgba(255, 255, 255, 0.55);
-                    border: 1px solid rgba(255, 255, 255, 0.9);
-                    border-radius: 16px 16px 10px 10px;
-                    box-shadow: 0 18px 30px rgba(15, 43, 71, 0.12);
-                }
-
-                .kiosk__hero-bottle--tall { width: 64px; height: 168px; }
-                .kiosk__hero-bottle--mid { width: 64px; height: 140px; }
-                .kiosk__hero-bottle--short { width: 64px; height: 118px; }
-
-                .kiosk__hero-pack {
-                    position: absolute;
-                    right: 6px;
-                    bottom: 4px;
-                    width: 128px;
-                    height: 96px;
-                    background: #ffffff;
-                    border: 1px solid #E5E7EB;
-                    border-radius: 14px;
-                    box-shadow: 0 20px 34px rgba(15, 43, 71, 0.16);
-                }
-
-                .kiosk__hero-foot {
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    margin-top: 24px;
-                    color: #1E3A5F;
-                    font-size: 0.8rem;
-                    font-weight: 600;
-                }
-
-                /* -------------------- LEFT: product detail (on select) -------------------- */
-                .kiosk__hero--detail {
-                    justify-content: flex-start;
-                    padding: 24px;
-                }
-
-                .kiosk__detail-close {
-                    align-self: flex-end;
-                    width: 32px;
-                    height: 32px;
-                    border-radius: 50%;
-                    border: 1px solid rgba(255, 255, 255, 0.9);
-                    background: rgba(255, 255, 255, 0.7);
-                    color: #1E3A5F;
-                    font-size: 1.1rem;
-                    line-height: 1;
-                    cursor: pointer;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                }
-
-                .kiosk__detail-close:hover {
-                    background: #ffffff;
-                }
-
-                .kiosk__detail-image {
-                    width: 100%;
-                    height: 280px;
-                    object-fit: cover;
-                    border-radius: 18px;
-                    border: 1px solid rgba(255, 255, 255, 0.9);
-                    box-shadow: 0 18px 30px rgba(15, 43, 71, 0.14);
-                    margin-top: 16px;
-                }
-
-                .kiosk__detail-image--placeholder {
-                    background: linear-gradient(135deg, #F1F5F9, #DCEEFA);
-                }
-
-                .kiosk__detail-body {
-                    margin-top: 20px;
-                }
-
-                .kiosk__detail-title {
-                    font-size: 1.6rem;
-                    font-weight: 800;
-                    color: #0F2B47;
-                    letter-spacing: -0.01em;
-                    margin: 14px 0 6px;
-                    line-height: 1.2;
-                }
-
-                .kiosk__detail-price {
-                    font-size: 1.15rem;
-                    font-weight: 700;
-                    color: #1E3A5F;
-                    margin-bottom: 14px;
-                }
-
-                .kiosk__detail-desc {
-                    color: #33526C;
-                    line-height: 1.7;
-                    font-size: 0.92rem;
-                }
-
-                /* -------------------- RIGHT: menu list -------------------- */
-                .kiosk__menu {
-                    background: #ffffff;
-                    border: 1px solid #E5E7EB;
-                    border-radius: 24px;
-                    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
-                    padding: 24px;
-                }
-
-                .kiosk__menu-header {
-                    display: flex;
-                    align-items: baseline;
-                    justify-content: space-between;
-                    margin-bottom: 16px;
-                }
-
-                .kiosk__menu-title {
-                    font-size: 1.05rem;
-                    font-weight: 700;
-                    color: #111827;
-                }
-
-                .kiosk__menu-count {
-                    font-size: 0.8rem;
-                    color: #9CA3AF;
-                }
-
-                .kiosk__scroll {
-                    max-height: 640px;
-                    overflow-y: auto;
-                    display: flex;
-                    flex-direction: column;
-                    gap: 12px;
-                    padding-right: 4px;
-                }
-
-                .kiosk__row {
-                    display: flex;
-                    align-items: center;
-                    gap: 16px;
-                    width: 100%;
-                    background: #ffffff;
-                    border: 1px solid #E5E7EB;
-                    border-radius: 16px;
-                    padding: 12px 16px;
-                    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
-                    transition: box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease;
-                    font-family: inherit;
-                    text-align: left;
-                    cursor: pointer;
-                }
-
-                .kiosk__row:hover {
-                    border-color: #BFDBFE;
-                    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
-                }
-
-                .kiosk__row:focus-visible {
-                    outline: 2px solid #60A5FA;
-                    outline-offset: 2px;
-                }
-
-                .kiosk__row--active {
-                    border-color: #1E3A5F;
-                    background: #F0F7FF;
-                    box-shadow: 0 8px 18px rgba(30, 58, 95, 0.1);
-                }
-
-                .kiosk__thumb {
-                    flex: 0 0 auto;
-                    width: 56px;
-                    height: 56px;
-                    border-radius: 16px;
-                    object-fit: cover;
-                    background: linear-gradient(135deg, #F1F5F9, #E2E8F0);
-                    border: 1px solid #E5E7EB;
-                }
-
-                .kiosk__row-body {
-                    flex: 1;
-                    min-width: 0;
-                }
-
-                .kiosk__row-title {
-                    font-weight: 700;
-                    font-size: 0.95rem;
-                    color: #111827;
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                }
-
-                .kiosk__row-desc {
-                    font-size: 0.8rem;
-                    color: #9CA3AF;
-                    margin-top: 2px;
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                }
-
-                .kiosk__row-price {
-                    flex: 0 0 auto;
-                    font-size: 0.9rem;
-                    font-weight: 700;
-                    color: #111827;
-                }
-
-                .kiosk__empty {
-                    padding: 48px 24px;
-                    text-align: center;
-                    color: #9CA3AF;
-                    background: #F8FAFC;
-                    border: 1px dashed #E5E7EB;
-                    border-radius: 16px;
-                }
-
-                .kiosk__no-cabang {
-                    max-width: 1440px;
-                    margin: 0 auto;
-                    background: #ffffff;
-                    border: 1px solid #E5E7EB;
-                    border-radius: 24px;
-                    padding: 40px;
-                    color: #4B5563;
-                    line-height: 1.8;
-                }
-
-                .kiosk__branch-list {
-                    max-width: 1440px;
-                    margin: 32px auto 0;
-                    display: flex;
-                    flex-wrap: wrap;
-                    gap: 10px;
-                }
-
-                .kiosk__branch-chip {
-                    text-decoration: none;
-                    font-size: 0.8rem;
-                    font-weight: 600;
-                    color: #374151;
-                    background: #ffffff;
-                    border: 1px solid #E5E7EB;
-                    border-radius: 999px;
-                    padding: 6px 14px;
-                }
-
-                .kiosk__branch-chip:hover {
-                    border-color: #BFDBFE;
-                    color: #1E3A5F;
-                }
-            `}</style>
-
-            <div className="kiosk">
-                <div className="kiosk__topbar">
-                    <div className="kiosk__brand">
-                        <span className="kiosk__brand-name">encity coffee</span>
-                        {selectedCabang ? <span className="kiosk__brand-outlet">· {selectedCabang.nama}</span> : null}
-                    </div>
-
-                    <select
-                        className="kiosk__cabang-select"
-                        value={namaCabang ?? ''}
-                        onChange={(event) => {
-                            const selectedNama = event.target.value;
-                            if (!selectedNama) return;
-                            window.location.href = `/menupercabang/${encodeURIComponent(selectedNama)}`;
-                        }}
-                    >
-                        <option value="">pilih cabang</option>
-                        {cabangList.map((cabang) => (
-                            <option key={cabang.id} value={cabang.nama}>
-                                {cabang.nama}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-
-                {hasSelectedCabang ? (
-                    <>
-                        <nav className="kiosk__tabs">
-                            <button
-                                type="button"
-                                className={`kiosk__tab${activeTab === 'all' ? ' kiosk__tab--active' : ''}`}
-                                onClick={() => setActiveTab('all')}
-                            >
-                                semua
-                            </button>
-                            {categoryTabs.map((tab) => (
-                                <button
-                                    type="button"
-                                    key={tab.slug}
-                                    className={`kiosk__tab${activeTab === tab.slug ? ' kiosk__tab--active' : ''}`}
-                                    onClick={() => setActiveTab(tab.slug)}
-                                >
-                                    {tab.nama.toLowerCase()}
-                                </button>
+                        <select
+                            className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 font-sans text-xs text-gray-700 sm:px-3 sm:py-1.5 sm:text-sm"
+                            value={namaCabang ?? ''}
+                            onChange={(event) => {
+                                const selectedNama = event.target.value;
+                                if (!selectedNama) return;
+                                window.location.href = `/menupercabang/${encodeURIComponent(selectedNama)}`;
+                            }}
+                        >
+                            <option value="">pilih cabang</option>
+                            {cabangList.map((cabang) => (
+                                <option key={cabang.id} value={cabang.nama}>
+                                    {cabang.nama}
+                                </option>
                             ))}
-                        </nav>
+                        </select>
+                    </div>
+                </header>
 
-                        <div className="kiosk__layout">
+                {/* Main content */}
+                <div className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col gap-4 p-2 sm:p-3 md:min-h-0 md:grid md:grid-cols-[2fr_3fr] md:gap-5 md:overflow-hidden md:p-4">
+                    {hasSelectedCabang ? (
+                        <>
+                            {/* Left panel — fixed to the row height on desktop/tablet, never shifts */}
                             {selectedProduct ? (
-                                <aside className="kiosk__hero kiosk__hero--detail">
+                                <aside className="sticky top-11 z-10 flex min-h-[320px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-br from-sky-100 via-sky-200 to-sky-300 p-4 shadow-lg sm:top-12 sm:p-5 md:static md:top-auto md:z-auto md:h-full md:min-h-0 md:shadow-none">
                                     <button
                                         type="button"
-                                        className="kiosk__detail-close"
+                                        className="flex h-7 w-7 self-end items-center justify-center rounded-full border border-white/90 bg-white/70 text-base leading-none text-sky-900 hover:bg-white"
                                         onClick={() => setSelectedProduct(null)}
                                         aria-label="Tutup detail produk"
                                     >
@@ -551,113 +141,165 @@ export default function ListMenu({ cabangList, selectedCabang, namaCabang, produ
                                     </button>
 
                                     {selectedProduct.image_url ? (
-                                        <img
-                                            className="kiosk__detail-image"
+                                        <SafeImage
                                             src={selectedProduct.image_url}
                                             alt={selectedProduct.nama}
+                                            className="mt-3 h-40 w-full flex-none rounded-xl border border-white/90 object-cover shadow-lg sm:h-52 md:h-1/2 md:flex-1"
+                                            fallbackClassName="mt-3 h-40 w-full flex-none rounded-xl border border-white/90 bg-gradient-to-br from-slate-100 to-sky-100 shadow-lg sm:h-52 md:h-1/2 md:flex-1"
+                                            showIcon={false}
                                         />
                                     ) : (
-                                        <div className="kiosk__detail-image kiosk__detail-image--placeholder" aria-hidden="true" />
+                                        <div
+                                            className="mt-3 h-40 w-full flex-none rounded-xl border border-white/90 bg-gradient-to-br from-slate-100 to-sky-100 shadow-lg sm:h-52 md:h-1/2 md:flex-1"
+                                            aria-hidden="true"
+                                        />
                                     )}
 
-                                    <div className="kiosk__detail-body">
+                                    <div className="mt-4 min-h-0 overflow-y-auto">
                                         {selectedProduct.kategori ? (
-                                            <span className="kiosk__hero-eyebrow">{selectedProduct.kategori.nama.toLowerCase()}</span>
+                                            <span className="inline-flex self-start rounded-full border border-white/90 bg-white/70 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-sky-900">
+                                                {selectedProduct.kategori.nama.toLowerCase()}
+                                            </span>
                                         ) : null}
-                                        <h1 className="kiosk__detail-title">{selectedProduct.nama}</h1>
-                                        <div className="kiosk__detail-price">{formatRupiah(selectedProduct.harga_jual)}</div>
-                                        <p className="kiosk__detail-desc">
+                                        <h1 className="mb-1 mt-2.5 text-lg font-extrabold leading-tight tracking-tight text-sky-950 sm:text-xl">
+                                            {selectedProduct.nama}
+                                        </h1>
+                                        <div className="mb-2.5 text-base font-bold text-sky-900">
+                                            {formatRupiah(selectedProduct.harga_jual)}
+                                        </div>
+                                        <p className="text-sm leading-6 text-sky-800">
                                             {selectedProduct.deskripsi || 'Deskripsi produk belum tersedia.'}
                                         </p>
                                     </div>
                                 </aside>
                             ) : (
-                                <aside className="kiosk__hero">
-                                    <span className="kiosk__hero-eyebrow">di cabang ini</span>
+                                <aside className="sticky top-11 z-10 flex min-h-[320px] flex-col justify-between overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-br from-sky-100 via-sky-200 to-sky-300 p-5 shadow-lg sm:top-12 sm:p-6 md:static md:top-auto md:z-auto md:h-full md:min-h-0 md:shadow-none">
+                                    <span className="inline-flex self-start rounded-full border border-white/90 bg-white/70 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-sky-900">
+                                        {selectedCabang?.nama || 'Encity Coffee'}
+                                    </span>
                                     <div>
-                                        <h1 className="kiosk__hero-title">
+                                        <h1 className="mb-1.5 mt-3 text-xl font-extrabold leading-tight tracking-tight text-sky-950 sm:text-2xl md:text-[1.75rem]">
                                             Kopi segar,
                                             <br />
                                             disajikan tiap hari
                                         </h1>
-                                        <p className="kiosk__hero-copy">
-                                            Dari biji pilihan sampai minuman botolan siap bawa pulang — semua ada di
-                                            satu menu. Pilih produk di sebelah kanan untuk melihat detailnya di sini.
+                                        <p className="max-w-[34ch] text-sm leading-relaxed text-sky-800">
+                                            Best Coffee in town
                                         </p>
                                     </div>
 
-                                    <div className="kiosk__hero-art">
-                                        <div className="kiosk__hero-bottle kiosk__hero-bottle--short" />
-                                        <div className="kiosk__hero-bottle kiosk__hero-bottle--tall" />
-                                        <div className="kiosk__hero-bottle kiosk__hero-bottle--mid" />
-                                        <div className="kiosk__hero-pack" />
+                                    <div className="relative -mx-1 mt-4 flex flex-1 items-end justify-center gap-2.5">
+                                        <div className="h-20 w-12 rounded-t-xl rounded-b-md border border-white/90 bg-white/55 shadow-lg sm:h-24 sm:w-14" />
+                                        <div className="h-32 w-12 rounded-t-xl rounded-b-md border border-white/90 bg-white/55 shadow-lg sm:h-36 sm:w-14" />
+                                        <div className="h-26 w-12 rounded-t-xl rounded-b-md border border-white/90 bg-white/55 shadow-lg sm:h-28 sm:w-14" />
+                                        <div className="absolute bottom-1 right-1 h-16 w-24 rounded-xl border border-gray-200 bg-white shadow-lg" />
                                     </div>
 
-                                    <div className="kiosk__hero-foot">
-                                        <span>{selectedCabang?.nama}</span>
-                                        <span>{filteredProducts.length} produk</span>
+                                    <div className="mt-4 flex items-center justify-between text-sm font-semibold text-sky-900">
+                                        <span className="truncate">{selectedCabang?.nama}</span>
+                                        <span className="flex-none">{filteredProducts.length} produk</span>
                                     </div>
                                 </aside>
                             )}
 
-                            <section className="kiosk__menu">
-                                <div className="kiosk__menu-header">
-                                    <span className="kiosk__menu-title">menu</span>
-                                    <span className="kiosk__menu-count">{filteredProducts.length} item</span>
+                            {/* Right panel — header (menu label + category tabs + count) stays fixed;
+                                only the product list beneath it scrolls on desktop/tablet. */}
+                            <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5 md:h-full">
+                                <div className="mb-3 flex flex-none flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
+                                    <span className="text-sm font-bold text-gray-900 sm:text-base">menu</span>
+
+                                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                                        <nav className="flex max-w-full gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                            <button
+                                                type="button"
+                                                className={cn(
+                                                    'flex-none rounded-full border px-3 py-1.5 text-xs font-semibold tracking-wide lowercase transition-colors sm:px-3.5 sm:text-sm',
+                                                    activeTab === 'all'
+                                                        ? 'border-gray-900 bg-gray-900 text-white'
+                                                        : 'border-gray-200 bg-white text-gray-600 hover:border-sky-300',
+                                                )}
+                                                onClick={() => setActiveTab('all')}
+                                            >
+                                                semua
+                                            </button>
+                                            {categoryTabs.map((tab) => (
+                                                <button
+                                                    type="button"
+                                                    key={tab.slug}
+                                                    className={cn(
+                                                        'flex-none rounded-full border px-3 py-1.5 text-xs font-semibold tracking-wide lowercase transition-colors sm:px-3.5 sm:text-sm',
+                                                        activeTab === tab.slug
+                                                            ? 'border-gray-900 bg-gray-900 text-white'
+                                                            : 'border-gray-200 bg-white text-gray-600 hover:border-sky-300',
+                                                    )}
+                                                    onClick={() => setActiveTab(tab.slug)}
+                                                >
+                                                    {tab.nama.toLowerCase()}
+                                                </button>
+                                            ))}
+                                        </nav>
+                                        <span className="flex-none text-xs text-gray-400 sm:text-sm">
+                                            {filteredProducts.length} item
+                                        </span>
+                                    </div>
                                 </div>
 
                                 {filteredProducts.length > 0 ? (
-                                    <div className="kiosk__scroll">
+                                    <div className="flex flex-col gap-2.5 md:min-h-0 md:flex-1 md:overflow-y-auto md:pr-1">
                                         {filteredProducts.map((product) => (
                                             <button
                                                 type="button"
                                                 key={product.id}
-                                                className={`kiosk__row${selectedProduct?.id === product.id ? ' kiosk__row--active' : ''}`}
+                                                className={cn(
+                                                    'flex w-full cursor-pointer items-center gap-3 rounded-xl border bg-white px-3 py-2.5 text-left shadow-sm transition-all hover:border-sky-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 sm:gap-4 sm:px-4 sm:py-3',
+                                                    selectedProduct?.id === product.id
+                                                        ? 'border-sky-900 bg-sky-50 shadow-md'
+                                                        : 'border-gray-200',
+                                                )}
                                                 onClick={() => handleSelectProduct(product)}
                                             >
                                                 {product.image_url ? (
-                                                    <img
-                                                        className="kiosk__thumb"
+                                                    <SafeImage
                                                         src={product.image_url}
                                                         alt={product.nama}
+                                                        className="h-12 w-12 flex-none rounded-xl border border-gray-200 object-cover sm:h-14 sm:w-14"
+                                                        fallbackClassName="h-12 w-12 flex-none rounded-xl border border-gray-200 bg-gradient-to-br from-slate-100 to-slate-200 sm:h-14 sm:w-14"
+                                                        showIcon={false}
                                                     />
                                                 ) : (
-                                                    <div className="kiosk__thumb" aria-hidden="true" />
+                                                    <div
+                                                        className="h-12 w-12 flex-none rounded-xl border border-gray-200 bg-gradient-to-br from-slate-100 to-slate-200 sm:h-14 sm:w-14"
+                                                        aria-hidden="true"
+                                                    />
                                                 )}
-                                                <div className="kiosk__row-body">
-                                                    <div className="kiosk__row-title">{product.nama}</div>
-                                                    <div className="kiosk__row-desc">
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="truncate text-sm font-bold text-gray-900">
+                                                        {product.nama}
+                                                    </div>
+                                                    <div className="mt-0.5 truncate text-xs text-gray-400">
                                                         {product.deskripsi || 'Deskripsi produk belum tersedia.'}
                                                     </div>
                                                 </div>
-                                                <div className="kiosk__row-price">{formatRupiah(product.harga_jual)}</div>
+                                                <div className="flex-none text-sm font-bold text-gray-900">
+                                                    {formatRupiah(product.harga_jual)}
+                                                </div>
                                             </button>
                                         ))}
                                     </div>
                                 ) : (
-                                    <div className="kiosk__empty">Tidak ada produk pada kategori ini.</div>
+                                    <div className="rounded-xl border border-dashed border-gray-200 bg-slate-50 p-10 text-center text-sm text-gray-400">
+                                        Tidak ada produk pada kategori ini.
+                                    </div>
                                 )}
                             </section>
+                        </>
+                    ) : (
+                        <div className="col-span-2 rounded-2xl border border-gray-200 bg-white p-8 leading-7 text-gray-600">
+                            {namaCabang
+                                ? 'Cabang tidak ditemukan. Pastikan nama cabang sudah benar atau pilih dari dropdown di atas.'
+                                : 'Pilih cabang dari dropdown di atas untuk melihat menu.'}
                         </div>
-                    </>
-                ) : (
-                    <div className="kiosk__no-cabang">
-                        {namaCabang
-                            ? 'Cabang tidak ditemukan. Pastikan nama cabang sudah benar atau pilih dari dropdown di atas.'
-                            : 'Pilih cabang dari dropdown di atas untuk melihat menu.'}
-                    </div>
-                )}
-
-                <div className="kiosk__branch-list">
-                    {cabangList.map((cabang) => (
-                        <Link
-                            key={cabang.id}
-                            className="kiosk__branch-chip"
-                            href={`/menupercabang/${encodeURIComponent(cabang.nama)}`}
-                        >
-                            {cabang.nama}
-                        </Link>
-                    ))}
+                    )}
                 </div>
             </div>
         </>
