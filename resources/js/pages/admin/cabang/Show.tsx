@@ -77,8 +77,8 @@ export default function AdminCabangShow({ cabang, users, users_count, shift_coun
     return (
         <AppLayout
             breadcrumbs={[
-                { title: 'Cabang', href: admin.cabang.index() },
-                { title: cabang.nama, href: admin.cabang.show(cabang.id) },
+                { title: 'Cabang', href: admin.cabang.index().url },
+                { title: cabang.nama, href: admin.cabang.show(cabang.id).url },
             ]}
         >
             <Head title={`Admin - ${cabang.nama}`} />
@@ -103,7 +103,7 @@ export default function AdminCabangShow({ cabang, users, users_count, shift_coun
                     </div>
                     <div className="flex items-center gap-2">
                         <Button variant="outline" size="sm" asChild>
-                            <Link href={admin.cabang.edit(cabang.id)}>
+                            <Link href={admin.cabang.edit(cabang.id).url}>
                                 <Pencil className="mr-1.5 h-3.5 w-3.5" />
                                 Edit
                             </Link>

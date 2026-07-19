@@ -7,8 +7,10 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import AppLayout from '@/layouts/app-layout';
 import { Head, Link, router } from '@inertiajs/react';
-import { Trash2, AlertCircle, CalendarRange, Zap } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Trash2, AlertCircle, CalendarRange, Zap, Building2 } from 'lucide-react';
+import { useMemo, useState, useEffect } from 'react';
+import { useOutlet } from '@/contexts/OutletContext';
+import { cn } from '@/lib/utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,8 +47,10 @@ interface Props {
     per_page: number;
     tanggal_mulai?: string;
     tanggal_selesai?: string;
+    cabang_id?: number | null;
   };
   auth?: { user?: { role?: string } };
+  cabang_list?: Array<{ id: number; nama: string; kode?: string }>;
 }
 
 type QuickRange = 'hari_ini' | 'kemarin' | '7_hari' | '30_hari' | 'bulan_ini' | 'bulan_lalu' | 'kustom';
@@ -132,7 +136,13 @@ function formatDateTime(value?: string) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function TransaksiIndex({ transaksis, filter_aktif, auth }: Props) {
+export default function TransaksiIndex({ transaksis, filter_aktif, auth, cabang_list }: Props) {
+  // Get outlet context for persistent switching
+  const { selectedOutlet, outlets, switchOutlet } = useOutlet();
+  
+  // Combine outlets from context and props
+  const allOutlets = outlets.length > 0 ? outlets : (cabang_list || []);
+  
   const today = useMemo(todayISO, []);
 
   // Inisialisasi state dari props server
@@ -151,8 +161,16 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth }: Props
   const [minDiskon,     setMinDiskon]     = useState(filter_aktif?.min_diskon ?? null);
   const [maxDiskon,     setMaxDiskon]     = useState(filter_aktif?.max_diskon ?? null);
   const [perPage,       setPerPage]       = useState(String(filter_aktif?.per_page ?? 15));
+  const [cabangId,       setCabangId]      = useState<String>(filter_aktif?.cabang_id ? String(filter_aktif.cabang_id) : '');
   const [isLoading,     setIsLoading]     = useState(false);
   const [dateError,     setDateError]     = useState<string | null>(null);
+  
+  // Sync selected outlet with filter
+  useEffect(() => {
+      if (selectedOutlet?.id) {
+          setCabangId(String(selectedOutlet.id));
+      }
+  }, [selectedOutlet]);
 
   // Soft delete state
   const [deleteOpen,   setDeleteOpen]   = useState(false);
@@ -161,6 +179,18 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth }: Props
   const [isDeleting,   setIsDeleting]   = useState(false);
 
   const isItSupport = auth?.user?.role === 'it_support';
+  
+  // Handle outlet change
+  const handleCabangChange = (id: number | null) => {
+      if (id) {
+          setCabangId(String(id));
+          switchOutlet(id);
+      } else {
+          setCabangId('');
+      }
+      // Reload with new filter
+      doSubmit(resolvedDates, status, perPage, id ? String(id) : '');
+  };
 
   // Tanggal aktual yang akan dikirim ke server
   const resolvedDates = useMemo(() => {
@@ -194,22 +224,26 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth }: Props
    * Menerima `dates` override agar bisa langsung dipanggil dari handlePresetClick
    * tanpa menunggu state React update.
    */
-  function doSubmit(dates: { mulai: string; selesai: string }, currentStatus: string, currentPerPage: string) {
+  function doSubmit(dates: { mulai: string; selesai: string }, currentStatus: string, currentPerPage: string, currentCabangId?: string) {
     setIsLoading(true);
+    const params: Record<string, string | number> = {
+      per_page:        currentPerPage,
+      tanggal_mulai:   dates.mulai,
+      tanggal_selesai: dates.selesai,
+    };
+    
+    if (currentStatus) params.status = currentStatus;
+    if (diskonStatus) params.diskon_status = diskonStatus;
+    if (search.trim()) params.search = search.trim();
+    if (sortBy) params.sort_by = sortBy;
+    if (sortDir) params.sort_dir = sortDir;
+    if (minDiskon !== null && minDiskon !== undefined) params.min_diskon = minDiskon;
+    if (maxDiskon !== null && maxDiskon !== undefined) params.max_diskon = maxDiskon;
+    if (currentCabangId) params.cabang_id = currentCabangId;
+    
     router.get(
       '/transaksi',
-      {
-        ...(currentStatus ? { status: currentStatus } : {}),
-        ...(diskonStatus ? { diskon_status: diskonStatus } : {}),
-        ...(search.trim() ? { search: search.trim() } : {}),
-        ...(sortBy ? { sort_by: sortBy } : {}),
-        ...(sortDir ? { sort_dir: sortDir } : {}),
-        ...(minDiskon !== null && minDiskon !== undefined ? { min_diskon: minDiskon } : {}),
-        ...(maxDiskon !== null && maxDiskon !== undefined ? { max_diskon: maxDiskon } : {}),
-        per_page:        currentPerPage,
-        tanggal_mulai:   dates.mulai,
-        tanggal_selesai: dates.selesai,
-      },
+      params,
       {
         preserveScroll: true,
         preserveState:  true,
@@ -227,7 +261,7 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth }: Props
     if (preset !== 'kustom') {
       // Hitung tanggal secara langsung — jangan ambil dari state (belum terupdate)
       const dates = datesForPreset(preset);
-      doSubmit(dates, status, perPage);
+      doSubmit(dates, status, perPage, cabangId || undefined);
     }
     // Kalau 'kustom': user set tanggal dulu, lalu klik Terapkan
   }
@@ -237,7 +271,7 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth }: Props
     const err = validateCustomDates();
     if (err) { setDateError(err); return; }
     setDateError(null);
-    doSubmit(resolvedDates, status, perPage);
+    doSubmit(resolvedDates, status, perPage, cabangId || undefined);
   }
 
   function handleReset() {
@@ -253,8 +287,9 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth }: Props
     setMinDiskon(null);
     setMaxDiskon(null);
     setPerPage('15');
+    setCabangId('');
     setDateError(null);
-    doSubmit(dates, '', '15');
+    doSubmit(dates, '', '15', '');
   }
 
   function buildExportParams() {
@@ -316,16 +351,39 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth }: Props
             <h1 className="text-xl font-semibold">Daftar Transaksi</h1>
             <p className="text-sm text-muted-foreground">
               {transaksis?.total ?? 0} transaksi &bull; {periodLabel}
+              {cabangId && allOutlets.length > 0 && (
+                <span> &bull; {allOutlets.find(o => String(o.id) === cabangId)?.nama || 'Outlet'}</span>
+              )}
             </p>
           </div>
-          {isItSupport && (
-            <Link href="/admin/deleted-transactions">
-              <Button variant="outline" size="sm">
-                <Trash2 className="mr-2 h-4 w-4" />
-                Lihat Data Terhapus
-              </Button>
-            </Link>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Outlet Filter */}
+            {allOutlets.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-muted-foreground" />
+                <select
+                  value={cabangId}
+                  onChange={(e) => handleCabangChange(e.target.value ? parseInt(e.target.value, 10) : null)}
+                  className="h-9 px-3 pr-8 text-sm border rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Semua Outlet</option>
+                  {allOutlets.map((outlet) => (
+                    <option key={outlet.id} value={outlet.id.toString()}>
+                      {outlet.nama}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {isItSupport && (
+              <Link href="/admin/deleted-transactions">
+                <Button variant="outline" size="sm">
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Lihat Data Terhapus
+                </Button>
+              </Link>
+            )}
+          </div>
         </div>
 
         {/* Filter card */}

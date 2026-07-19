@@ -33,19 +33,28 @@ interface Props {
     users_count: number;
     shift_count: number;
     available_users: UserInfo[];
+    current_manager: UserInfo | null;
+    current_supervisor: UserInfo | null;
+    available_managers: UserInfo[];
+    available_supervisors: UserInfo[];
 }
 
 const ROLE_CONFIG: Record<string, { label: string; color: string }> = {
     manager:    { label: 'Manager',    color: 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400' },
     supervisor: { label: 'Supervisor', color: 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-400' },
     kasir:      { label: 'Kasir',      color: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' },
+    admin:      { label: 'Admin',      color: 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400' },
+    it_support: { label: 'IT Support', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' },
 };
 
-export default function AdminCabangEdit({ cabang, users, users_count, shift_count, available_users }: Props) {
+export default function AdminCabangEdit({ cabang, users, users_count, shift_count, available_users, current_manager, current_supervisor, available_managers, available_supervisors }: Props) {
     const [search, setSearch] = useState('');
     const [selectedUserId, setSelectedUserId] = useState<number | ''>('');
     const [addingUser, setAddingUser] = useState(false);
     const [removingId, setRemovingId] = useState<number | null>(null);
+    const [selectedManagerId, setSelectedManagerId] = useState<number | ''>('');
+    const [selectedSupervisorId, setSelectedSupervisorId] = useState<number | ''>('');
+    const [settingRole, setSettingRole] = useState<string | null>(null);
     const currentAktif = cabang.status ?? cabang.aktif ?? true;
 
     const { data, setData, put, processing, errors } = useForm({
@@ -64,11 +73,15 @@ export default function AdminCabangEdit({ cabang, users, users_count, shift_coun
         u.email.toLowerCase().includes(search.toLowerCase())
     );
 
+    const filteredAvailableManagers = available_managers.filter(u => !current_manager || u.id !== current_manager.id);
+    const filteredAvailableSupervisors = available_supervisors.filter(u => !current_supervisor || u.id !== current_supervisor.id);
+
     function handleAttach() {
         if (!selectedUserId) return;
+        console.log('attach url:', admin.cabang.users.attach(cabang.id).url); // add debug log
         setAddingUser(true);
         router.post(
-            `/admin/cabang/${cabang.id}/users`,
+            admin.cabang.users.attach(cabang.id).url,
             { user_id: selectedUserId },
             {
                 preserveScroll: true,
@@ -78,19 +91,64 @@ export default function AdminCabangEdit({ cabang, users, users_count, shift_coun
     }
 
     function handleDetach(userId: number) {
+        console.log('detach url:', admin.cabang.users.detach([cabang.id, userId]).url); // add debug log
         setRemovingId(userId);
-        router.delete(`/admin/cabang/${cabang.id}/users/${userId}`, {
+        router.delete(admin.cabang.users.detach([cabang.id, userId]).url, {
             preserveScroll: true,
             onFinish: () => setRemovingId(null),
+        });
+    }
+
+    function handleSetManager() {
+        if (!selectedManagerId) return;
+        setSettingRole('manager');
+        router.post(
+            admin.cabang.manager.set(cabang.id).url,
+            { user_id: selectedManagerId },
+            {
+                preserveScroll: true,
+                onFinish: () => { setSettingRole(null); setSelectedManagerId(''); },
+            }
+        );
+    }
+
+    function handleRemoveManager() {
+        if (!current_manager) return;
+        setSettingRole('manager');
+        router.delete(admin.cabang.manager.remove(cabang.id).url, {
+            preserveScroll: true,
+            onFinish: () => setSettingRole(null),
+        });
+    }
+
+    function handleSetSupervisor() {
+        if (!selectedSupervisorId) return;
+        setSettingRole('supervisor');
+        router.post(
+            admin.cabang.supervisor.set(cabang.id).url,
+            { user_id: selectedSupervisorId },
+            {
+                preserveScroll: true,
+                onFinish: () => { setSettingRole(null); setSelectedSupervisorId(''); },
+            }
+        );
+    }
+
+    function handleRemoveSupervisor() {
+        if (!current_supervisor) return;
+        setSettingRole('supervisor');
+        router.delete(admin.cabang.supervisor.remove(cabang.id).url, {
+            preserveScroll: true,
+            onFinish: () => setSettingRole(null),
         });
     }
 
     return (
         <AppLayout
             breadcrumbs={[
-                { title: 'Cabang', href: admin.cabang.index() },
-                { title: cabang.nama, href: admin.cabang.show(cabang.id) },
-                { title: 'Edit', href: admin.cabang.edit(cabang.id) },
+                { title: 'Cabang', href: admin.cabang.index().url },
+                { title: cabang.nama, href: admin.cabang.show(cabang.id).url },
+                { title: 'Edit', href: admin.cabang.edit(cabang.id).url },
             ]}
         >
             <Head title={`Admin - Edit ${cabang.nama}`} />
@@ -106,7 +164,7 @@ export default function AdminCabangEdit({ cabang, users, users_count, shift_coun
                         </p>
                     </div>
                     <Button variant="outline" size="sm" asChild className="w-fit">
-                        <Link href={admin.cabang.show(cabang.id)}>Kembali</Link>
+                        <Link href={admin.cabang.show(cabang.id).url}>Kembali</Link>
                     </Button>
                 </div>
 
@@ -256,7 +314,7 @@ export default function AdminCabangEdit({ cabang, users, users_count, shift_coun
                                     {processing ? 'Menyimpan...' : 'Simpan Perubahan'}
                                 </Button>
                                 <Button type="button" variant="outline" size="sm" asChild>
-                                    <Link href={admin.cabang.show(cabang.id)}>Batal</Link>
+                                    <Link href={admin.cabang.show(cabang.id).url}>Batal</Link>
                                 </Button>
                             </div>
                         </form>
@@ -329,16 +387,22 @@ export default function AdminCabangEdit({ cabang, users, users_count, shift_coun
                         {/* ── Current Users ── */}
                         <div className="space-y-2">
                             <p className="text-xs font-medium">Pengguna Saat Ini</p>
+                            <p className="text-xs font-medium font-italic">Role di masing masing cabang otomatis terdaftar sebagai role akun (misal akun manager, akan menjadi manager di cabang ini sata didaftarkan).</p>
                             {users.length === 0 ? (
                                 <p className="text-sm text-muted-foreground">
                                     Belum ada pengguna di cabang ini.
                                 </p>
                             ) : (
                                 <div className="divide-y rounded-md border">
-                                    {(['manager', 'supervisor', 'kasir'] as const)
-                                        .flatMap((role) => users.filter((u) => u.role === role))
+                                    {users
+                                        .slice()
+                                        .sort((a, b) => {
+                                            const byRole = a.role.localeCompare(b.role);
+                                            if (byRole !== 0) return byRole;
+                                            return a.name.localeCompare(b.name);
+                                        })
                                         .map((u) => {
-                                            const cfg = ROLE_CONFIG[u.role] ?? { label: u.role, color: 'bg-slate-100 text-slate-700' };
+                                            const cfg = ROLE_CONFIG[u.role] ?? { label: u.role, color: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' };
                                             return (
                                                 <div
                                                     key={u.id}
@@ -371,6 +435,12 @@ export default function AdminCabangEdit({ cabang, users, users_count, shift_coun
 
                     </CardContent>
                 </Card>
+
+                {/* ── Manajemen Manager & Supervisor ──
+                
+                
+                */}
+                
 
             </div>
         </AppLayout>

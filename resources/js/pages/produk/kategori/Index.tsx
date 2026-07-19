@@ -11,9 +11,10 @@ import {
 } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Head, Link, router, useForm } from '@inertiajs/react';
-import { Eye, Pencil, Trash2 } from 'lucide-react';
+import { Eye, Pencil, Trash2, Building2 } from 'lucide-react';
 import Swal from 'sweetalert2';
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
+import { useOutlet } from '@/contexts/OutletContext';
 
 interface KategoriItem {
   id: number;
@@ -36,19 +37,50 @@ interface FilterAktif {
   search: string;
   sort_by: 'nama' | 'produk_count' | '';
   sort_dir: 'asc' | 'desc' | '';
+  cabang_id?: number | null;
 }
 
 interface Props {
   kategori: KategoriPaginator;
   filter_aktif?: FilterAktif;
+  cabang_list?: Array<{ id: number; nama: string }>;
 }
 
-export default function KategoriIndex({ kategori, filter_aktif }: Props) {
+export default function KategoriIndex({ kategori, filter_aktif, cabang_list }: Props) {
   const { data, setData, get, processing, errors } = useForm({
     search: filter_aktif?.search ?? '',
     sort_by: filter_aktif?.sort_by ?? 'nama',
     sort_dir: filter_aktif?.sort_dir ?? 'asc',
+    cabang_id: filter_aktif?.cabang_id ?? '',
   });
+  
+  // Get outlet context
+  const { selectedOutlet, outlets, switchOutlet } = useOutlet();
+  const [localOutletId, setLocalOutletId] = useState<number | null>(selectedOutlet?.id ?? null);
+  
+  // Update local outlet when context changes
+  useEffect(() => {
+    if (selectedOutlet?.id) {
+      setLocalOutletId(selectedOutlet.id);
+      if (data.cabang_id !== String(selectedOutlet.id)) {
+        setData('cabang_id', String(selectedOutlet.id));
+      }
+    }
+  }, [selectedOutlet]);
+  
+  // Handle outlet selection
+  const handleOutletChange = (outletId: number | null) => {
+    setLocalOutletId(outletId);
+    if (outletId) {
+      switchOutlet(outletId);
+      setData('cabang_id', String(outletId));
+    } else {
+      setData('cabang_id', '');
+    }
+  };
+  
+  // Combine outlets from context and from props (for non-manager roles)
+  const allOutlets = outlets.length > 0 ? outlets : (cabang_list || []);
 
   const sortedData = useMemo(() => {
     const list = [...(kategori?.data ?? [])];
@@ -80,11 +112,22 @@ export default function KategoriIndex({ kategori, filter_aktif }: Props) {
   }, [kategori?.data, data.search, data.sort_by, data.sort_dir]);
 
   const submit = () => {
+    const params: Record<string, string | number | undefined> = {
+      search: data.search || undefined,
+      sort_by: data.sort_by || undefined,
+      sort_dir: data.sort_dir || undefined,
+    };
+    
+    if (data.cabang_id) {
+      params.cabang_id = parseInt(data.cabang_id, 10);
+    }
+    
     get('/produk/kategori', {
       preserveScroll: true,
       preserveState: true,
       replace: true,
-      only: ['kategori', 'filter_aktif'],
+      only: ['kategori', 'filter_aktif', 'cabang_list'],
+      data: params,
     });
   };
 
@@ -118,6 +161,9 @@ export default function KategoriIndex({ kategori, filter_aktif }: Props) {
             <h1 className="text-xl font-semibold">Kategori Produk</h1>
             <div className="text-sm text-muted-foreground">
               Total: {kategori?.total ?? kategori?.data?.length ?? 0}
+              {filter_aktif?.cabang_id && (
+                <span> &bull; Filter berdasarkan outlet</span>
+              )}
             </div>
           </div>
           <Button asChild>
@@ -127,12 +173,37 @@ export default function KategoriIndex({ kategori, filter_aktif }: Props) {
 
         <div className="rounded-md border p-4">
           <form
-            className="grid grid-cols-1 gap-4 md:grid-cols-4"
+            className="grid grid-cols-1 gap-4 md:grid-cols-5"
             onSubmit={(e) => {
               e.preventDefault();
               submit();
             }}
           >
+            {/* Outlet Filter */}
+            {allOutlets.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-sm font-medium">Outlet</div>
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-muted-foreground" />
+                  <select
+                    value={data.cabang_id}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setData('cabang_id', value);
+                    }}
+                    className="flex-1 h-9 px-3 text-sm border rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">Semua Outlet</option>
+                    {allOutlets.map((outlet) => (
+                      <option key={outlet.id} value={outlet.id.toString()}>
+                        {outlet.nama}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-1">
               <div className="text-sm font-medium">Cari</div>
               <Input
@@ -189,7 +260,9 @@ export default function KategoriIndex({ kategori, filter_aktif }: Props) {
                     search: '',
                     sort_by: 'nama',
                     sort_dir: 'asc',
+                    cabang_id: '',
                   });
+                  handleOutletChange(null);
                   router.get('/produk/kategori', {}, { preserveScroll: true, replace: true });
                 }}
               >

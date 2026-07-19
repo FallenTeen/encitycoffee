@@ -163,15 +163,55 @@ class EnhancedDashboardController extends Controller
             abort(403, 'Unauthorized access');
         }
 
+        // Eager load user's assigned branches
+        $user->load('cabang:id,nama,kode');
+        
+        $assignedCabangIds = $user->cabang->pluck('id')->toArray();
+
+        // If user has no assigned branches, return empty data
+        if (empty($assignedCabangIds)) {
+            return Inertia::render('dashboard/EnhancedManager', [
+                'kpis' => [
+                    'today_revenue' => 0,
+                    'month_revenue' => 0,
+                    'today_transactions' => 0,
+                    'active_shifts' => 0,
+                    'low_stock_items' => 0,
+                    'expiring_products' => 0,
+                ],
+                'filters' => [
+                    'range' => '14d',
+                    'tanggal_mulai' => Carbon::today()->subDays(13)->format('Y-m-d'),
+                    'tanggal_selesai' => Carbon::today()->format('Y-m-d'),
+                    'cabang_id' => null,
+                ],
+                'dailyPerformance' => [],
+                'discountMetrics' => null,
+                'discountComparisonDaily' => [],
+                'discountByCategory' => [],
+                'discountByCustomerType' => [],
+                'branchComparison' => [],
+                'categoryPerformance' => [],
+                'staffPerformance' => [],
+                'operationalAlerts' => [
+                    'low_stock_branches' => 0,
+                    'overdue_maintenance' => 0,
+                    'staff_absence' => 0,
+                ],
+                'assignedBranches' => [],
+                'error' => 'Anda belum memiliki cabang yang diampu. Hubungi administrator untuk menetapkan cabang.',
+            ]);
+        }
+
         $validated = $request->validate([
             'range' => ['nullable', 'in:7d,14d,30d,90d,custom'],
             'tanggal_mulai' => ['nullable', 'date', 'before_or_equal:today'],
             'tanggal_selesai' => ['nullable', 'date', 'after_or_equal:tanggal_mulai', 'before_or_equal:today'],
+            'cabang_id' => ['nullable', 'integer', 'exists:cabang,id'],
         ]);
 
         $today = Carbon::today();
         $thisMonth = Carbon::now()->startOfMonth();
-        $assignedCabangIds = $user->cabang->pluck('id')->toArray();
 
         $range = (string) ($validated['range'] ?? '14d');
         $endDate = Carbon::today();
@@ -198,36 +238,68 @@ class EnhancedDashboardController extends Controller
         $periodStart = $startDate->copy()->startOfDay();
         $periodEnd = $endDate->copy()->endOfDay();
 
-        // Key Performance Indicators
+        // Handle branch filtering from outlet switcher
+        $requestedCabangId = ! empty($validated['cabang_id']) ? (int) $validated['cabang_id'] : null;
+        
+        // Determine which branches to filter data by
+        if ($requestedCabangId !== null) {
+            // Validate user has access to this branch
+            if (!in_array($requestedCabangId, $assignedCabangIds)) {
+                abort(403, 'Tidak memiliki akses ke cabang ini');
+            }
+            $filterCabangIds = [$requestedCabangId];
+        } else {
+            // Show all assigned branches
+            $filterCabangIds = $assignedCabangIds;
+        }
+
+        // Key Performance Indicators - Calculate based on selected date range
+        // "period_revenue" and "period_transactions" are calculated for the selected date range
+        // "month_revenue" remains for the current month
         $kpis = [
-            'today_revenue' => (float) Transaksi::whereIn('cabang_id', $assignedCabangIds)
+            // Revenue for selected period (not just today)
+            'period_revenue' => (float) Transaksi::whereIn('cabang_id', $filterCabangIds)
                 ->where('status', 'selesai')
-                ->whereDate('created_at', $today)
+                ->whereBetween('created_at', [$periodStart, $periodEnd])
                 ->sum('total'),
-            'month_revenue' => (float) Transaksi::whereIn('cabang_id', $assignedCabangIds)
+            'month_revenue' => (float) Transaksi::whereIn('cabang_id', $filterCabangIds)
                 ->where('status', 'selesai')
                 ->whereDate('created_at', '>=', $thisMonth)
                 ->sum('total'),
-            'today_transactions' => (int) Transaksi::whereIn('cabang_id', $assignedCabangIds)
+            // Transactions for selected period (not just today)
+            'period_transactions' => (int) Transaksi::whereIn('cabang_id', $filterCabangIds)
                 ->where('status', 'selesai')
-                ->whereDate('created_at', $today)
+                ->whereBetween('created_at', [$periodStart, $periodEnd])
                 ->count(),
-            'active_shifts' => (int) Shift::whereIn('cabang_id', $assignedCabangIds)
+            // Keep legacy keys for backward compatibility
+            'today_revenue' => (float) Transaksi::whereIn('cabang_id', $filterCabangIds)
+                ->where('status', 'selesai')
+                ->whereBetween('created_at', [$periodStart, $periodEnd])
+                ->sum('total'),
+            'today_transactions' => (int) Transaksi::whereIn('cabang_id', $filterCabangIds)
+                ->where('status', 'selesai')
+                ->whereBetween('created_at', [$periodStart, $periodEnd])
+                ->count(),
+            // Active shifts for selected period
+            'active_shifts' => (int) Shift::whereIn('cabang_id', $filterCabangIds)
+                ->whereBetween('waktu_buka', [$periodStart, $periodEnd])
                 ->where('status', 'buka')
                 ->count(),
+            // Low stock items - calculate based on period
             'low_stock_items' => (int) (Schema::hasTable('stok_etalase')
-                ? DB::table('stok_etalase')->whereIn('cabang_id', $assignedCabangIds)->whereColumn('jumlah', '<=', 'stok_minimum')->count()
+                ? DB::table('stok_etalase')->whereIn('cabang_id', $filterCabangIds)->whereColumn('jumlah', '<=', 'stok_minimum')->count()
                 : 0),
+            // Expiring products - calculate based on period
             'expiring_products' => (int) (Schema::hasTable('batch_stok')
                 ? DB::table('batch_stok')
                     ->join('stok_etalase', 'batch_stok.stok_etalase_id', '=', 'stok_etalase.id')
-                    ->whereIn('stok_etalase.cabang_id', $assignedCabangIds)
+                    ->whereIn('stok_etalase.cabang_id', $filterCabangIds)
                     ->whereDate('batch_stok.tanggal_kadaluarsa', '<=', Carbon::now()->addDays(30))
                     ->count()
                 : 0),
         ];
 
-        $dailyAgg = Transaksi::whereIn('cabang_id', $assignedCabangIds)
+        $dailyAgg = Transaksi::whereIn('cabang_id', $filterCabangIds)
             ->where('status', 'selesai')
             ->whereBetween('created_at', [$periodStart, $periodEnd])
             ->selectRaw('DATE(created_at) as date')
@@ -273,7 +345,7 @@ class EnhancedDashboardController extends Controller
             $cursor->addDay();
         }
 
-        $discountTotals = Transaksi::whereIn('cabang_id', $assignedCabangIds)
+        $discountTotals = Transaksi::whereIn('cabang_id', $filterCabangIds)
             ->where('status', 'selesai')
             ->whereBetween('created_at', [$periodStart, $periodEnd])
             ->selectRaw('SUM(total) as net_revenue')
@@ -302,7 +374,7 @@ class EnhancedDashboardController extends Controller
             ->join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
             ->join('produk', 'item_transaksi.produk_id', '=', 'produk.id')
             ->join('kategori_produk', 'produk.kategori_id', '=', 'kategori_produk.id')
-            ->whereIn('transaksi.cabang_id', $assignedCabangIds)
+            ->whereIn('transaksi.cabang_id', $filterCabangIds)
             ->where('transaksi.status', 'selesai')
             ->whereBetween('transaksi.created_at', [$periodStart, $periodEnd])
             ->select('kategori_produk.nama as category')
@@ -313,7 +385,7 @@ class EnhancedDashboardController extends Controller
             ->get();
 
         $discountByCustomerType = DB::table('transaksi')
-            ->whereIn('cabang_id', $assignedCabangIds)
+            ->whereIn('cabang_id', $filterCabangIds)
             ->where('status', 'selesai')
             ->whereBetween('created_at', [$periodStart, $periodEnd])
             ->selectRaw("CASE WHEN nama_pelanggan IS NULL OR nama_pelanggan = '' THEN 'Tanpa Nama' ELSE 'Dengan Nama' END as customer_type")
@@ -324,7 +396,7 @@ class EnhancedDashboardController extends Controller
             ->get();
 
         // Branch Comparison
-        $branchComparison = Cabang::whereIn('cabang.id', $assignedCabangIds)
+        $branchComparison = Cabang::whereIn('cabang.id', $filterCabangIds)
             ->select('cabang.id', 'cabang.nama')
             ->selectRaw('SUM(transaksi.total) as total_revenue')
             ->selectRaw('COUNT(transaksi.id) as transaction_count')
@@ -343,7 +415,7 @@ class EnhancedDashboardController extends Controller
             ->join('produk', 'item_transaksi.produk_id', '=', 'produk.id')
             ->join('kategori_produk', 'produk.kategori_id', '=', 'kategori_produk.id')
             ->join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
-            ->whereIn('transaksi.cabang_id', $assignedCabangIds)
+            ->whereIn('transaksi.cabang_id', $filterCabangIds)
             ->where('transaksi.status', 'selesai')
             ->whereBetween('transaksi.created_at', [$periodStart, $periodEnd])
             ->select('kategori_produk.nama as category', DB::raw('SUM(item_transaksi.subtotal) as total_revenue'), DB::raw('SUM(item_transaksi.jumlah) as total_quantity'))
@@ -352,10 +424,10 @@ class EnhancedDashboardController extends Controller
             ->get();
 
         // Staff Performance
-        $staffPerformance = User::whereIn('users.id', function ($query) use ($assignedCabangIds) {
+        $staffPerformance = User::whereIn('users.id', function ($query) use ($filterCabangIds) {
                 $query->select('user_id')
                     ->from('transaksi')
-                    ->whereIn('cabang_id', $assignedCabangIds)
+                    ->whereIn('cabang_id', $filterCabangIds)
                     ->whereDate('created_at', '>=', Carbon::today()->subDays(90))
                     ->distinct();
             })
@@ -363,9 +435,9 @@ class EnhancedDashboardController extends Controller
             ->selectRaw('SUM(transaksi.total) as total_revenue')
             ->selectRaw('COUNT(transaksi.id) as transaction_count')
             ->selectRaw('AVG(transaksi.total) as avg_transaction')
-            ->leftJoin('transaksi', function ($join) use ($assignedCabangIds, $periodStart) {
+            ->leftJoin('transaksi', function ($join) use ($filterCabangIds, $periodStart) {
                 $join->on('users.id', '=', 'transaksi.user_id')
-                    ->whereIn('transaksi.cabang_id', $assignedCabangIds)
+                    ->whereIn('transaksi.cabang_id', $filterCabangIds)
                     ->where('transaksi.status', 'selesai')
                     ->whereDate('transaksi.created_at', '>=', $periodStart);
             })
@@ -376,7 +448,7 @@ class EnhancedDashboardController extends Controller
 
         // Operational Alerts
         $operationalAlerts = [
-            'low_stock_branches' => Cabang::whereIn('cabang.id', $assignedCabangIds)
+            'low_stock_branches' => Cabang::whereIn('cabang.id', $filterCabangIds)
                 ->whereHas('stokEtalase', function ($query) {
                     $query->whereColumn('jumlah', '<=', 'stok_minimum');
                 })
@@ -391,6 +463,7 @@ class EnhancedDashboardController extends Controller
                 'range' => $range,
                 'tanggal_mulai' => $startDate->format('Y-m-d'),
                 'tanggal_selesai' => $endDate->format('Y-m-d'),
+                'cabang_id' => $requestedCabangId,
             ],
             'dailyPerformance' => $dailyPerformance,
             'discountMetrics' => $discountMetrics,
@@ -401,7 +474,11 @@ class EnhancedDashboardController extends Controller
             'categoryPerformance' => $categoryPerformance,
             'staffPerformance' => $staffPerformance,
             'operationalAlerts' => $operationalAlerts,
-            'assignedBranches' => $user->cabang,
+            'assignedBranches' => $user->cabang->map(fn($c) => [
+                'id' => $c->id,
+                'nama' => $c->nama,
+                'kode' => $c->kode ?? null,
+            ])->all(),
         ]);
     }
 
@@ -416,14 +493,31 @@ class EnhancedDashboardController extends Controller
             abort(403, 'Unauthorized access');
         }
 
+        // Eager load user's assigned branches
+        $user->load('cabang:id,nama,kode');
+        
+        $assignedCabangIds = $user->cabang->pluck('id')->toArray();
+
+        // If user has no assigned branches, return empty data
+        if (empty($assignedCabangIds)) {
+            return Inertia::render('dashboard/EnhancedManager', [
+                'kpis' => ['today_revenue' => 0, 'month_revenue' => 0, 'today_transactions' => 0, 'active_shifts' => 0, 'low_stock_items' => 0, 'expiring_products' => 0],
+                'filters' => ['range' => '14d', 'tanggal_mulai' => Carbon::today()->subDays(13)->format('Y-m-d'), 'tanggal_selesai' => Carbon::today()->format('Y-m-d'), 'cabang_id' => null],
+                'dailyPerformance' => [], 'discountMetrics' => null, 'discountComparisonDaily' => [], 'discountByCategory' => [], 'discountByCustomerType' => [], 'branchComparison' => [], 'categoryPerformance' => [], 'staffPerformance' => [],
+                'operationalAlerts' => ['low_stock_branches' => 0, 'overdue_maintenance' => 0, 'staff_absence' => 0],
+                'assignedBranches' => [],
+                'error' => 'Anda belum memiliki cabang yang diampu. Hubungi administrator untuk menetapkan cabang.',
+            ]);
+        }
+
         $validated = $request->validate([
             'range' => ['nullable', 'in:7d,14d,30d,90d,custom'],
             'tanggal_mulai' => ['nullable', 'date', 'before_or_equal:today'],
             'tanggal_selesai' => ['nullable', 'date', 'after_or_equal:tanggal_mulai', 'before_or_equal:today'],
+            'cabang_id' => ['nullable', 'integer', 'exists:cabang,id'],
         ]);
 
         $today = Carbon::today();
-        $assignedCabangIds = $user->cabang->pluck('id')->toArray();
 
         $range = (string) ($validated['range'] ?? '14d');
         $endDate = Carbon::today();
@@ -450,8 +544,20 @@ class EnhancedDashboardController extends Controller
         $periodStart = $startDate->copy()->startOfDay();
         $periodEnd = $endDate->copy()->endOfDay();
 
+        // Handle branch filtering from outlet switcher
+        $requestedCabangId = ! empty($validated['cabang_id']) ? (int) $validated['cabang_id'] : null;
+        
+        if ($requestedCabangId !== null) {
+            if (!in_array($requestedCabangId, $assignedCabangIds)) {
+                abort(403, 'Tidak memiliki akses ke cabang ini');
+            }
+            $filterCabangIds = [$requestedCabangId];
+        } else {
+            $filterCabangIds = $assignedCabangIds;
+        }
+
         // Current Shift Status
-        $currentShifts = Shift::whereIn('cabang_id', $assignedCabangIds)
+        $currentShifts = Shift::whereIn('cabang_id', $filterCabangIds)
             ->whereDate('waktu_buka', $today)
             ->with(['cabang', 'user'])
             ->orderBy('waktu_buka')
@@ -459,8 +565,8 @@ class EnhancedDashboardController extends Controller
 
         // Staff Status
         $staffStatus = User::whereIn('role', ['kasir', 'supervisor'])
-            ->whereHas('cabang', function ($query) use ($assignedCabangIds) {
-                $query->whereIn('cabang.id', $assignedCabangIds);
+            ->whereHas('cabang', function ($query) use ($filterCabangIds) {
+                $query->whereIn('cabang.id', $filterCabangIds);
             })
             ->with(['cabang', 'shift' => function ($query) use ($today) {
                 $query->whereDate('waktu_buka', $today);
@@ -473,12 +579,12 @@ class EnhancedDashboardController extends Controller
             $startTime = Carbon::today()->setHour($hour)->setMinute(0);
             $endTime = $startTime->copy()->addHour();
 
-            $revenue = (float) Transaksi::whereIn('cabang_id', $assignedCabangIds)
+            $revenue = (float) Transaksi::whereIn('cabang_id', $filterCabangIds)
                 ->where('status', 'selesai')
                 ->whereBetween('created_at', [$startTime, $endTime])
                 ->sum('total');
 
-            $transactions = (int) Transaksi::whereIn('cabang_id', $assignedCabangIds)
+            $transactions = (int) Transaksi::whereIn('cabang_id', $filterCabangIds)
                 ->where('status', 'selesai')
                 ->whereBetween('created_at', [$startTime, $endTime])
                 ->count();
@@ -492,14 +598,14 @@ class EnhancedDashboardController extends Controller
         }
 
         // Open Bills Status
-        $openBills = OpenBill::whereIn('cabang_id', $assignedCabangIds)
+        $openBills = OpenBill::whereIn('cabang_id', $filterCabangIds)
             ->where('status', 'open')
             ->with(['cabang', 'user'])
             ->orderBy('created_at')
             ->get();
 
         // Recent Transactions
-        $recentTransactions = Transaksi::whereIn('cabang_id', $assignedCabangIds)
+        $recentTransactions = Transaksi::whereIn('cabang_id', $filterCabangIds)
             ->with(['cabang', 'user'])
             ->orderByDesc('created_at')
             ->limit(20)
@@ -514,12 +620,12 @@ class EnhancedDashboardController extends Controller
                 })
                 ->count(),
             'total_staff' => (int) User::whereIn('role', ['kasir', 'supervisor'])
-                ->whereHas('cabang', function ($query) use ($assignedCabangIds) {
-                    $query->whereIn('cabang.id', $assignedCabangIds);
+                ->whereHas('cabang', function ($query) use ($filterCabangIds) {
+                    $query->whereIn('cabang.id', $filterCabangIds);
                 })
                 ->count(),
             'open_bills_count' => $openBills->count(),
-            'avg_bill_value' => (float) OpenBill::whereIn('cabang_id', $assignedCabangIds)
+            'avg_bill_value' => (float) OpenBill::whereIn('cabang_id', $filterCabangIds)
                 ->where('status', 'open')
                 ->avg('total') ?? 0,
         ];
@@ -528,20 +634,20 @@ class EnhancedDashboardController extends Controller
         $performanceAlerts = [
             'low_performance_branches' => (int) \DB::table('transaksi')
                 ->select('cabang_id')
-                ->whereIn('cabang_id', $assignedCabangIds)
+                ->whereIn('cabang_id', $filterCabangIds)
                 ->where('status', 'selesai')
                 ->whereDate('created_at', $today)
                 ->groupBy('cabang_id')
                 ->havingRaw('SUM(total) < ?', [1000000])
                 ->pluck('cabang_id')
                 ->count(),
-            'long_open_bills' => OpenBill::whereIn('cabang_id', $assignedCabangIds)
+            'long_open_bills' => OpenBill::whereIn('cabang_id', $filterCabangIds)
                 ->where('status', 'open')
                 ->where('created_at', '<', Carbon::now()->subHours(2))
                 ->count(),
         ];
 
-        $dailyAgg = Transaksi::whereIn('cabang_id', $assignedCabangIds)
+        $dailyAgg = Transaksi::whereIn('cabang_id', $filterCabangIds)
             ->where('status', 'selesai')
             ->whereBetween('created_at', [$periodStart, $periodEnd])
             ->selectRaw('DATE(created_at) as date')
@@ -576,7 +682,7 @@ class EnhancedDashboardController extends Controller
             $cursor->addDay();
         }
 
-        $discountTotals = Transaksi::whereIn('cabang_id', $assignedCabangIds)
+        $discountTotals = Transaksi::whereIn('cabang_id', $filterCabangIds)
             ->where('status', 'selesai')
             ->whereBetween('created_at', [$periodStart, $periodEnd])
             ->selectRaw('SUM(total) as net_revenue')
@@ -605,7 +711,7 @@ class EnhancedDashboardController extends Controller
             ->join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
             ->join('produk', 'item_transaksi.produk_id', '=', 'produk.id')
             ->join('kategori_produk', 'produk.kategori_id', '=', 'kategori_produk.id')
-            ->whereIn('transaksi.cabang_id', $assignedCabangIds)
+            ->whereIn('transaksi.cabang_id', $filterCabangIds)
             ->where('transaksi.status', 'selesai')
             ->whereBetween('transaksi.created_at', [$periodStart, $periodEnd])
             ->select('kategori_produk.nama as category')
@@ -616,7 +722,7 @@ class EnhancedDashboardController extends Controller
             ->get();
 
         $discountByCustomerType = DB::table('transaksi')
-            ->whereIn('cabang_id', $assignedCabangIds)
+            ->whereIn('cabang_id', $filterCabangIds)
             ->where('status', 'selesai')
             ->whereBetween('created_at', [$periodStart, $periodEnd])
             ->selectRaw("CASE WHEN nama_pelanggan IS NULL OR nama_pelanggan = '' THEN 'Tanpa Nama' ELSE 'Dengan Nama' END as customer_type")
@@ -638,11 +744,17 @@ class EnhancedDashboardController extends Controller
                 'range' => $range,
                 'tanggal_mulai' => $startDate->format('Y-m-d'),
                 'tanggal_selesai' => $endDate->format('Y-m-d'),
+                'cabang_id' => $requestedCabangId,
             ],
             'discountMetrics' => $discountMetrics,
             'discountComparisonDaily' => $discountComparisonDaily,
             'discountByCategory' => $discountByCategory,
             'discountByCustomerType' => $discountByCustomerType,
+            'assignedBranches' => $user->cabang->map(fn($c) => [
+                'id' => $c->id,
+                'nama' => $c->nama,
+                'kode' => $c->kode ?? null,
+            ])->all(),
         ]);
     }
 
@@ -825,17 +937,17 @@ class EnhancedDashboardController extends Controller
 
     private function getManagerRealtimeData($user, $type)
     {
-        $assignedCabangIds = $user->cabang->pluck('id')->toArray();
+        $filterCabangIds = $user->cabang->pluck('id')->toArray();
         $today = Carbon::today();
 
         switch ($type) {
             case 'revenue':
                 return [
-                    'today_revenue' => (float) Transaksi::whereIn('cabang_id', $assignedCabangIds)->where('status', 'selesai')->whereDate('created_at', $today)->sum('total'),
-                    'active_transactions' => (int) Transaksi::whereIn('cabang_id', $assignedCabangIds)->where('status', 'pending')->count(),
+                    'today_revenue' => (float) Transaksi::whereIn('cabang_id', $filterCabangIds)->where('status', 'selesai')->whereDate('created_at', $today)->sum('total'),
+                    'active_transactions' => (int) Transaksi::whereIn('cabang_id', $filterCabangIds)->where('status', 'pending')->count(),
                 ];
             case 'discount':
-                $row = Transaksi::whereIn('cabang_id', $assignedCabangIds)
+                $row = Transaksi::whereIn('cabang_id', $filterCabangIds)
                     ->where('status', 'selesai')
                     ->whereDate('created_at', $today)
                     ->selectRaw('SUM(total) as net_revenue')
@@ -852,33 +964,33 @@ class EnhancedDashboardController extends Controller
                 ];
             case 'operations':
                 return [
-                    'active_shifts' => (int) Shift::whereIn('cabang_id', $assignedCabangIds)->where('status', 'buka')->count(),
-                    'open_bills' => (int) OpenBill::whereIn('cabang_id', $assignedCabangIds)->where('status', 'open')->count(),
+                    'active_shifts' => (int) Shift::whereIn('cabang_id', $filterCabangIds)->where('status', 'buka')->count(),
+                    'open_bills' => (int) OpenBill::whereIn('cabang_id', $filterCabangIds)->where('status', 'open')->count(),
                     'low_stock_alerts' => (int) (Schema::hasTable('stok_etalase')
-                        ? DB::table('stok_etalase')->whereIn('cabang_id', $assignedCabangIds)->whereColumn('jumlah', '<=', 'stok_minimum')->count()
+                        ? DB::table('stok_etalase')->whereIn('cabang_id', $filterCabangIds)->whereColumn('jumlah', '<=', 'stok_minimum')->count()
                         : 0),
                 ];
             default:
                 return [
-                    'today_revenue' => (float) Transaksi::whereIn('cabang_id', $assignedCabangIds)->where('status', 'selesai')->whereDate('created_at', $today)->sum('total'),
-                    'active_shifts' => (int) Shift::whereIn('cabang_id', $assignedCabangIds)->where('status', 'buka')->count(),
+                    'today_revenue' => (float) Transaksi::whereIn('cabang_id', $filterCabangIds)->where('status', 'selesai')->whereDate('created_at', $today)->sum('total'),
+                    'active_shifts' => (int) Shift::whereIn('cabang_id', $filterCabangIds)->where('status', 'buka')->count(),
                 ];
         }
     }
 
     private function getSupervisorRealtimeData($user, $type)
     {
-        $assignedCabangIds = $user->cabang->pluck('id')->toArray();
+        $filterCabangIds = $user->cabang->pluck('id')->toArray();
         $today = Carbon::today();
 
         switch ($type) {
             case 'shifts':
                 return [
-                    'active_shifts' => Shift::whereIn('cabang_id', $assignedCabangIds)->where('status', 'buka')->with(['cabang', 'user'])->get(),
-                    'recent_transactions' => Transaksi::whereIn('cabang_id', $assignedCabangIds)->with(['cabang', 'user'])->orderByDesc('created_at')->limit(5)->get(),
+                    'active_shifts' => Shift::whereIn('cabang_id', $filterCabangIds)->where('status', 'buka')->with(['cabang', 'user'])->get(),
+                    'recent_transactions' => Transaksi::whereIn('cabang_id', $filterCabangIds)->with(['cabang', 'user'])->orderByDesc('created_at')->limit(5)->get(),
                 ];
             case 'discount':
-                $row = Transaksi::whereIn('cabang_id', $assignedCabangIds)
+                $row = Transaksi::whereIn('cabang_id', $filterCabangIds)
                     ->where('status', 'selesai')
                     ->whereDate('created_at', $today)
                     ->selectRaw('SUM(total) as net_revenue')
@@ -895,14 +1007,14 @@ class EnhancedDashboardController extends Controller
                 ];
             case 'staff':
                 return [
-                    'active_staff' => User::whereIn('role', ['kasir', 'supervisor'])->whereHas('shift', function ($query) use ($assignedCabangIds, $today) {
-                        $query->whereIn('cabang_id', $assignedCabangIds)->whereDate('waktu_buka', $today)->where('status', 'buka');
+                    'active_staff' => User::whereIn('role', ['kasir', 'supervisor'])->whereHas('shift', function ($query) use ($filterCabangIds, $today) {
+                        $query->whereIn('cabang_id', $filterCabangIds)->whereDate('waktu_buka', $today)->where('status', 'buka');
                     })->with(['cabang'])->get(),
                 ];
             default:
                 return [
-                    'active_shifts' => (int) Shift::whereIn('cabang_id', $assignedCabangIds)->where('status', 'buka')->count(),
-                    'open_bills' => (int) OpenBill::whereIn('cabang_id', $assignedCabangIds)->where('status', 'open')->count(),
+                    'active_shifts' => (int) Shift::whereIn('cabang_id', $filterCabangIds)->where('status', 'buka')->count(),
+                    'open_bills' => (int) OpenBill::whereIn('cabang_id', $filterCabangIds)->where('status', 'open')->count(),
                 ];
         }
     }

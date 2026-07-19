@@ -168,7 +168,7 @@ class LaporanController extends Controller
         }
 
         $statRow = (clone $query)
-            ->selectRaw('COUNT(*) as total_transaksi, COALESCE(SUM(total), 0) as total_nilai')
+            ->selectRaw('COUNT(*) as total_transaksi, COALESCE(SUM(total), 0) as total_nilai, COALESCE(SUM(diskon), 0) as total_diskon')
             ->first();
 
         $transaksi = $query->paginate(20)->through(function (Transaksi $t) {
@@ -177,6 +177,9 @@ class LaporanController extends Controller
                 'nomor_invoice' => $t->nomor_invoice,
                 'waktu_selesai' => $t->waktu_selesai,
                 'status' => $t->status,
+                'subtotal' => (float) ($t->subtotal ?? 0),
+                'diskon' => (float) ($t->diskon ?? 0),
+                'diskon_persen' => $t->diskon_persen !== null ? (float) $t->diskon_persen : null,
                 'total' => (float) ($t->total ?? 0),
                 'cabang' => $t->cabang ? [
                     'id' => $t->cabang->id,
@@ -199,6 +202,7 @@ class LaporanController extends Controller
         $statistik = [
             'total_transaksi' => (int) ($statRow->total_transaksi ?? 0),
             'total_nilai' => (float) ($statRow->total_nilai ?? 0),
+            'total_diskon' => (float) ($statRow->total_diskon ?? 0),
         ];
 
         $filterAktif = array_merge($validated, [
@@ -241,6 +245,37 @@ class LaporanController extends Controller
             'shift_options' => $shiftOptions,
         ]);
     }
+
+    public function exportTransaksiExcel(Request $request)
+    {
+        Gate::authorize('view-laporan');
+
+        $user = Auth::user();
+        $cabangIds = $this->tentukanCabangIds($user);
+
+        $validated = $request->validate([
+            'tanggal_mulai'  => 'nullable|date',
+            'tanggal_selesai' => 'nullable|date',
+            'cabang_id'      => ['nullable', 'integer', Rule::in($cabangIds)],
+            'status'         => 'nullable|string',
+        ]);
+
+        $tanggalMulai  = $validated['tanggal_mulai']  ?? Carbon::now()->subDays(30)->toDateString();
+        $tanggalSelesai = $validated['tanggal_selesai'] ?? Carbon::now()->toDateString();
+        $namaFile = 'transaksi_' . $tanggalMulai . '_sd_' . $tanggalSelesai . '.xlsx';
+
+        return \Maatwebsite\Excel\Facades\Excel::download(
+            new \App\Exports\TransaksiExport(
+                $tanggalMulai,
+                $tanggalSelesai,
+                $cabangIds,
+                $validated['status'] ?? null,
+                isset($validated['cabang_id']) ? (int) $validated['cabang_id'] : null,
+            ),
+            $namaFile
+        );
+    }
+    
     public function detailShift(Shift $shift)
     {
         Gate::authorize('view-laporan');
@@ -283,6 +318,7 @@ class LaporanController extends Controller
         $statistik = [
             'total_transaksi' => $totalTransaksi,
             'total_penjualan' => $totalPenjualan,
+            'total_diskon' => (float) $shift->transaksi->where('status', 'selesai')->sum('diskon'),
             'total_tunai' => (float) $totalPendapatanTunai,
             'total_qris' => (float) $totalPendapatanQris,
             'saldo_awal' => (float) ($shift->saldo_awal ?? 0),
@@ -946,6 +982,444 @@ class LaporanController extends Controller
         ]);
     }
 
+    public function riwayatTransaksi(Request $request)
+    {
+        Gate::authorize('view-laporan');
+
+        $user = Auth::user();
+        $cabangIds = $this->tentukanCabangIds($user);
+
+        $validated = $request->validate([
+            'tanggal_mulai' => 'nullable|date',
+            'tanggal_selesai' => 'nullable|date|after_or_equal:tanggal_mulai',
+            'cabang_id' => ['nullable', 'integer'],
+            'tipe' => 'nullable|in:shift,harian,all',
+        ]);
+
+        $tipe = $validated['tipe'] ?? 'shift';
+        $tanggalMulai = $validated['tanggal_mulai'] ?? null;
+        $tanggalSelesai = $validated['tanggal_selesai'] ?? null;
+
+        if ($tipe === 'harian') {
+            // Laporan harian selalu untuk 1 tanggal (bukan rentang)
+            $tanggalMulai = $tanggalMulai ?: ($tanggalSelesai ?: Carbon::now()->toDateString());
+            $tanggalSelesai = $tanggalMulai;
+        } else {
+            // Laporan shift (dan all) memakai rentang tanggal, default 30 hari terakhir
+            if (!$tanggalMulai && !$tanggalSelesai) {
+                $tanggalMulai = Carbon::now()->subDays(30)->toDateString();
+                $tanggalSelesai = Carbon::now()->toDateString();
+            } elseif ($tanggalMulai && !$tanggalSelesai) {
+                $tanggalSelesai = Carbon::now()->toDateString();
+            } elseif (!$tanggalMulai && $tanggalSelesai) {
+                $tanggalMulai = Carbon::now()->subDays(30)->toDateString();
+            }
+        }
+
+        $filterAktif = array_merge($validated, [
+            'tipe' => $tipe,
+            'tanggal_mulai' => $tanggalMulai,
+            'tanggal_selesai' => $tanggalSelesai,
+        ]);
+
+        $cabangOptions = [];
+        if (!empty($cabangIds)) {
+            $cabangOptions = is_array($cabangIds) && count($cabangIds) > 0
+                ? Cabang::whereIn('id', $cabangIds)->orderBy('nama')->get(['id', 'nama', 'kode'])
+                : [];
+        }
+
+        $result = [
+            'filter_aktif' => $filterAktif,
+            'cabang_options' => $cabangOptions,
+            'tipe' => $tipe,
+        ];
+
+        // SHIFT DATA
+        if ($tipe === 'shift' || $tipe === 'all') {
+            $shiftQuery = Shift::whereIn('cabang_id', $cabangIds ?: [])
+                ->with(['user', 'cabang', 'transaksi'])
+                ->orderByDesc('waktu_buka');
+
+            if ($tanggalMulai && $tanggalSelesai) {
+                $shiftQuery->whereBetween('waktu_buka', [$tanggalMulai, $tanggalSelesai]);
+            }
+
+            if (!empty($validated['cabang_id'])) {
+                $shiftQuery->where('cabang_id', (int) $validated['cabang_id']);
+            }
+
+            $shiftPaginated = $shiftQuery->paginate(20)->through(function (Shift $s) {
+                $totalTransaksi = $s->transaksi->count();
+                $totalPenjualan = (float) $s->transaksi->where('status', 'selesai')->sum('total');
+                $durasiShift = null;
+                if ($s->waktu_tutup) {
+                    $durasiShift = Carbon::parse($s->waktu_buka)->diffInMinutes(Carbon::parse($s->waktu_tutup));
+                }
+                return [
+                    'id' => $s->id,
+                    'user' => $s->user,
+                    'cabang' => $s->cabang,
+                    'waktu_buka' => $s->waktu_buka,
+                    'waktu_tutup' => $s->waktu_tutup,
+                    'status' => $s->status,
+                    'nama_kasir' => $s->nama_kasir,
+                    'nama_kasir_list' => collect(preg_split('/,/', (string) $s->nama_kasir))
+                        ->map(fn($n) => trim((string) $n))
+                        ->filter(fn($n) => $n !== '')
+                        ->values()
+                        ->all(),
+                    'total_transaksi' => $totalTransaksi,
+                    'total_penjualan' => $totalPenjualan,
+                    'akurasi_kas' => (float) ($s->selisih ?? 0.0),
+                    'durasi_shift_menit' => $durasiShift,
+                ];
+            });
+
+            $shiftCollection = $shiftPaginated->getCollection();
+            $result['shift'] = $shiftPaginated;
+            $result['shift_statistik'] = [
+                'total_shift' => $shiftPaginated->total(),
+                'total_penjualan' => (float) $shiftCollection->sum('total_penjualan'),
+                'rata_rata_per_shift' => $shiftPaginated->total() > 0
+                    ? round(((float) $shiftCollection->sum('total_penjualan')) / $shiftPaginated->total(), 2)
+                    : 0,
+                'shift_dengan_selisih' => (int) $shiftCollection->filter(fn($r) => ((float) ($r['akurasi_kas'] ?? 0.0)) !== 0.0)->count(),
+                'total_selisih' => (float) $shiftCollection->sum('akurasi_kas'),
+            ];
+        }
+
+        // HARIAN DATA
+        if ($tipe === 'harian' || $tipe === 'all') {
+            $harianQuery = Shift::whereIn('cabang_id', $cabangIds ?: [])
+                ->whereDate('waktu_buka', '>=', $tanggalMulai)
+                ->whereDate('waktu_buka', '<=', $tanggalSelesai)
+                ->with(['user', 'cabang', 'transaksi.item.produk', 'transaksi.pembayaran']);
+
+            if (!empty($validated['cabang_id'])) {
+                $harianQuery->where('cabang_id', (int) $validated['cabang_id']);
+            }
+
+            $shiftHariIni = $harianQuery->get();
+
+            $totalShift = $shiftHariIni->count();
+            $shiftBuka = $shiftHariIni->where('status', 'buka')->count();
+            $shiftTutup = $shiftHariIni->where('status', 'tutup')->count();
+            $totalKasir = $shiftHariIni->pluck('user_id')->unique()->count();
+
+            $totalTransaksi = $shiftHariIni->sum(fn($s) => $s->transaksi->count());
+            $totalPenjualan = $shiftHariIni->sum(fn($s) => (float) $s->transaksi->where('status', 'selesai')->sum('total'));
+
+            $totalTunai = DB::table('pembayaran')
+                ->join('transaksi', 'pembayaran.transaksi_id', '=', 'transaksi.id')
+                ->join('shift', 'transaksi.shift_id', '=', 'shift.id')
+                ->whereIn('shift.cabang_id', $cabangIds ?: [])
+                ->whereDate('transaksi.waktu_selesai', '>=', $tanggalMulai)
+                ->whereDate('transaksi.waktu_selesai', '<=', $tanggalSelesai)
+                ->where('transaksi.status', 'selesai')
+                ->where('pembayaran.metode_pembayaran', 'tunai')
+                ->sum('pembayaran.jumlah');
+
+            $totalQris = DB::table('pembayaran')
+                ->join('transaksi', 'pembayaran.transaksi_id', '=', 'transaksi.id')
+                ->join('shift', 'transaksi.shift_id', '=', 'shift.id')
+                ->whereIn('shift.cabang_id', $cabangIds ?: [])
+                ->whereDate('transaksi.waktu_selesai', '>=', $tanggalMulai)
+                ->whereDate('transaksi.waktu_selesai', '<=', $tanggalSelesai)
+                ->where('transaksi.status', 'selesai')
+                ->where('pembayaran.metode_pembayaran', 'qris')
+                ->sum('pembayaran.jumlah');
+
+            $grafikPerJam = Transaksi::whereIn('cabang_id', $cabangIds ?: [])
+                ->whereDate('waktu_selesai', '>=', $tanggalMulai)
+                ->whereDate('waktu_selesai', '<=', $tanggalSelesai)
+                ->where('status', 'selesai')
+                ->select(DB::raw('HOUR(waktu_selesai) as jam'), DB::raw('SUM(total) as total_penjualan'), DB::raw('COUNT(*) as jumlah_transaksi'))
+                ->groupBy(DB::raw('HOUR(waktu_selesai)'))
+                ->orderBy('jam')
+                ->get();
+
+            $produkTerlaris = ItemTransaksi::join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
+                ->join('produk', 'item_transaksi.produk_id', '=', 'produk.id')
+                ->whereIn('transaksi.cabang_id', $cabangIds ?: [])
+                ->whereDate('transaksi.waktu_selesai', '>=', $tanggalMulai)
+                ->whereDate('transaksi.waktu_selesai', '<=', $tanggalSelesai)
+                ->where('transaksi.status', 'selesai')
+                ->select(
+                    'item_transaksi.produk_id',
+                    'produk.nama',
+                    DB::raw('SUM(item_transaksi.jumlah) as total_terjual'),
+                    DB::raw('SUM(item_transaksi.subtotal) as pendapatan')
+                )
+                ->groupBy('item_transaksi.produk_id', 'produk.nama')
+                ->orderByDesc('total_terjual')
+                ->limit(10)
+                ->get();
+
+            $performaPerCabang = Transaksi::join('shift', 'transaksi.shift_id', '=', 'shift.id')
+                ->join('cabang', 'shift.cabang_id', '=', 'cabang.id')
+                ->whereIn('shift.cabang_id', $cabangIds ?: [])
+                ->whereDate('transaksi.waktu_selesai', '>=', $tanggalMulai)
+                ->whereDate('transaksi.waktu_selesai', '<=', $tanggalSelesai)
+                ->where('transaksi.status', 'selesai')
+                ->select(
+                    'shift.cabang_id',
+                    'cabang.nama as cabang_nama',
+                    DB::raw('COUNT(DISTINCT shift.id) as total_shift'),
+                    DB::raw('COUNT(transaksi.id) as total_transaksi'),
+                    DB::raw('SUM(transaksi.total) as total_penjualan')
+                )
+                ->groupBy('shift.cabang_id', 'cabang.nama')
+                ->orderByDesc('total_penjualan')
+                ->get();
+
+            $performaPerKasir = Transaksi::join('shift', 'transaksi.shift_id', '=', 'shift.id')
+                ->leftJoin('users', 'shift.user_id', '=', 'users.id')
+                ->whereIn('shift.cabang_id', $cabangIds ?: [])
+                ->whereDate('transaksi.waktu_selesai', '>=', $tanggalMulai)
+                ->whereDate('transaksi.waktu_selesai', '<=', $tanggalSelesai)
+                ->where('transaksi.status', 'selesai')
+                ->select(
+                    'shift.user_id',
+                    'users.name as user_nama',
+                    DB::raw('COUNT(DISTINCT shift.id) as total_shift'),
+                    DB::raw('COUNT(transaksi.id) as total_transaksi'),
+                    DB::raw('SUM(transaksi.total) as total_penjualan')
+                )
+                ->groupBy('shift.user_id', 'users.name')
+                ->orderByDesc('total_penjualan')
+                ->get();
+
+            // Perbandingan dengan hari sebelumnya (hanya relevan jika 1 tanggal dipilih)
+            $perbandinganKemarin = null;
+            if ($tanggalMulai === $tanggalSelesai) {
+                $tanggalKemarin = Carbon::parse($tanggalMulai)->subDay()->toDateString();
+
+                $transaksiKemarinQuery = Transaksi::whereIn('cabang_id', $cabangIds ?: [])
+                    ->whereDate('waktu_selesai', $tanggalKemarin)
+                    ->where('status', 'selesai');
+
+                if (!empty($validated['cabang_id'])) {
+                    $transaksiKemarinQuery->where('cabang_id', (int) $validated['cabang_id']);
+                }
+
+                $totalPenjualanKemarin = (float) (clone $transaksiKemarinQuery)->sum('total');
+                $totalTransaksiKemarin = (int) (clone $transaksiKemarinQuery)->count();
+
+                $perbandinganKemarin = [
+                    'tanggal' => $tanggalKemarin,
+                    'total_penjualan' => $totalPenjualanKemarin,
+                    'total_transaksi' => $totalTransaksiKemarin,
+                    'perubahan_penjualan_persen' => $totalPenjualanKemarin > 0
+                        ? round((($totalPenjualan - $totalPenjualanKemarin) / $totalPenjualanKemarin) * 100, 2)
+                        : null,
+                    'perubahan_transaksi_persen' => $totalTransaksiKemarin > 0
+                        ? round((($totalTransaksi - $totalTransaksiKemarin) / $totalTransaksiKemarin) * 100, 2)
+                        : null,
+                ];
+            }
+
+            $result['harian_statistik'] = [
+                'tanggal' => $tanggalMulai,
+                'total_shift' => $totalShift,
+                'shift_buka' => $shiftBuka,
+                'shift_tutup' => $shiftTutup,
+                'total_kasir' => $totalKasir,
+                'total_transaksi' => (int) $totalTransaksi,
+                'total_penjualan' => (float) $totalPenjualan,
+                'total_tunai' => (float) ($totalTunai ?? 0),
+                'total_qris' => (float) ($totalQris ?? 0),
+                'rata_rata_per_shift' => $totalShift > 0 ? round($totalPenjualan / $totalShift, 2) : 0,
+                'rata_rata_per_transaksi' => $totalTransaksi > 0 ? round($totalPenjualan / $totalTransaksi, 2) : 0,
+            ];
+            $result['grafik_per_jam'] = $grafikPerJam;
+            $result['produk_terlaris'] = $produkTerlaris;
+            $result['performa_per_cabang'] = $performaPerCabang;
+            $result['performa_per_kasir'] = $performaPerKasir;
+            $result['perbandingan_kemarin'] = $perbandinganKemarin;
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json($result);
+        }
+
+        return Inertia::render('laporan/RiwayatTransaksi', $result);
+    }
+
+    public function analisisPenjualan(Request $request)
+    {
+        Gate::authorize('view-laporan');
+
+        $user = Auth::user();
+        $cabangIds = $this->tentukanCabangIds($user);
+
+        $validated = $request->validate([
+            'tanggal_mulai' => 'nullable|date',
+            'tanggal_selesai' => 'nullable|date|after_or_equal:tanggal_mulai',
+            'cabang_id' => ['nullable', 'integer'],
+            'kategori_id' => 'nullable|integer',
+            'harga_min' => 'nullable|numeric|min:0',
+            'harga_max' => 'nullable|numeric|min:0|gte:harga_min',
+            'tipe' => 'nullable|in:penjualan,kategori,all',
+        ]);
+
+        $tipe = $validated['tipe'] ?? 'all';
+        $tanggalMulai = $validated['tanggal_mulai'] ?? Carbon::now()->startOfMonth()->toDateString();
+        $tanggalSelesai = $validated['tanggal_selesai'] ?? Carbon::now()->toDateString();
+        $kategoriId = $request->integer('kategori_id') ?: null;
+        $hargaMin = $validated['harga_min'] ?? null;
+        $hargaMax = $validated['harga_max'] ?? null;
+        $cabangId = $request->integer('cabang_id') ?: null;
+
+        $filterAktif = [
+            'tanggal_mulai' => $tanggalMulai,
+            'tanggal_selesai' => $tanggalSelesai,
+            'kategori_id' => $kategoriId,
+            'harga_min' => $hargaMin,
+            'harga_max' => $hargaMax,
+        ];
+
+        $cabangOptions = [];
+        if (!empty($cabangIds)) {
+            $cabangOptions = is_array($cabangIds) && count($cabangIds) > 0
+                ? Cabang::whereIn('id', $cabangIds)->orderBy('nama')->get(['id', 'nama', 'kode'])
+                : [];
+        }
+
+        $kategoriOptions = KategoriProduk::orderBy('nama')->get(['id', 'nama']);
+
+        $result = [
+            'filter_aktif' => $filterAktif,
+            'cabang_options' => $cabangOptions,
+            'kategori_options' => $kategoriOptions,
+            'tipe' => $tipe,
+        ];
+
+        // PENJUALAN PRODUK DATA
+        if ($tipe === 'penjualan' || $tipe === 'all') {
+            $penjualanBase = ItemTransaksi::query()
+                ->join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
+                ->join('produk', 'item_transaksi.produk_id', '=', 'produk.id')
+                ->where('transaksi.status', 'selesai')
+                ->when($cabangId, fn($q) => $q->where('transaksi.cabang_id', $cabangId))
+                ->when(empty($cabangId) && !empty($cabangIds), fn($q) => $q->whereIn('transaksi.cabang_id', $cabangIds))
+                ->whereBetween('transaksi.waktu_selesai', [$tanggalMulai, Carbon::parse($tanggalSelesai)->endOfDay()->toDateTimeString()])
+                ->when($kategoriId, fn($q) => $q->where('produk.kategori_id', $kategoriId))
+                ->when($hargaMin !== null, fn($q) => $q->where('produk.harga_jual', '>=', $hargaMin))
+                ->when($hargaMax !== null, fn($q) => $q->where('produk.harga_jual', '<=', $hargaMax));
+
+            $totalPendapatan = (clone $penjualanBase)
+                ->select(DB::raw('SUM(item_transaksi.subtotal) as pendapatan'))
+                ->value('pendapatan') ?? 0;
+
+            $topProduk = (clone $penjualanBase)
+                ->select(
+                    'item_transaksi.produk_id',
+                    'produk.nama',
+                    DB::raw('SUM(item_transaksi.jumlah) as total_terjual'),
+                    DB::raw('SUM(item_transaksi.subtotal) as pendapatan'),
+                    DB::raw('COUNT(DISTINCT item_transaksi.transaksi_id) as jumlah_transaksi')
+                )
+                ->groupBy('item_transaksi.produk_id', 'produk.nama')
+                ->orderByDesc('pendapatan')
+                ->limit(10)
+                ->get()
+                ->map(function ($row) use ($totalPendapatan) {
+                    $row->rata_rata_per_transaksi = ($row->jumlah_transaksi ?? 0) > 0
+                        ? round($row->pendapatan / $row->jumlah_transaksi, 2)
+                        : 0;
+                    $row->kontribusi_persen = $totalPendapatan > 0
+                        ? round(($row->pendapatan / $totalPendapatan) * 100, 2)
+                        : 0;
+                    return $row;
+                });
+
+            $ringkasanTipe = (clone $penjualanBase)
+                ->select(
+                    'produk.tipe',
+                    DB::raw('SUM(item_transaksi.jumlah) as total_terjual'),
+                    DB::raw('SUM(item_transaksi.subtotal) as pendapatan'),
+                    DB::raw('COUNT(DISTINCT item_transaksi.transaksi_id) as jumlah_transaksi')
+                )
+                ->groupBy('produk.tipe')
+                ->orderByDesc('pendapatan')
+                ->get();
+
+            $result['penjualan'] = [
+                'total_pendapatan' => $totalPendapatan,
+                'top_produk' => $topProduk,
+                'ringkasan_tipe' => $ringkasanTipe,
+            ];
+        }
+
+        // PENDAPATAN KATEGORI DATA
+        if ($tipe === 'kategori' || $tipe === 'all') {
+            $kategoriBase = ItemTransaksi::query()
+                ->join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
+                ->join('produk', 'item_transaksi.produk_id', '=', 'produk.id')
+                ->join('kategori_produk', 'produk.kategori_id', '=', 'kategori_produk.id')
+                ->where('transaksi.status', 'selesai')
+                ->when($cabangId, fn($q) => $q->where('transaksi.cabang_id', $cabangId))
+                ->when(empty($cabangId) && !empty($cabangIds), fn($q) => $q->whereIn('transaksi.cabang_id', $cabangIds))
+                ->whereBetween('transaksi.waktu_selesai', [$tanggalMulai, Carbon::parse($tanggalSelesai)->endOfDay()->toDateTimeString()])
+                ->when($kategoriId, fn($q) => $q->where('produk.kategori_id', $kategoriId))
+                ->when($hargaMin !== null, fn($q) => $q->where('produk.harga_jual', '>=', $hargaMin))
+                ->when($hargaMax !== null, fn($q) => $q->where('produk.harga_jual', '<=', $hargaMax));
+
+            $perKategori = (clone $kategoriBase)
+                ->select(
+                    'kategori_produk.id as kategori_id',
+                    'kategori_produk.nama as kategori',
+                    DB::raw('SUM(item_transaksi.jumlah * produk.harga_jual) as pendapatan_kotor'),
+                    DB::raw('SUM(item_transaksi.jumlah * produk.harga_modal) as total_modal'),
+                    DB::raw('SUM(item_transaksi.jumlah * (produk.harga_jual - produk.harga_modal)) as margin')
+                )
+                ->groupBy('kategori_produk.id', 'kategori_produk.nama')
+                ->orderByDesc('pendapatan_kotor')
+                ->get()
+                ->map(function ($row) {
+                    $pendapatanKotor = (float) ($row->pendapatan_kotor ?? 0.0);
+                    $totalModal = (float) ($row->total_modal ?? 0.0);
+                    $margin = (float) ($row->margin ?? 0.0);
+                    $row->pendapatan_kotor = $pendapatanKotor;
+                    $row->total_modal = $totalModal;
+                    $row->margin = $margin;
+                    $row->margin_persen = $pendapatanKotor > 0.0
+                        ? round(($margin / $pendapatanKotor) * 100, 2)
+                        : 0.0;
+                    return $row;
+                });
+
+            $totalPendapatanKotor = (float) $perKategori->sum('pendapatan_kotor');
+            $totalModal = (float) $perKategori->sum('total_modal');
+            $totalMargin = (float) $perKategori->sum('margin');
+            $rataRataMarginPerKategori = $perKategori->count() > 0
+                ? round($perKategori->avg('margin'), 2)
+                : 0.0;
+
+            $kategoriTertinggi = $perKategori->sortByDesc('margin')->values()->first();
+            $kategoriTerendah = $perKategori->sortBy('margin')->values()->first();
+
+            $result['kategori'] = [
+                'per_kategori' => $perKategori,
+                'ringkasan' => [
+                    'total_pendapatan_kotor' => $totalPendapatanKotor,
+                    'total_modal' => $totalModal,
+                    'total_margin' => $totalMargin,
+                    'rata_rata_margin_per_kategori' => $rataRataMarginPerKategori,
+                    'kategori_margin_tertinggi' => $kategoriTertinggi,
+                    'kategori_margin_terendah' => $kategoriTerendah,
+                ],
+            ];
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json($result);
+        }
+
+        return Inertia::render('laporan/AnalisisPenjualan', $result);
+    }
+
     public function kinerjaKasir(Request $request)
     {
         Gate::authorize('view-laporan');
@@ -1387,14 +1861,546 @@ class LaporanController extends Controller
         ]);
     }
 
+    // ============ EXPORT RIWAYAT TRANSAKSI ============
+
+    public function exportRiwayatTransaksiExcel(Request $request)
+    {
+        Gate::authorize('view-laporan');
+
+        $user = Auth::user();
+        $cabangIds = $this->tentukanCabangIds($user);
+
+        $validated = $request->validate([
+            'tanggal_mulai' => 'nullable|date',
+            'tanggal_selesai' => 'nullable|date|after_or_equal:tanggal_mulai',
+            'cabang_id' => ['nullable', 'integer'],
+            'tipe' => 'nullable|in:shift,harian,all',
+        ]);
+
+        $tipe = $validated['tipe'] ?? 'all';
+        $tanggalMulai = $validated['tanggal_mulai'] ?? Carbon::now()->subDays(30)->toDateString();
+        $tanggalSelesai = $validated['tanggal_selesai'] ?? Carbon::now()->toDateString();
+        $cabangId = !empty($validated['cabang_id']) ? (int) $validated['cabang_id'] : null;
+
+        $handle = fopen('php://temp', 'r+');
+        fwrite($handle, "\xEF\xBB\xBF"); // UTF-8 BOM
+
+        // Header info
+        fputcsv($handle, ['LAPORAN RIWAYAT TRANSAKSI']);
+        fputcsv($handle, ['Periode', $tanggalMulai . ' s/d ' . $tanggalSelesai]);
+        fputcsv($handle, ['Tipe', ucfirst($tipe)]);
+        fputcsv($handle, ['Diekspor', now()->format('d/m/Y H:i:s')]);
+        fputcsv($handle, []);
+
+        // SHIFT DATA
+        if ($tipe === 'shift' || $tipe === 'all') {
+            fputcsv($handle, ['=== DATA SHIFT ===']);
+
+            $shiftQuery = Shift::whereIn('cabang_id', $cabangIds ?: [])
+                ->with(['user', 'cabang', 'transaksi'])
+                ->orderByDesc('waktu_buka');
+
+            if ($tanggalMulai && $tanggalSelesai) {
+                $shiftQuery->whereBetween('waktu_buka', [$tanggalMulai, $tanggalSelesai]);
+            }
+
+            if ($cabangId) {
+                $shiftQuery->where('cabang_id', $cabangId);
+            }
+
+            $shifts = $shiftQuery->get();
+
+            fputcsv($handle, ['No', 'ID Shift', 'Cabang', 'Kasir', 'Waktu Buka', 'Waktu Tutup', 'Status', 'Total Transaksi', 'Total Penjualan', 'Selisih Kas']);
+
+            $totalPenjualanShift = 0;
+            foreach ($shifts as $i => $s) {
+                $totalTransaksi = $s->transaksi->count();
+                $totalPenjualan = (float) $s->transaksi->where('status', 'selesai')->sum('total');
+                $totalPenjualanShift += $totalPenjualan;
+
+                $namaKasir = $s->nama_kasir ?? (optional($s->user)->name ?? '-');
+                fputcsv($handle, [
+                    $i + 1,
+                    '#' . $s->id,
+                    optional($s->cabang)->nama ?? '-',
+                    $namaKasir,
+                    $s->waktu_buka,
+                    $s->waktu_tutup ?? '-',
+                    ucfirst($s->status),
+                    $totalTransaksi,
+                    $totalPenjualan,
+                    (float) ($s->selisih ?? 0),
+                ]);
+            }
+
+            fputcsv($handle, []);
+            fputcsv($handle, ['TOTAL PENJUALAN SHIFT', '', '', '', '', '', '', '', $totalPenjualanShift]);
+            fputcsv($handle, []);
+        }
+
+        // HARIAN DATA
+        if ($tipe === 'harian' || $tipe === 'all') {
+            fputcsv($handle, ['=== DATA HARIAN ===']);
+
+            $harianQuery = Shift::whereIn('cabang_id', $cabangIds ?: [])
+                ->whereDate('waktu_buka', '>=', $tanggalMulai)
+                ->whereDate('waktu_buka', '<=', $tanggalSelesai)
+                ->with(['user', 'cabang', 'transaksi']);
+
+            if ($cabangId) {
+                $harianQuery->where('cabang_id', $cabangId);
+            }
+
+            $shiftHariIni = $harianQuery->get();
+
+            $totalShift = $shiftHariIni->count();
+            $totalTransaksiHarian = $shiftHariIni->sum(fn($s) => $s->transaksi->count());
+            $totalPenjualanHarian = $shiftHariIni->sum(fn($s) => (float) $s->transaksi->where('status', 'selesai')->sum('total'));
+
+            fputcsv($handle, ['STATISTIK HARIAN']);
+            fputcsv($handle, ['Total Shift', $totalShift]);
+            fputcsv($handle, ['Total Transaksi', $totalTransaksiHarian]);
+            fputcsv($handle, ['Total Penjualan', $totalPenjualanHarian]);
+            fputcsv($handle, []);
+
+            // Top 10 Produk Terlaris
+            $produkTerlaris = ItemTransaksi::join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
+                ->join('produk', 'item_transaksi.produk_id', '=', 'produk.id')
+                ->whereIn('transaksi.cabang_id', $cabangIds ?: [])
+                ->whereDate('transaksi.waktu_selesai', '>=', $tanggalMulai)
+                ->whereDate('transaksi.waktu_selesai', '<=', $tanggalSelesai)
+                ->where('transaksi.status', 'selesai')
+                ->select(
+                    'item_transaksi.produk_id',
+                    'produk.nama',
+                    DB::raw('SUM(item_transaksi.jumlah) as total_terjual'),
+                    DB::raw('SUM(item_transaksi.subtotal) as pendapatan')
+                )
+                ->groupBy('item_transaksi.produk_id', 'produk.nama')
+                ->orderByDesc('total_terjual')
+                ->limit(10)
+                ->get();
+
+            fputcsv($handle, ['TOp 10 PRODUK TERLARIS']);
+            fputcsv($handle, ['No', 'Produk', 'Total Terjual', 'Pendapatan']);
+
+            foreach ($produkTerlaris as $i => $p) {
+                fputcsv($handle, [
+                    $i + 1,
+                    $p->nama,
+                    $p->total_terjual,
+                    (float) $p->pendapatan,
+                ]);
+            }
+        }
+
+        rewind($handle);
+        $csv = stream_get_contents($handle) ?: '';
+        fclose($handle);
+
+        $filename = 'laporan_riwayat_transaksi_' . date('Ymd_His') . '.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ]);
+    }
+
+    public function exportRiwayatTransaksiPdf(Request $request)
+    {
+        Gate::authorize('view-laporan');
+
+        $user = Auth::user();
+        $cabangIds = $this->tentukanCabangIds($user);
+
+        $validated = $request->validate([
+            'tanggal_mulai' => 'nullable|date',
+            'tanggal_selesai' => 'nullable|date|after_or_equal:tanggal_mulai',
+            'cabang_id' => ['nullable', 'integer'],
+            'tipe' => 'nullable|in:shift,harian,all',
+        ]);
+
+        $tipe = $validated['tipe'] ?? 'all';
+        $tanggalMulai = $validated['tanggal_mulai'] ?? Carbon::now()->subDays(30)->toDateString();
+        $tanggalSelesai = $validated['tanggal_selesai'] ?? Carbon::now()->toDateString();
+        $cabangId = !empty($validated['cabang_id']) ? (int) $validated['cabang_id'] : null;
+
+        $shiftData = [];
+        $harianStatistik = [];
+        $topProduk = [];
+
+        // SHIFT DATA
+        if ($tipe === 'shift' || $tipe === 'all') {
+            $shiftQuery = Shift::whereIn('cabang_id', $cabangIds ?: [])
+                ->with(['user', 'cabang', 'transaksi'])
+                ->orderByDesc('waktu_buka');
+
+            if ($tanggalMulai && $tanggalSelesai) {
+                $shiftQuery->whereBetween('waktu_buka', [$tanggalMulai, $tanggalSelesai]);
+            }
+
+            if ($cabangId) {
+                $shiftQuery->where('cabang_id', $cabangId);
+            }
+
+            $shifts = $shiftQuery->get();
+            $totalPenjualan = 0;
+
+            foreach ($shifts as $s) {
+                $totalTransaksi = $s->transaksi->count();
+                $totalPenjualanShift = (float) $s->transaksi->where('status', 'selesai')->sum('total');
+                $totalPenjualan += $totalPenjualanShift;
+
+                $shiftData[] = [
+                    'id' => $s->id,
+                    'cabang' => optional($s->cabang)->nama ?? '-',
+                    'kasir' => $s->nama_kasir ?? optional($s->user)->name ?? '-',
+                    'waktu_buka' => $s->waktu_buka,
+                    'waktu_tutup' => $s->waktu_tutup ?? '-',
+                    'status' => ucfirst($s->status),
+                    'total_transaksi' => $totalTransaksi,
+                    'total_penjualan' => $totalPenjualanShift,
+                    'selisih' => (float) ($s->selisih ?? 0),
+                ];
+            }
+
+            $harianStatistik['total_shift'] = $shifts->count();
+            $harianStatistik['total_penjualan'] = $totalPenjualan;
+            $harianStatistik['rata_rata'] = $shifts->count() > 0 ? round($totalPenjualan / $shifts->count(), 2) : 0;
+        }
+
+        // HARIAN DATA
+        if ($tipe === 'harian' || $tipe === 'all') {
+            $topProduk = ItemTransaksi::join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
+                ->join('produk', 'item_transaksi.produk_id', '=', 'produk.id')
+                ->whereIn('transaksi.cabang_id', $cabangIds ?: [])
+                ->whereDate('transaksi.waktu_selesai', '>=', $tanggalMulai)
+                ->whereDate('transaksi.waktu_selesai', '<=', $tanggalSelesai)
+                ->where('transaksi.status', 'selesai')
+                ->select(
+                    'item_transaksi.produk_id',
+                    'produk.nama',
+                    DB::raw('SUM(item_transaksi.jumlah) as total_terjual'),
+                    DB::raw('SUM(item_transaksi.subtotal) as pendapatan')
+                )
+                ->groupBy('item_transaksi.produk_id', 'produk.nama')
+                ->orderByDesc('total_terjual')
+                ->limit(10)
+                ->get()
+                ->toArray();
+        }
+
+        $html = view('exports.laporan-riwayat-transaksi', [
+            'tipe' => $tipe,
+            'tanggal_mulai' => $tanggalMulai,
+            'tanggal_selesai' => $tanggalSelesai,
+            'shift_data' => $shiftData,
+            'harian_statistik' => $harianStatistik,
+            'top_produk' => $topProduk,
+            'generated_at' => now()->format('d/m/Y H:i:s'),
+        ])->render();
+
+        return response($html, 200, [
+            'Content-Type' => 'text/html; charset=UTF-8',
+        ]);
+    }
+
+    // ============ EXPORT ANALISIS PENJUALAN ============
+
+    public function exportAnalisisPenjualanExcel(Request $request)
+    {
+        Gate::authorize('view-laporan');
+
+        $user = Auth::user();
+        $cabangIds = $this->tentukanCabangIds($user);
+
+        $validated = $request->validate([
+            'tanggal_mulai' => 'nullable|date',
+            'tanggal_selesai' => 'nullable|date|after_or_equal:tanggal_mulai',
+            'kategori_id' => 'nullable|integer',
+            'harga_min' => 'nullable|numeric|min:0',
+            'harga_max' => 'nullable|numeric|min:0',
+            'tipe' => 'nullable|in:penjualan,kategori,all',
+        ]);
+
+        $tipe = $validated['tipe'] ?? 'all';
+        $tanggalMulai = $validated['tanggal_mulai'] ?? Carbon::now()->startOfMonth()->toDateString();
+        $tanggalSelesai = $validated['tanggal_selesai'] ?? Carbon::now()->toDateString();
+        $kategoriId = !empty($validated['kategori_id']) ? (int) $validated['kategori_id'] : null;
+        $hargaMin = $validated['harga_min'] ?? null;
+        $hargaMax = $validated['harga_max'] ?? null;
+
+        $handle = fopen('php://temp', 'r+');
+        fwrite($handle, "\xEF\xBB\xBF"); // UTF-8 BOM
+
+        // Header info
+        fputcsv($handle, ['LAPORAN ANALISIS PENJUALAN']);
+        fputcsv($handle, ['Periode', $tanggalMulai . ' s/d ' . $tanggalSelesai]);
+        fputcsv($handle, ['Tipe', ucfirst($tipe)]);
+        fputcsv($handle, ['Diekspor', now()->format('d/m/Y H:i:s')]);
+        fputcsv($handle, []);
+
+        // PENJUALAN PRODUK DATA
+        if ($tipe === 'penjualan' || $tipe === 'all') {
+            $penjualanBase = ItemTransaksi::query()
+                ->join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
+                ->join('produk', 'item_transaksi.produk_id', '=', 'produk.id')
+                ->where('transaksi.status', 'selesai')
+                ->when(!empty($cabangIds), fn($q) => $q->whereIn('transaksi.cabang_id', $cabangIds))
+                ->whereBetween('transaksi.waktu_selesai', [$tanggalMulai, Carbon::parse($tanggalSelesai)->endOfDay()->toDateTimeString()])
+                ->when($kategoriId, fn($q) => $q->where('produk.kategori_id', $kategoriId))
+                ->when($hargaMin !== null, fn($q) => $q->where('produk.harga_jual', '>=', $hargaMin))
+                ->when($hargaMax !== null, fn($q) => $q->where('produk.harga_jual', '<=', $hargaMax));
+
+            $totalPendapatan = (float) ((clone $penjualanBase)
+                ->select(DB::raw('SUM(item_transaksi.subtotal) as pendapatan'))
+                ->value('pendapatan') ?? 0);
+
+            $topProduk = (clone $penjualanBase)
+                ->select(
+                    'item_transaksi.produk_id',
+                    'produk.nama',
+                    DB::raw('SUM(item_transaksi.jumlah) as total_terjual'),
+                    DB::raw('SUM(item_transaksi.subtotal) as pendapatan'),
+                    DB::raw('COUNT(DISTINCT item_transaksi.transaksi_id) as jumlah_transaksi')
+                )
+                ->groupBy('item_transaksi.produk_id', 'produk.nama')
+                ->orderByDesc('pendapatan')
+                ->limit(10)
+                ->get();
+
+            fputcsv($handle, ['=== TOP 10 PRODUK ===']);
+            fputcsv($handle, ['No', 'Produk', 'Total Terjual', 'Pendapatan', 'Rata-rata/Transaksi', 'Kontribusi %']);
+
+            foreach ($topProduk as $i => $p) {
+                $rataRata = $p->jumlah_transaksi > 0 ? round($p->pendapatan / $p->jumlah_transaksi, 2) : 0;
+                $kontribusi = $totalPendapatan > 0 ? round(($p->pendapatan / $totalPendapatan) * 100, 2) : 0;
+                fputcsv($handle, [
+                    $i + 1,
+                    $p->nama,
+                    $p->total_terjual,
+                    (float) $p->pendapatan,
+                    $rataRata,
+                    $kontribusi . '%',
+                ]);
+            }
+
+            fputcsv($handle, []);
+            fputcsv($handle, ['TOTAL PENDAPATAN', '', '', $totalPendapatan]);
+            fputcsv($handle, []);
+        }
+
+        // PENDAPATAN KATEGORI DATA
+        if ($tipe === 'kategori' || $tipe === 'all') {
+            $kategoriBase = ItemTransaksi::query()
+                ->join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
+                ->join('produk', 'item_transaksi.produk_id', '=', 'produk.id')
+                ->join('kategori_produk', 'produk.kategori_id', '=', 'kategori_produk.id')
+                ->where('transaksi.status', 'selesai')
+                ->when(!empty($cabangIds), fn($q) => $q->whereIn('transaksi.cabang_id', $cabangIds))
+                ->whereBetween('transaksi.waktu_selesai', [$tanggalMulai, Carbon::parse($tanggalSelesai)->endOfDay()->toDateTimeString()])
+                ->when($kategoriId, fn($q) => $q->where('produk.kategori_id', $kategoriId))
+                ->when($hargaMin !== null, fn($q) => $q->where('produk.harga_jual', '>=', $hargaMin))
+                ->when($hargaMax !== null, fn($q) => $q->where('produk.harga_jual', '<=', $hargaMax));
+
+            $perKategori = (clone $kategoriBase)
+                ->select(
+                    'kategori_produk.id as kategori_id',
+                    'kategori_produk.nama as kategori',
+                    DB::raw('SUM(item_transaksi.jumlah * produk.harga_jual) as pendapatan_kotor'),
+                    DB::raw('SUM(item_transaksi.jumlah * produk.harga_modal) as total_modal'),
+                    DB::raw('SUM(item_transaksi.jumlah * (produk.harga_jual - produk.harga_modal)) as margin')
+                )
+                ->groupBy('kategori_produk.id', 'kategori_produk.nama')
+                ->orderByDesc('pendapatan_kotor')
+                ->get();
+
+            fputcsv($handle, ['=== PENDAPATAN PER KATEGORI ===']);
+            fputcsv($handle, ['No', 'Kategori', 'Pendapatan Kotor', 'Total Modal', 'Margin', 'Margin %']);
+
+            $totalKotor = 0;
+            $totalModal = 0;
+            $totalMargin = 0;
+
+            foreach ($perKategori as $i => $k) {
+                $kotor = (float) $k->pendapatan_kotor;
+                $modal = (float) $k->total_modal;
+                $margin = (float) $k->margin;
+                $marginPersen = $kotor > 0 ? round(($margin / $kotor) * 100, 2) : 0;
+
+                $totalKotor += $kotor;
+                $totalModal += $modal;
+                $totalMargin += $margin;
+
+                fputcsv($handle, [
+                    $i + 1,
+                    $k->kategori,
+                    $kotor,
+                    $modal,
+                    $margin,
+                    $marginPersen . '%',
+                ]);
+            }
+
+            fputcsv($handle, []);
+            fputcsv($handle, ['TOTAL', '', $totalKotor, $totalModal, $totalMargin]);
+        }
+
+        rewind($handle);
+        $csv = stream_get_contents($handle) ?: '';
+        fclose($handle);
+
+        $filename = 'laporan_analisis_penjualan_' . date('Ymd_His') . '.csv';
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ]);
+    }
+
+    public function exportAnalisisPenjualanPdf(Request $request)
+    {
+        Gate::authorize('view-laporan');
+
+        $user = Auth::user();
+        $cabangIds = $this->tentukanCabangIds($user);
+
+        $validated = $request->validate([
+            'tanggal_mulai' => 'nullable|date',
+            'tanggal_selesai' => 'nullable|date|after_or_equal:tanggal_mulai',
+            'kategori_id' => 'nullable|integer',
+            'harga_min' => 'nullable|numeric|min:0',
+            'harga_max' => 'nullable|numeric|min:0',
+            'tipe' => 'nullable|in:penjualan,kategori,all',
+        ]);
+
+        $tipe = $validated['tipe'] ?? 'all';
+        $tanggalMulai = $validated['tanggal_mulai'] ?? Carbon::now()->startOfMonth()->toDateString();
+        $tanggalSelesai = $validated['tanggal_selesai'] ?? Carbon::now()->toDateString();
+        $kategoriId = !empty($validated['kategori_id']) ? (int) $validated['kategori_id'] : null;
+        $hargaMin = $validated['harga_min'] ?? null;
+        $hargaMax = $validated['harga_max'] ?? null;
+
+        $penjualanData = [];
+        $kategoriData = [];
+        $totalPendapatan = 0;
+        $totalKotor = 0;
+        $totalMargin = 0;
+
+        // PENJUALAN PRODUK DATA
+        if ($tipe === 'penjualan' || $tipe === 'all') {
+            $penjualanBase = ItemTransaksi::query()
+                ->join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
+                ->join('produk', 'item_transaksi.produk_id', '=', 'produk.id')
+                ->where('transaksi.status', 'selesai')
+                ->when(!empty($cabangIds), fn($q) => $q->whereIn('transaksi.cabang_id', $cabangIds))
+                ->whereBetween('transaksi.waktu_selesai', [$tanggalMulai, Carbon::parse($tanggalSelesai)->endOfDay()->toDateTimeString()])
+                ->when($kategoriId, fn($q) => $q->where('produk.kategori_id', $kategoriId))
+                ->when($hargaMin !== null, fn($q) => $q->where('produk.harga_jual', '>=', $hargaMin))
+                ->when($hargaMax !== null, fn($q) => $q->where('produk.harga_jual', '<=', $hargaMax));
+
+            $totalPendapatan = (float) ((clone $penjualanBase)
+                ->select(DB::raw('SUM(item_transaksi.subtotal) as pendapatan'))
+                ->value('pendapatan') ?? 0);
+
+            $topProduk = (clone $penjualanBase)
+                ->select(
+                    'item_transaksi.produk_id',
+                    'produk.nama',
+                    DB::raw('SUM(item_transaksi.jumlah) as total_terjual'),
+                    DB::raw('SUM(item_transaksi.subtotal) as pendapatan'),
+                    DB::raw('COUNT(DISTINCT item_transaksi.transaksi_id) as jumlah_transaksi')
+                )
+                ->groupBy('item_transaksi.produk_id', 'produk.nama')
+                ->orderByDesc('pendapatan')
+                ->limit(10)
+                ->get();
+
+            foreach ($topProduk as $p) {
+                $rataRata = $p->jumlah_transaksi > 0 ? round($p->pendapatan / $p->jumlah_transaksi, 2) : 0;
+                $kontribusi = $totalPendapatan > 0 ? round(($p->pendapatan / $totalPendapatan) * 100, 2) : 0;
+                $penjualanData[] = [
+                    'nama' => $p->nama,
+                    'total_terjual' => $p->total_terjual,
+                    'pendapatan' => (float) $p->pendapatan,
+                    'rata_rata' => $rataRata,
+                    'kontribusi' => $kontribusi,
+                ];
+            }
+        }
+
+        // PENDAPATAN KATEGORI DATA
+        if ($tipe === 'kategori' || $tipe === 'all') {
+            $kategoriBase = ItemTransaksi::query()
+                ->join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
+                ->join('produk', 'item_transaksi.produk_id', '=', 'produk.id')
+                ->join('kategori_produk', 'produk.kategori_id', '=', 'kategori_produk.id')
+                ->where('transaksi.status', 'selesai')
+                ->when(!empty($cabangIds), fn($q) => $q->whereIn('transaksi.cabang_id', $cabangIds))
+                ->whereBetween('transaksi.waktu_selesai', [$tanggalMulai, Carbon::parse($tanggalSelesai)->endOfDay()->toDateTimeString()])
+                ->when($kategoriId, fn($q) => $q->where('produk.kategori_id', $kategoriId))
+                ->when($hargaMin !== null, fn($q) => $q->where('produk.harga_jual', '>=', $hargaMin))
+                ->when($hargaMax !== null, fn($q) => $q->where('produk.harga_jual', '<=', $hargaMax));
+
+            $perKategori = (clone $kategoriBase)
+                ->select(
+                    'kategori_produk.nama as kategori',
+                    DB::raw('SUM(item_transaksi.jumlah * produk.harga_jual) as pendapatan_kotor'),
+                    DB::raw('SUM(item_transaksi.jumlah * produk.harga_modal) as total_modal'),
+                    DB::raw('SUM(item_transaksi.jumlah * (produk.harga_jual - produk.harga_modal)) as margin')
+                )
+                ->groupBy('kategori_produk.id', 'kategori_produk.nama')
+                ->orderByDesc('pendapatan_kotor')
+                ->get();
+
+            foreach ($perKategori as $k) {
+                $kotor = (float) $k->pendapatan_kotor;
+                $modal = (float) $k->total_modal;
+                $margin = (float) $k->margin;
+                $marginPersen = $kotor > 0 ? round(($margin / $kotor) * 100, 2) : 0;
+
+                $totalKotor += $kotor;
+                $totalMargin += $margin;
+
+                $kategoriData[] = [
+                    'kategori' => $k->kategori,
+                    'pendapatan_kotor' => $kotor,
+                    'total_modal' => $modal,
+                    'margin' => $margin,
+                    'margin_persen' => $marginPersen,
+                ];
+            }
+        }
+
+        $html = view('exports.laporan-analisis-penjualan', [
+            'tipe' => $tipe,
+            'tanggal_mulai' => $tanggalMulai,
+            'tanggal_selesai' => $tanggalSelesai,
+            'penjualan_data' => $penjualanData,
+            'kategori_data' => $kategoriData,
+            'total_pendapatan' => $totalPendapatan,
+            'total_kotor' => $totalKotor,
+            'total_margin' => $totalMargin,
+            'generated_at' => now()->format('d/m/Y H:i:s'),
+        ])->render();
+
+        return response($html, 200, [
+            'Content-Type' => 'text/html; charset=UTF-8',
+        ]);
+    }
+
     private function tentukanCabangIds(User $user): array
     {
-        if (in_array($user->role, ['manager', 'it_support'], true)) {
-            return Cabang::pluck('id')->all();
+        if (in_array($user->role, ['it_support'], true)) {
+            // it_support can see all branches
+            return [];
         }
+        
+        // For manager, supervisor, and kasir - only show assigned branches
         if (method_exists($user, 'cabang') && $user->cabang) {
             return $user->cabang->pluck('id')->all();
         }
+        
         return [];
     }
 }

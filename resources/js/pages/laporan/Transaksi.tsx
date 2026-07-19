@@ -2,6 +2,16 @@ import { Head } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
 import { formatDateTime } from '@/utils/formatters';
 
+function formatRupiah(value: number | string | null | undefined) {
+    const num = typeof value === 'string' ? Number(value) : value ?? 0;
+    if (!Number.isFinite(num)) return '-';
+    return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        maximumFractionDigits: 0,
+    }).format(num);
+}
+
 export default function LaporanTransaksi({
     transaksi,
     statistik,
@@ -18,14 +28,18 @@ export default function LaporanTransaksi({
             <div className="space-y-6">
                 <h1 className="text-xl font-semibold">Laporan Riwayat Transaksi</h1>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <div className="bg-muted p-4 rounded">
                         <div className="text-sm text-muted-foreground">Total Transaksi</div>
                         <div className="text-2xl font-bold">{statistik?.total_transaksi ?? 0}</div>
                     </div>
                     <div className="bg-muted p-4 rounded">
-                        <div className="text-sm text-muted-foreground">Total Nilai</div>
-                        <div className="text-2xl font-bold">{statistik?.total_nilai ?? 0}</div>
+                        <div className="text-sm text-muted-foreground">Total Nilai (setelah diskon)</div>
+                        <div className="text-2xl font-bold">{formatRupiah(statistik?.total_nilai ?? 0)}</div>
+                    </div>
+                    <div className="bg-muted p-4 rounded">
+                        <div className="text-sm text-muted-foreground">Total Diskon</div>
+                        <div className="text-2xl font-bold text-orange-600">{formatRupiah(statistik?.total_diskon ?? 0)}</div>
                     </div>
                     <div className="bg-muted p-4 rounded">
                         <div className="text-sm text-muted-foreground">Periode</div>
@@ -148,8 +162,9 @@ export default function LaporanTransaksi({
                                     <th className="text-left py-2 pr-4">Waktu</th>
                                     <th className="text-left py-2 pr-4">Invoice</th>
                                     <th className="text-left py-2 pr-4">Cabang</th>
-                                    <th className="text-left py-2 pr-4">Shift</th>
                                     <th className="text-left py-2 pr-4">Kasir</th>
+                                    <th className="text-right py-2 pr-4">Subtotal</th>
+                                    <th className="text-right py-2 pr-4">Diskon</th>
                                     <th className="text-right py-2 pr-4">Total</th>
                                     <th className="text-left py-2 pr-4">Status</th>
                                 </tr>
@@ -169,25 +184,27 @@ export default function LaporanTransaksi({
                                             <div className="font-medium">{row.cabang?.nama ?? '-'}</div>
                                         </td>
                                         <td className="py-2 pr-4 align-top">
-                                            {row.shift ? (
-                                                <div className="text-xs">
-                                                    #{row.shift.id} ({row.shift.status})
-                                                </div>
-                                            ) : (
-                                                '-'
-                                            )}
-                                        </td>
-                                        <td className="py-2 pr-4 align-top">
                                             {row.kasir ? (
-                                                <div className="text-xs">
-                                                    {row.kasir.name}
-                                                </div>
-                                            ) : (
-                                                '-'
-                                            )}
+                                                <div className="text-xs">{row.kasir.name}</div>
+                                            ) : '-'}
                                         </td>
                                         <td className="py-2 pr-4 text-right align-top">
-                                            {row.total}
+                                            {formatRupiah(row.subtotal)}
+                                        </td>
+                                        <td className="py-2 pr-4 text-right align-top">
+                                            {row.diskon > 0 ? (
+                                                <span className="text-orange-600">
+                                                    -{formatRupiah(row.diskon)}
+                                                    {row.diskon_persen ? (
+                                                        <span className="block text-xs text-muted-foreground">
+                                                            ({Number(row.diskon_persen).toFixed(2)}%)
+                                                        </span>
+                                                    ) : null}
+                                                </span>
+                                            ) : '-'}
+                                        </td>
+                                        <td className="py-2 pr-4 text-right align-top font-medium">
+                                            {formatRupiah(row.total)}
                                         </td>
                                         <td className="py-2 pr-4 align-top">
                                             {row.status}
@@ -197,7 +214,7 @@ export default function LaporanTransaksi({
                                 {rows.length === 0 && (
                                     <tr>
                                         <td
-                                            colSpan={7}
+                                            colSpan={8}
                                             className="py-4 text-center text-sm text-muted-foreground"
                                         >
                                             Tidak ada data transaksi

@@ -12,6 +12,7 @@ use App\Http\Controllers\SystemController;
 use App\Http\Controllers\ManagerController;
 use App\Http\Controllers\SupervisorController;
 use App\Http\Controllers\KasirController;
+use App\Http\Controllers\KaryawanController;
 use App\Http\Controllers\StokController;
 use App\Http\Controllers\ProdukController;
 use App\Http\Controllers\KategoriProdukController;
@@ -24,25 +25,35 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\Cabang;
 use App\Services\StokService;
 
- $mainDomain = config('app.domain') ?: parse_url((string) config('app.url'), PHP_URL_HOST);
- $backofficeDomain = config('app.backoffice_domain') ?: ($mainDomain ? ('web.' . $mainDomain) : null);
+$mainDomain = config('app.domain') ?: parse_url((string) config('app.url'), PHP_URL_HOST);
+$backofficeDomain = config('app.backoffice_domain') ?: ($mainDomain ? ('web.' . $mainDomain) : null);
+$isLocal = app()->environment('local');
+$isRunningInConsole = app()->runningInConsole(); // NEW: Check if running artisan command (like wayfinder:generate)
+$skipDomainConstraints = $isLocal || $isRunningInConsole; // NEW: Skip domains for local OR console
 
 // ============================================================================
-// LANDING PAGE ROUTES (main domain)
+// LANDING PAGE ROUTES
 // ============================================================================
-Route::domain($mainDomain ?: '__invalid.local')->group(function () {
+$landingRouteCallback = function () {
     Route::get('/', [LandingController::class, 'home'])->name('landing.home');
     Route::get('/about', [LandingController::class, 'about'])->name('landing.about');
     Route::get('/menu', [LandingController::class, 'menu'])->name('landing.menu');
     Route::get('/cabang/{slug}', [LandingController::class, 'cabangMenu'])->name('landing.cabang');
     Route::get('/cabang/{slug}/{kategori}', [LandingController::class, 'cabangMenu'])->name('landing.cabang.kategori');
-});
+    Route::get('/menupercabang', [LandingController::class, 'menupercabang'])->name('landing.menupercabang.index');
+    Route::get('/menupercabang/{namaCabang}', [LandingController::class, 'menupercabang'])->name('landing.menupercabang.show');
+};
+
+if ($skipDomainConstraints) {
+    $landingRouteCallback();
+} else {
+    Route::domain($mainDomain ?: '__invalid.local')->group($landingRouteCallback);
+}
 
 // ============================================================================
-// BACKOFFICE ROUTES (backoffice domain)
+// BACKOFFICE ROUTES
 // ============================================================================
-Route::domain($backofficeDomain ?: '__invalid.local')->group(function () {
-
+$backofficeRouteCallback = function () {
     Route::get('/', function () {
         if (Auth::check()) {
             return redirect()->route('dashboard');
@@ -60,7 +71,7 @@ Route::domain($backofficeDomain ?: '__invalid.local')->group(function () {
         // ENHANCED DASHBOARD ROUTES (all authenticated users)
         // Prefix: /dashboard
         // ------------------------------------------------------------------------
-        Route::middleware('auth')->prefix('dashboard')->name('dashboard.')->group(function () {
+        Route::prefix('dashboard')->name('dashboard.')->group(function () {
             Route::get('/admin', [EnhancedDashboardController::class, 'adminDashboard'])->name('admin')->middleware('role:admin,it_support');
             Route::get('/manager', [EnhancedDashboardController::class, 'managerDashboard'])->name('manager')->middleware('role:manager');
             Route::get('/supervisor', [EnhancedDashboardController::class, 'supervisorDashboard'])->name('supervisor')->middleware('role:supervisor');
@@ -102,6 +113,10 @@ Route::domain($backofficeDomain ?: '__invalid.local')->group(function () {
             Route::get('/cabang/{cabang}', [CabangController::class, 'show'])->name('cabang.show');
             Route::post('/cabang/{cabang}/users', [CabangController::class, 'attachUser'])->name('cabang.users.attach');
             Route::delete('/cabang/{cabang}/users/{user}', [CabangController::class, 'detachUser'])->name('cabang.users.detach');
+            Route::post('/cabang/{cabang}/manager', [CabangController::class, 'setManager'])->name('cabang.manager.set');
+            Route::delete('/cabang/{cabang}/manager', [CabangController::class, 'removeManager'])->name('cabang.manager.remove');
+            Route::post('/cabang/{cabang}/supervisor', [CabangController::class, 'setSupervisor'])->name('cabang.supervisor.set');
+            Route::delete('/cabang/{cabang}/supervisor', [CabangController::class, 'removeSupervisor'])->name('cabang.supervisor.remove');
 
             // Soft delete management routes
             Route::get('/deleted-transactions', function () {
@@ -123,6 +138,17 @@ Route::domain($backofficeDomain ?: '__invalid.local')->group(function () {
             })->name('dashboard');
             Route::get('/laporan-cabang', [ManagerController::class, 'laporanCabang'])->name('laporan.cabang');
             Route::get('/performa-shift', [ManagerController::class, 'perfomaShift'])->name('performa.shift');
+            
+            // Unified Karyawan (Employee) Management - combines Supervisor and Kasir
+            Route::get('/karyawan', [KaryawanController::class, 'index'])->name('karyawan.index');
+            Route::get('/karyawan/create', [KaryawanController::class, 'create'])->name('karyawan.create');
+            Route::post('/karyawan', [KaryawanController::class, 'store'])->name('karyawan.store');
+            Route::get('/karyawan/{karyawan}', [KaryawanController::class, 'show'])->name('karyawan.show');
+            Route::get('/karyawan/{karyawan}/edit', [KaryawanController::class, 'edit'])->name('karyawan.edit');
+            Route::put('/karyawan/{karyawan}', [KaryawanController::class, 'update'])->name('karyawan.update');
+            Route::delete('/karyawan/{karyawan}', [KaryawanController::class, 'destroy'])->name('karyawan.destroy');
+            
+            // Legacy routes (keeping for backward compatibility)
             Route::get('/kasir', [KasirController::class, 'indexManager'])->name('kasir.index');
             Route::get('/kasir/create', [KasirController::class, 'createManager'])->name('kasir.create');
             Route::post('/kasir', [KasirController::class, 'storeManager'])->name('kasir.store');
@@ -139,11 +165,11 @@ Route::domain($backofficeDomain ?: '__invalid.local')->group(function () {
         });
 
         // ------------------------------------------------------------------------
-        // PRODUK ROUTES (manager, it_support)
+        // PRODUK ROUTES (manager, it_support, supervisor, kasir)
         // Prefix: /produk
         // CRITICAL: ALL static routes MUST come BEFORE dynamic {produk} routes
         // ------------------------------------------------------------------------
-        Route::middleware('role:manager,it_support, supervisor, kasir')->prefix('produk')->name('produk.')->group(function () {
+        Route::middleware('role:manager,it_support,supervisor,kasir')->prefix('produk')->name('produk.')->group(function () {
             // INDEX ROUTE - Tampilan utama (bisa pilih cabang via query ?cabang_id=1)
             Route::get('/', [ProdukController::class, 'index'])->name('index');
 
@@ -203,24 +229,34 @@ Route::domain($backofficeDomain ?: '__invalid.local')->group(function () {
             Route::get('/shift', [LaporanController::class, 'shift'])->name('shift');
             Route::get('/transaksi', [LaporanController::class, 'transaksi'])->name('transaksi');
             Route::get('/harian', [LaporanController::class, 'harian'])->name('harian');
+            Route::get('/riwayat-transaksi', [LaporanController::class, 'riwayatTransaksi'])->name('riwayat-transaksi');
+            Route::get('/analisis-penjualan', [LaporanController::class, 'analisisPenjualan'])->name('analisis-penjualan');
+            Route::get('/export-riwayat-transaksi/excel', [LaporanController::class, 'exportRiwayatTransaksiExcel'])->name('export.riwayat-transaksi.excel');
+            Route::get('/export-riwayat-transaksi/pdf', [LaporanController::class, 'exportRiwayatTransaksiPdf'])->name('export.riwayat-transaksi.pdf');
+            Route::get('/export-analisis-penjualan/excel', [LaporanController::class, 'exportAnalisisPenjualanExcel'])->name('export.analisis-penjualan.excel');
+            Route::get('/export-analisis-penjualan/pdf', [LaporanController::class, 'exportAnalisisPenjualanPdf'])->name('export.analisis-penjualan.pdf');
             Route::get('/penjualan-produk', [LaporanController::class, 'penjualanProduk'])->name('penjualan-produk');
-        Route::get('/produk-favorit', [LaporanController::class, 'produkFavorit'])->name('produk-favorit');
+            Route::get('/produk-favorit', [LaporanController::class, 'produkFavorit'])->name('produk-favorit');
             Route::get('/pendapatan-kategori', [LaporanController::class, 'pendapatanKategori'])->name('pendapatan-kategori');
             Route::get('/stok', [LaporanController::class, 'stok'])->name('stok');
             Route::get('/kinerja-kasir', [LaporanController::class, 'kinerjaKasir'])->name('kinerja-kasir');
             Route::match(['get', 'post'], '/export-pdf', [LaporanController::class, 'exportPdf'])->name('export.pdf');
             Route::match(['get', 'post'], '/export-excel', [LaporanController::class, 'exportExcel'])->name('export.excel');
+            Route::get('/laporan/transaksi/export', [LaporanController::class, 'exportTransaksiExcel'])
+                ->name('laporan.transaksi.export');
             Route::get('/shift/{shift}', [LaporanController::class, 'detailShift'])->name('shift.detail');
         });
 
         // ------------------------------------------------------------------------
-        // TRANSAKSI ROUTES (supervisor, manager, it_support)
+        // TRANSAKSI ROUTES (supervisor, manager, it_support, kasir)
         // Prefix: /transaksi
         // CRITICAL: Static routes BEFORE dynamic routes
         // ------------------------------------------------------------------------
-        Route::middleware('role:supervisor,manager,it_support, kasir')->prefix('transaksi')->name('transaksi.')->group(function () {
+        Route::middleware('role:supervisor,manager,it_support,kasir')->prefix('transaksi')->name('transaksi.')->group(function () {
             Route::get('/export-pdf', [TransaksiController::class, 'exportPdf'])->name('export.pdf');
             Route::get('/export-excel', [TransaksiController::class, 'exportExcel'])->name('export.excel');
+            Route::get('/laporan/transaksi/export', [LaporanController::class, 'exportTransaksiExcel'])
+                ->name('laporan.transaksi.export');
             Route::get('/', [TransaksiController::class, 'index'])->name('index');
             Route::get('/open-bill', [TransaksiController::class, 'daftarOpenBill'])->name('open-bill.index');
             Route::get('/shift/{shift}', [TransaksiController::class, 'byShift'])->name('by-shift');
@@ -282,4 +318,10 @@ Route::domain($backofficeDomain ?: '__invalid.local')->group(function () {
 
         require __DIR__ . '/settings.php';
     });
-});
+};
+
+if ($skipDomainConstraints) {
+    $backofficeRouteCallback();
+} else {
+    Route::domain($backofficeDomain ?: '__invalid.local')->group($backofficeRouteCallback);
+}

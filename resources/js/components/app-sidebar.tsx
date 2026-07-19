@@ -84,9 +84,8 @@ function getMainNavItems(role?: string): NavGroup[] {
             title: 'Admin Menu',
             items: [
                 { title: 'Dashboard', href: '/manager/dashboard', icon: LayoutDashboard },
-                { title: 'Laporan Cabang', href: '/manager/laporan/cabang', icon: Building },
-                { title: 'Supervisor', href: '/manager/supervisor', icon: Users },
-                { title: 'Kasir', href: '/manager/kasir', icon: Users },
+                { title: 'Manajemen Karyawan', href: '/manager/karyawan', icon: Users },
+                { title: 'Laporan Cabang', href: '/manager/laporan-cabang', icon: Building },
             ],
         });
         groups.push({
@@ -102,10 +101,8 @@ function getMainNavItems(role?: string): NavGroup[] {
         groups.push({
             title: 'Report',
             items: [
-                { title: 'Shift', href: '/laporan/shift', icon: Clock },
-                { title: 'Harian', href: '/laporan/harian', icon: FileText },
-                { title: 'Pendapatan Kategori', href: '/laporan/pendapatan-kategori', icon: TrendingUp },
-                { title: 'Penjualan', href: '/laporan/penjualan-produk', icon: TrendingUp },
+                { title: 'Riwayat Transaksi', href: '/laporan/riwayat-transaksi', icon: Clock },
+                { title: 'Analisis Penjualan', href: '/laporan/analisis-penjualan', icon: TrendingUp },
                 { title: 'Stok', href: '/stok', icon: Warehouse },
             ],
         });

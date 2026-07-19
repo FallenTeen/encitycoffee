@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import {
     AlertCircle,
+    Building2,
     ChevronDown,
     ChevronUp,
     Eye,
@@ -44,6 +45,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import Swal from 'sweetalert2';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useOutlet } from '@/contexts/OutletContext';
 
 interface KategoriOption {
     id: number;
@@ -130,6 +132,39 @@ export default function ProdukIndex({
     canManageProduk = false,
     canDeleteProduk = false,
 }: Props) {
+    // Get outlet context for persistent switching
+    const { selectedOutlet, outlets, switchOutlet } = useOutlet();
+    
+    // Combine outlets from context and props
+    const allOutlets = outlets.length > 0 ? outlets : (cabangList || []);
+    
+    // Sync selected outlet with filter
+    useEffect(() => {
+        if (selectedOutlet?.id && filter_aktif?.cabang_id !== selectedOutlet.id) {
+            // Switch to the selected outlet
+            setData((prev) => ({ ...prev, cabang_id: String(selectedOutlet.id) }));
+        }
+    }, [selectedOutlet]);
+    
+    // Handle outlet change from context
+    const handleOutletChange = (outletId: number | null) => {
+        if (outletId) {
+            switchOutlet(outletId);
+            setData((prev) => ({ ...prev, cabang_id: String(outletId) }));
+            // Reload data with new outlet
+            router.get('/produk', { cabang_id: outletId }, {
+                preserveState: true,
+                preserveScroll: true,
+            });
+        } else {
+            setData((prev) => ({ ...prev, cabang_id: '' }));
+            router.get('/produk', {}, {
+                preserveState: true,
+                preserveScroll: true,
+            });
+        }
+    };
+    
     // Load saved preferences
     const [viewMode, setViewMode] = useState<ViewMode>(() => {
         if (typeof window === 'undefined') return 'table';
@@ -669,7 +704,7 @@ export default function ProdukIndex({
                                 Grouped
                             </Button>
                         </div>
-                        {cabangList && cabangList.length > 1 && (
+                        {allOutlets.length > 0 && (
                             <Dialog
                                 open={isCabangModalOpen}
                                 onOpenChange={setIsCabangModalOpen}
@@ -680,49 +715,73 @@ export default function ProdukIndex({
                                         variant="outline"
                                         size="sm"
                                     >
-                                        Lihat Produk Cabang Lain
+                                        <Building2 className="h-4 w-4 mr-2" />
+                                        {selectedCabang ? selectedCabang.nama : 'Pilih Outlet'}
                                     </Button>
                                 </DialogTrigger>
                                 <DialogContent className="max-w-3xl">
                                     <DialogHeader>
                                         <DialogTitle>
-                                            Katalog Produk Cabang Lain
+                                            Katalog Produk Berdasarkan Outlet
                                         </DialogTitle>
                                         <DialogDescription>
-                                            Pilih cabang untuk membuka katalog
-                                            produk cabang tersebut.
+                                            Pilih outlet untuk membuka katalog
+                                            produk tersebut. Outlet yang dipilih
+                                            akan diingat untuk navigasi selanjutnya.
                                         </DialogDescription>
                                     </DialogHeader>
                                     <div className="mt-4 space-y-3">
-                                        {cabangList.map((cabang) => (
+                                        {/* All outlets option */}
+                                        <div
+                                            className={cn(
+                                                'flex items-center justify-between rounded border px-3 py-2 cursor-pointer transition-colors',
+                                                !data.cabang_id || data.cabang_id === '' 
+                                                    ? 'bg-primary/10 border-primary' 
+                                                    : 'bg-muted/40 hover:bg-muted'
+                                            )}
+                                            onClick={() => {
+                                                handleOutletChange(null);
+                                                setIsCabangModalOpen(false);
+                                            }}
+                                        >
+                                            <div className="flex flex-col">
+                                                <span className="font-medium">
+                                                    Semua Outlet
+                                                </span>
+                                                <span className="text-xs text-muted-foreground">
+                                                    Lihat produk dari semua outlet
+                                                </span>
+                                            </div>
+                                            {!data.cabang_id && (
+                                                <Badge variant="default">Aktif</Badge>
+                                            )}
+                                        </div>
+                                        
+                                        {allOutlets.map((cabang) => (
                                             <div
                                                 key={cabang.id}
-                                                className="flex items-center justify-between rounded border bg-muted/40 px-3 py-2"
+                                                className={cn(
+                                                    'flex items-center justify-between rounded border px-3 py-2 cursor-pointer transition-colors',
+                                                    data.cabang_id === String(cabang.id)
+                                                        ? 'bg-primary/10 border-primary'
+                                                        : 'bg-muted/40 hover:bg-muted'
+                                                )}
+                                                onClick={() => {
+                                                    handleOutletChange(cabang.id);
+                                                    setIsCabangModalOpen(false);
+                                                }}
                                             >
                                                 <div className="flex flex-col">
                                                     <span className="font-medium">
                                                         {cabang.nama}
                                                     </span>
                                                     <span className="text-xs text-muted-foreground">
-                                                        Kode:{' '}
-                                                        {cabang.kode}
+                                                        Kode: {cabang.kode || 'N/A'}
                                                     </span>
                                                 </div>
-                                                <Button
-                                                    size="sm"
-                                                    asChild
-                                                    onClick={() =>
-                                                        setIsCabangModalOpen(
-                                                            false,
-                                                        )
-                                                    }
-                                                >
-                                                    <Link
-                                                        href={`/produk?cabang_id=${cabang.id}`}
-                                                    >
-                                                        Buka katalog
-                                                    </Link>
-                                                </Button>
+                                                {data.cabang_id === String(cabang.id) && (
+                                                    <Badge variant="default">Aktif</Badge>
+                                                )}
                                             </div>
                                         ))}
                                     </div>

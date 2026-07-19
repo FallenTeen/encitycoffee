@@ -5,6 +5,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use App\Models\Transaksi;
 use App\Models\ItemTransaksi;
 use App\Models\StokEtalase;
@@ -104,63 +106,264 @@ class ManagerController extends Controller
     public function laporanCabang(Request $request)
     {
         Gate::authorize('view-laporan');
+        
+        Log::info('LaporanCabang called', ['user_id' => Auth::id(), 'role' => Auth::user()->role]);
 
         $user = Auth::user();
-        $cabangIds = $user->cabang->pluck('id')->all();
+        $user->load('cabang:id,nama,kode,aktif');
+        $assignedCabangIds = $user->cabang->pluck('id')->toArray();
+
+        // If user has no assigned branches, return empty data
+        if (empty($assignedCabangIds)) {
+            return Inertia::render('manager/Reports/Cabang', [
+                'cabangs' => [],
+                'filters' => [
+                    'range' => '30d',
+                    'tanggal_mulai' => Carbon::today()->subDays(29)->format('Y-m-d'),
+                    'tanggal_selesai' => Carbon::today()->format('Y-m-d'),
+                    'cabang_id' => null,
+                ],
+                'metrics' => [
+                    'total_revenue' => 0,
+                    'total_transactions' => 0,
+                    'total_discount' => 0,
+                ],
+                'branchComparison' => [],
+                'assignedBranches' => [],
+                'error' => 'Anda belum memiliki cabang yang diampu. Hubungi administrator untuk menetapkan cabang.',
+            ]);
+        }
 
         $validated = $request->validate([
-            'tanggal_mulai' => 'nullable|date',
-            'tanggal_selesai' => 'nullable|date',
-            'cabang_id' => ['nullable', 'integer', Rule::in($cabangIds)],
+            'range' => ['nullable', 'in:7d,14d,30d,90d,custom'],
+            'tanggal_mulai' => ['nullable', 'date', 'before_or_equal:today'],
+            'tanggal_selesai' => ['nullable', 'date', 'after_or_equal:tanggal_mulai', 'before_or_equal:today'],
+            'cabang_id' => ['nullable', 'integer', 'exists:cabang,id'],
         ]);
 
-        $tanggalMulai = $validated['tanggal_mulai'] ?? Carbon::now()->subDays(30)->toDateString();
-        $tanggalAkhir = $validated['tanggal_selesai'] ?? Carbon::now()->toDateString();
-        $cabangIdFilter = $validated['cabang_id'] ?? null;
+        $range = (string) ($validated['range'] ?? '30d');
+        $endDate = Carbon::today();
+        
+        // Calculate date range
+        if ($range !== 'custom') {
+            $days = (int) rtrim($range, 'd');
+            $days = max(1, min(90, $days));
+            $startDate = $endDate->copy()->subDays($days - 1);
+        } else {
+            $startDate = ! empty($validated['tanggal_mulai'])
+                ? Carbon::parse($validated['tanggal_mulai'])
+                : $endDate->copy()->subDays(29);
+            $endDate = ! empty($validated['tanggal_selesai'])
+                ? Carbon::parse($validated['tanggal_selesai'])
+                : $endDate;
 
-        $query = Shift::whereIn('cabang_id', $cabangIds)
-            ->where('status', 'tutup')
-            ->whereBetween('waktu_tutup', [$tanggalMulai, $tanggalAkhir]);
-        if ($cabangIdFilter) { $query->where('cabang_id', $cabangIdFilter); }
+            if ($endDate->lt($startDate)) {
+                [$startDate, $endDate] = [$endDate, $startDate];
+            }
+            if ($startDate->diffInDays($endDate) > 89) {
+                $startDate = $endDate->copy()->subDays(89);
+            }
+        }
 
-        $shift = $query->with(['cabang', 'user', 'transaksi' => function ($q) {
-            $q->where('status', 'selesai');
-        }])->get();
+        $periodStart = $startDate->copy()->startOfDay();
+        $periodEnd = $endDate->copy()->endOfDay();
 
-        // Kelompokkan berdasarkan cabang dan hitung metrik
-        $kelompok = $shift->groupBy('cabang_id')->map(function ($group) {
-            $cabang = optional($group->first()->cabang);
-            $totalPenjualan = (float) $group->reduce(function ($carry, $s) {
-                return $carry + (float) $s->transaksi->sum('total');
-            }, 0);
-            $jumlahTransaksi = (int) $group->reduce(function ($carry, $s) {
-                return $carry + (int) $s->transaksi->count();
-            }, 0);
-            $jumlahShift = (int) $group->count();
+        // Calculate previous period for growth comparison
+        $periodDays = $periodStart->diffInDays($periodEnd) + 1;
+        $previousEnd = $periodStart->copy()->subDay();
+        $previousStart = $previousEnd->copy()->subDays($periodDays - 1);
 
-            return [
-                'cabang_id' => $cabang->id,
-                'cabang' => $cabang->nama,
-                'total_penjualan' => $totalPenjualan,
-                'jumlah_transaksi' => $jumlahTransaksi,
-                'jumlah_shift' => $jumlahShift,
-                'rata_rata_per_shift' => $jumlahShift > 0 ? round($totalPenjualan / $jumlahShift, 2) : 0,
-                'rata_rata_per_transaksi' => $jumlahTransaksi > 0 ? round($totalPenjualan / $jumlahTransaksi, 2) : 0,
+        // Determine filter branches
+        $requestedCabangId = ! empty($validated['cabang_id']) ? (int) $validated['cabang_id'] : null;
+        
+        if ($requestedCabangId !== null) {
+            if (!in_array($requestedCabangId, $assignedCabangIds)) {
+                abort(403, 'Tidak memiliki akses ke cabang ini');
+            }
+            $filterCabangIds = [$requestedCabangId];
+        } else {
+            $filterCabangIds = $assignedCabangIds;
+        }
+
+        // Get branch data
+        $branches = Cabang::whereIn('cabang.id', $filterCabangIds)
+            ->select('cabang.id', 'cabang.nama', 'cabang.kode', 'cabang.aktif')
+            ->orderBy('cabang.nama')
+            ->get();
+
+        $branchData = [];
+        $totalRevenue = 0;
+        $totalTransactions = 0;
+        $totalDiscount = 0;
+
+        foreach ($branches as $branch) {
+            // Current period transactions
+            $currentTransaksi = Transaksi::where('cabang_id', $branch->id)
+                ->where('status', 'selesai')
+                ->whereBetween('created_at', [$periodStart, $periodEnd])
+                ->selectRaw('SUM(total) as total_revenue')
+                ->selectRaw('SUM(COALESCE(diskon, 0)) as total_discount')
+                ->selectRaw('COUNT(*) as transaction_count')
+                ->first();
+
+            // Previous period for growth calculation
+            $previousTransaksi = Transaksi::where('cabang_id', $branch->id)
+                ->where('status', 'selesai')
+                ->whereBetween('created_at', [$previousStart->startOfDay(), $previousEnd->endOfDay()])
+                ->selectRaw('SUM(total) as total_revenue')
+                ->first();
+
+            $currentRevenue = (float) ($currentTransaksi->total_revenue ?? 0);
+            $previousRevenue = (float) ($previousTransaksi->total_revenue ?? 0);
+            
+            // Calculate growth percentage
+            $growthPercent = $previousRevenue > 0 
+                ? round((($currentRevenue - $previousRevenue) / $previousRevenue) * 100, 2)
+                : ($currentRevenue > 0 ? 100 : 0);
+
+            // Average transaction value
+            $transactionCount = (int) ($currentTransaksi->transaction_count ?? 0);
+            $avgTransaction = $transactionCount > 0 ? $currentRevenue / $transactionCount : 0;
+
+            // Top products
+            $topProducts = ItemTransaksi::join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
+                ->join('produk', 'item_transaksi.produk_id', '=', 'produk.id')
+                ->where('transaksi.cabang_id', $branch->id)
+                ->where('transaksi.status', 'selesai')
+                ->whereBetween('transaksi.created_at', [$periodStart, $periodEnd])
+                ->select('produk.nama', DB::raw('SUM(item_transaksi.jumlah) as total_qty'), DB::raw('SUM(item_transaksi.subtotal) as total_revenue'))
+                ->groupBy('produk.id', 'produk.nama')
+                ->orderByDesc('total_qty')
+                ->limit(5)
+                ->get();
+
+            // Top categories
+            $topCategories = DB::table('item_transaksi')
+                ->join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
+                ->join('produk', 'item_transaksi.produk_id', '=', 'produk.id')
+                ->join('kategori_produk', 'produk.kategori_id', '=', 'kategori_produk.id')
+                ->where('transaksi.cabang_id', $branch->id)
+                ->where('transaksi.status', 'selesai')
+                ->whereBetween('transaksi.created_at', [$periodStart, $periodEnd])
+                ->select('kategori_produk.nama as category', DB::raw('SUM(item_transaksi.subtotal) as total_revenue'))
+                ->groupBy('kategori_produk.id', 'kategori_produk.nama')
+                ->orderByDesc('total_revenue')
+                ->limit(3)
+                ->get();
+
+            // Daily data for sparkline
+            $dailyData = Transaksi::where('cabang_id', $branch->id)
+                ->where('status', 'selesai')
+                ->whereBetween('created_at', [$periodStart, $periodEnd])
+                ->select(
+                    DB::raw('DATE(created_at) as date'),
+                    DB::raw('SUM(total) as revenue'),
+                    DB::raw('COUNT(*) as transactions')
+                )
+                ->groupBy(DB::raw('DATE(created_at)'))
+                ->orderBy('date')
+                ->get();
+
+            // Shift stats
+            $shiftStats = Shift::where('cabang_id', $branch->id)
+                ->whereBetween('waktu_buka', [$periodStart, $periodEnd])
+                ->selectRaw('COUNT(*) as total_shifts')
+                ->first();
+            $totalShifts = (int) ($shiftStats->total_shifts ?? 0);
+            $avgRevenuePerShift = $totalShifts > 0 ? $currentRevenue / $totalShifts : 0;
+
+            // Stock alerts
+            $lowStockCount = 0;
+            $expiringCount = 0;
+            
+            if (Schema::hasTable('stok_etalase')) {
+                $lowStockCount = (int) StokEtalase::where('cabang_id', $branch->id)
+                    ->whereColumn('jumlah', '<=', 'stok_minimum')
+                    ->count();
+            }
+            
+            if (Schema::hasTable('batch_stok') && Schema::hasTable('stok_etalase')) {
+                $expiringCount = (int) BatchStok::join('stok_etalase', 'batch_stok.stok_etalase_id', '=', 'stok_etalase.id')
+                    ->where('stok_etalase.cabang_id', $branch->id)
+                    ->whereDate('batch_stok.tanggal_kadaluarsa', '<=', Carbon::now()->addDays(30))
+                    ->count();
+            }
+
+            $branchData[] = [
+                'id' => $branch->id,
+                'nama' => $branch->nama,
+                'kode' => $branch->kode,
+                'aktif' => $branch->aktif,
+                'total_revenue' => $currentRevenue,
+                'total_discount' => (float) ($currentTransaksi->total_discount ?? 0),
+                'transaction_count' => $transactionCount,
+                'avg_transaction' => round($avgTransaction, 0),
+                'growth_percent' => $growthPercent,
+                'previous_revenue' => $previousRevenue,
+                'top_products' => $topProducts->map(fn($p) => [
+                    'nama' => $p->nama,
+                    'qty' => (int) $p->total_qty,
+                    'revenue' => (float) $p->total_revenue,
+                ])->all(),
+                'top_categories' => $topCategories->map(fn($c) => [
+                    'nama' => $c->category,
+                    'revenue' => (float) $c->total_revenue,
+                ])->all(),
+                'daily_data' => $dailyData->map(fn($d) => [
+                    'date' => $d->date,
+                    'revenue' => (float) $d->revenue,
+                    'transactions' => (int) $d->transactions,
+                ])->all(),
+                'total_shifts' => $totalShifts,
+                'avg_revenue_per_shift' => round($avgRevenuePerShift, 0),
+                'low_stock_count' => $lowStockCount,
+                'expiring_count' => $expiringCount,
             ];
-        })->values();
 
-        $metrics = [
-            'tanggal_mulai' => $tanggalMulai,
-            'tanggal_selesai' => $tanggalAkhir,
-            'cabang_id' => $cabangIdFilter,
-            'total_penjualan' => (float) $kelompok->sum('total_penjualan'),
-            'total_transaksi' => (int) $kelompok->sum('jumlah_transaksi'),
-            'total_shift' => (int) $shift->count(),
-        ];
+            $totalRevenue += $currentRevenue;
+            $totalTransactions += $transactionCount;
+            $totalDiscount += (float) ($currentTransaksi->total_discount ?? 0);
+        }
+
+        // Sort by revenue descending
+        usort($branchData, fn($a, $b) => $b['total_revenue'] <=> $a['total_revenue']);
+
+        // Branch comparison chart data
+        $branchComparison = array_map(fn($b) => [
+            'id' => $b['id'],
+            'nama' => $b['nama'],
+            'total_revenue' => $b['total_revenue'],
+            'transaction_count' => $b['transaction_count'],
+            'avg_transaction' => $b['avg_transaction'],
+        ], $branchData);
+
+        Log::info('LaporanCabang completed', [
+            'period' => $periodStart->format('Y-m-d') . ' to ' . $periodEnd->format('Y-m-d'),
+            'branches_count' => count($branchData),
+            'total_revenue' => $totalRevenue,
+        ]);
 
         return Inertia::render('manager/Reports/Cabang', [
-            'cabangs' => $kelompok,
-            'metrics' => $metrics,
+            'cabangs' => $branchData,
+            'filters' => [
+                'range' => $range,
+                'tanggal_mulai' => $periodStart->format('Y-m-d'),
+                'tanggal_selesai' => $periodEnd->format('Y-m-d'),
+                'cabang_id' => $requestedCabangId,
+            ],
+            'metrics' => [
+                'total_revenue' => $totalRevenue,
+                'total_transactions' => $totalTransactions,
+                'total_discount' => $totalDiscount,
+                'avg_transaction' => $totalTransactions > 0 ? round($totalRevenue / $totalTransactions, 0) : 0,
+            ],
+            'branchComparison' => $branchComparison,
+            'assignedBranches' => $user->cabang->map(fn($c) => [
+                'id' => $c->id,
+                'nama' => $c->nama,
+                'kode' => $c->kode,
+                'aktif' => $c->aktif,
+            ])->all(),
         ]);
     }
 

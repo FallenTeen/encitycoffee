@@ -116,6 +116,25 @@ class MobileDiscountFeatureTest extends TestCase
             ]);
     }
 
+    public function test_discount_preview_endpoint_accepts_get_request()
+    {
+        $response = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token,
+        ])->getJson('/api/pos/discount/preview?total_awal=100000&diskon_nominal=20000');
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonStructure([
+                'success',
+                'data' => [
+                    'total_awal',
+                    'diskon_nominal',
+                    'diskon_persen',
+                    'total_akhir',
+                ],
+            ]);
+    }
+
     public function test_transaction_can_be_created_using_discount_percent()
     {
         $response = $this->withHeaders([
@@ -149,4 +168,3 @@ class MobileDiscountFeatureTest extends TestCase
         $this->assertEquals(135000.0, (float) $transaksi->total);
     }
 }
-

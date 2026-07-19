@@ -6,51 +6,89 @@ use App\Models\Transaksi;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithStyles;
-use Maatwebsite\Excel\Concerns\WithColumnWidths;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
-use PhpOffice\PhpSpreadsheet\Style\Border;
 
 class TransaksiExport implements FromCollection, WithHeadings, WithStyles, WithTitle, ShouldAutoSize
 {
     private string $tanggalMulai;
     private string $tanggalSelesai;
     private ?string $status;
+    private array $cabangIds;
+    private ?int $cabangId;
 
-    public function __construct(string $tanggalMulai, string $tanggalSelesai, ?string $status = null)
-    {
+    public function __construct(
+        string $tanggalMulai,
+        string $tanggalSelesai,
+        array $cabangIds = [],
+        ?string $status = null,
+        ?int $cabangId = null
+    ) {
         $this->tanggalMulai = $tanggalMulai;
         $this->tanggalSelesai = $tanggalSelesai;
+        $this->cabangIds = $cabangIds;
         $this->status = $status;
+        $this->cabangId = $cabangId;
     }
 
     public function collection()
     {
-        $query = Transaksi::with(['cabang', 'user'])->orderByDesc('created_at');
+        $akhirHari = now()->parse($this->tanggalSelesai)->endOfDay()->toDateTimeString();
+
+        $query = Transaksi::with(['cabang', 'user'])
+            ->whereIn('cabang_id', $this->cabangIds)
+            ->whereBetween('waktu_selesai', [$this->tanggalMulai, $akhirHari])
+            ->orderByDesc('waktu_selesai');
 
         if (!empty($this->status)) {
             $query->where('status', $this->status);
         }
 
-        $akhirHari = now()->parse($this->tanggalSelesai)->endOfDay()->toDateTimeString();
-        $query->whereBetween('created_at', [$this->tanggalMulai, $akhirHari]);
+        if (!empty($this->cabangId)) {
+            $query->where('cabang_id', $this->cabangId);
+        }
 
-        return $query->get()->map(fn($t) => [
-            'Invoice'  => $t->nomor_invoice ?? ('#' . $t->id),
-            'Cabang'   => optional($t->cabang)->nama ?? optional($t->cabang)->kode ?? '-',
-            'Kasir'    => optional($t->user)->name ?? '-',
-            'Total'    => (float) ($t->total ?? 0),
-            'Status'   => $t->status ?? '-',
-            'Waktu'    => optional($t->created_at)?->format('d/m/Y H:i:s') ?? '-',
-        ]);
+        return $query->get()->map(function ($t) {
+            $diskon = (float) ($t->diskon ?? 0);
+            $diskonPersen = $t->diskon_persen !== null ? (float) $t->diskon_persen : null;
+
+            $labelDiskon = '-';
+            if ($diskon > 0) {
+                $labelDiskon = $diskonPersen
+                    ? number_format($diskon, 0, ',', '.') . ' (' . number_format($diskonPersen, 2, ',', '.') . '%)'
+                    : number_format($diskon, 0, ',', '.');
+            }
+
+            return [
+                'Invoice'      => $t->nomor_invoice ?? ('#' . $t->id),
+                'Waktu'        => $t->waktu_selesai ? $t->waktu_selesai->format('d/m/Y H:i') : '-',
+                'Cabang'       => optional($t->cabang)->nama ?? optional($t->cabang)->kode ?? '-',
+                'Kasir'        => optional($t->user)->name ?? '-',
+                'Nama Pelanggan' => $t->nama_pelanggan ?? '-',
+                'Subtotal'     => (float) ($t->subtotal ?? 0),
+                'Diskon'       => $labelDiskon,
+                'Total'        => (float) ($t->total ?? 0),
+                'Status'       => $t->status ?? '-',
+            ];
+        });
     }
 
     public function headings(): array
     {
-        return ['Invoice', 'Cabang', 'Kasir', 'Total (Rp)', 'Status', 'Waktu'];
+        return [
+            'Invoice',
+            'Waktu',
+            'Cabang',
+            'Kasir',
+            'Nama Pelanggan',
+            'Subtotal (Rp)',
+            'Diskon',
+            'Total (Rp)',
+            'Status',
+        ];
     }
 
     public function styles(Worksheet $sheet): array

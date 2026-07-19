@@ -20,8 +20,8 @@ export default function AdminCabangCreate() {
     return (
         <AppLayout
             breadcrumbs={[
-                { title: 'Cabang', href: admin.cabang.index() },
-                { title: 'Tambah Cabang', href: admin.cabang.create() },
+                { title: 'Cabang', href: admin.cabang.index().url },
+                { title: 'Tambah Cabang', href: admin.cabang.create().url },
             ]}
         >
             <Head title="Admin - Tambah Cabang" />
@@ -36,7 +36,7 @@ export default function AdminCabangCreate() {
                         </p>
                     </div>
                     <Button variant="outline" size="sm" asChild className="w-fit">
-                        <Link href={admin.cabang.index()}>Kembali</Link>
+                        <Link href={admin.cabang.index().url}>Kembali</Link>
                     </Button>
                 </div>
 
@@ -160,7 +160,7 @@ export default function AdminCabangCreate() {
                                     {processing ? 'Menyimpan...' : 'Simpan Cabang'}
                                 </Button>
                                 <Button type="button" variant="outline" size="sm" asChild>
-                                    <Link href={admin.cabang.index()}>Batal</Link>
+                                    <Link href={admin.cabang.index().url}>Batal</Link>
                                 </Button>
                             </div>
                         </form>

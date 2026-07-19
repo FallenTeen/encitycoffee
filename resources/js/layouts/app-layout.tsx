@@ -1,8 +1,11 @@
 import { AppSidebar } from '@/components/app-sidebar';
 import { Breadcrumbs } from '@/components/breadcrumbs';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { OutletSwitcher } from '@/components/outlet-switcher';
 import { cn } from '@/lib/utils';
 import { type BreadcrumbItem as TypesBreadcrumbItem } from '@/types';
 import { type PropsWithChildren, type ReactNode } from 'react';
+import { usePage } from '@inertiajs/react';
 
 interface AppLayoutProps extends PropsWithChildren {
     breadcrumbs?: TypesBreadcrumbItem[];
@@ -20,6 +23,10 @@ export default function AppLayout({
     className,
     children,
 }: AppLayoutProps) {
+    const page = usePage<any>();
+    const flash = page.props?.flash as { success?: string | null; error?: string | null } | undefined;
+    const flashSuccess = flash?.success;
+    const flashError = flash?.error;
     const safeTitle =
         typeof title === 'string'
             ? title
@@ -56,10 +63,29 @@ export default function AppLayout({
                                 )}
                                 {headerContent}
                             </div>
+                            <OutletSwitcher />
                         </div>
                     </div>
                 )}
-                <div className={cn('flex-1 p-6', className)}>{children}</div>
+                <div className={cn('flex-1 p-6', className)}>
+                    {flashError && (
+                        <div className="mb-4">
+                            <Alert variant="destructive">
+                                <AlertTitle>Gagal</AlertTitle>
+                                <AlertDescription>{flashError}</AlertDescription>
+                            </Alert>
+                        </div>
+                    )}
+                    {flashSuccess && (
+                        <div className="mb-4">
+                            <Alert>
+                                <AlertTitle>Sukses</AlertTitle>
+                                <AlertDescription>{flashSuccess}</AlertDescription>
+                            </Alert>
+                        </div>
+                    )}
+                    {children}
+                </div>
             </main>
         </div>
     );

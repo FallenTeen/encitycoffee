@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
@@ -42,8 +43,8 @@ class SupervisorController extends Controller
             ->with('cabang');
 
         if ($role !== 'it_support') {
-            $query->whereHas('cabang', fn ($q) => $q->whereIn('cabang.id', $allowedCabangIds))
-                ->whereDoesntHave('cabang', fn ($q) => $q->whereNotIn('cabang.id', $allowedCabangIds));
+            $query->whereHas('cabang', fn($q) => $q->whereIn('cabang.id', $allowedCabangIds))
+                ->whereDoesntHave('cabang', fn($q) => $q->whereNotIn('cabang.id', $allowedCabangIds));
         }
 
         if (! empty($validated['search'])) {
@@ -54,7 +55,7 @@ class SupervisorController extends Controller
         }
         if (! empty($validated['cabang_id'])) {
             $cabangId = (int) $validated['cabang_id'];
-            $query->whereHas('cabang', fn ($q) => $q->where('cabang.id', $cabangId));
+            $query->whereHas('cabang', fn($q) => $q->where('cabang.id', $cabangId));
         }
 
         $perPage = (int) ($validated['per_page'] ?? 20);
@@ -235,8 +236,8 @@ class SupervisorController extends Controller
             ->get();
 
         $mendekatiKadaluarsa = BatchStok::whereHas('stokEtalase', function ($q) use ($cabangIds) {
-                $q->whereIn('cabang_id', $cabangIds);
-            })
+            $q->whereIn('cabang_id', $cabangIds);
+        })
             ->whereDate('tanggal_kadaluarsa', '<=', Carbon::now()->addDays(7))
             ->with(['stokEtalase.produk', 'stokEtalase.cabang'])
             ->orderBy('tanggal_kadaluarsa')
@@ -254,8 +255,8 @@ class SupervisorController extends Controller
             ->get();
 
         $kasirAktif = User::whereHas('shift', function ($q) {
-                $q->where('status', 'buka');
-            })
+            $q->where('status', 'buka');
+        })
             ->where('role', 'kasir')
             ->get();
 
@@ -401,6 +402,7 @@ class SupervisorController extends Controller
         $statistik = [
             'total_transaksi' => $totalTransaksi,
             'total_penjualan' => $totalPenjualan,
+            'total_diskon' => (float) $shift->transaksi->where('status', 'selesai')->sum('diskon'),
             'total_tunai' => (float) ($shift->total_tunai ?? 0),
             'total_qris' => (float) ($shift->total_qris ?? 0),
             'saldo_awal' => (float) ($shift->saldo_awal ?? 0),
@@ -512,8 +514,8 @@ class SupervisorController extends Controller
         $stokRendahCount = $stokPerCabang->sum(fn($c) => count($c['stok_rendah']));
 
         $batchKadaluarsa = BatchStok::whereHas('stokEtalase', function ($q) use ($cabangIds) {
-                $q->whereIn('cabang_id', $cabangIds);
-            })
+            $q->whereIn('cabang_id', $cabangIds);
+        })
             ->whereDate('tanggal_kadaluarsa', '<=', Carbon::now()->addDays(30))
             ->with(['stokEtalase.produk', 'stokEtalase.cabang'])
             ->orderBy('tanggal_kadaluarsa')

@@ -147,6 +147,19 @@ class HierarchyAssignmentService
             $managerId = $managerId !== null ? (int) $managerId : null;
         }
 
+        // Ensure manager exists in cabang_hierarchy for this branch
+        $existingRow = DB::table('cabang_hierarchy')->where('cabang_id', $cabangId)->first();
+        if (! $existingRow) {
+            // Create the row first with manager
+            $this->upsertCabangHierarchy($cabangId, ['manager_user_id' => $managerId]);
+        } elseif ($existingRow->manager_user_id === null && $managerId !== null) {
+            // Update manager if not set
+            DB::table('cabang_hierarchy')->where('cabang_id', $cabangId)->update([
+                'manager_user_id' => $managerId,
+                'updated_at' => now(),
+            ]);
+        }
+
         $oldSupervisorRow = DB::table('supervisor_hierarchy')->where('supervisor_user_id', (int) $supervisor->id)->first();
         $oldCabangId = $oldSupervisorRow ? (int) $oldSupervisorRow->cabang_id : null;
 
@@ -198,6 +211,22 @@ class HierarchyAssignmentService
         $managerId = $managerId !== null ? (int) $managerId : null;
         $supervisorId = $supervisorId !== null ? (int) $supervisorId : null;
 
+        // If actor is manager and manager_id is null, use actor's ID
+        if ($actorRole === 'manager' && $managerId === null) {
+            $managerId = (int) $actor->id;
+            // Update cabang_hierarchy with manager
+            $existingRow = DB::table('cabang_hierarchy')->where('cabang_id', $cabangId)->first();
+            if ($existingRow) {
+                DB::table('cabang_hierarchy')->where('cabang_id', $cabangId)->update([
+                    'manager_user_id' => $managerId,
+                    'updated_at' => now(),
+                ]);
+            } else {
+                $this->upsertCabangHierarchy($cabangId, ['manager_user_id' => $managerId]);
+            }
+        }
+
+        // If actor is supervisor and supervisor_id is null, self-assign as supervisor
         if ($actorRole === 'supervisor' && $supervisorId === null) {
             $this->assignSupervisor($actor, $actor, $cabangId);
             $supervisorId = (int) $actor->id;
@@ -205,11 +234,17 @@ class HierarchyAssignmentService
             $managerId = $managerId !== null ? (int) $managerId : null;
         }
 
+        // For managers: ensure supervisor is set if manager exists but supervisor doesn't
+        if ($actorRole === 'manager' && $managerId !== null && $supervisorId === null) {
+            // We can't auto-create a supervisor, but we should not block if manager is setting up
+            // Just log warning and allow - supervisor can be assigned later
+        }
+
         if ($managerId === null) {
-            throw ValidationException::withMessages(['cabang_ids' => 'Cabang belum memiliki manager']);
+            throw ValidationException::withMessages(['cabang_ids' => 'Cabang belum memiliki manager. Hubungi administrator untuk menetapkan manager terlebih dahulu.']);
         }
         if ($supervisorId === null) {
-            throw ValidationException::withMessages(['cabang_ids' => 'Cabang belum memiliki supervisor']);
+            throw ValidationException::withMessages(['cabang_ids' => 'Cabang belum memiliki supervisor. Supervisor harus ditugaskan sebelum kasir dapat ditambahkan.']);
         }
 
         DB::table('kasir_hierarchy')->updateOrInsert(

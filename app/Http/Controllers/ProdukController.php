@@ -452,6 +452,8 @@ class ProdukController extends Controller
         }
 
         if (in_array($user->role, ['manager', 'supervisor', 'kasir'])) {
+            // Eager load cabang relationship
+            $user->load('cabang:id');
             $assignedCabangIds = $user->cabang->pluck('id')->all();
 
             if (empty($assignedCabangIds)) {
@@ -486,7 +488,9 @@ class ProdukController extends Controller
             return Cabang::select('id', 'nama', 'kode')->get();
         }
 
-        if (in_array($user->role, ['manager', 'supervisor'])) {
+        if (in_array($user->role, ['manager', 'supervisor', 'kasir'])) {
+            // Eager load cabang relationship
+            $user->load('cabang:id,nama,kode');
             return $user->cabang->map(function ($cabang) {
                 return [
                     'id' => $cabang->id,

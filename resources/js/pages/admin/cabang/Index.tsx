@@ -74,7 +74,7 @@ export default function AdminCabangIndex({ cabangs }: Props) {
     }
 
     return (
-        <AppLayout breadcrumbs={[{ title: 'Cabang', href: admin.cabang.index() }]}>
+        <AppLayout breadcrumbs={[{ title: 'Cabang', href: admin.cabang.index().url }]}>
             <Head title="Admin - Manajemen Cabang" />
             <div className="space-y-6">
 
@@ -87,7 +87,7 @@ export default function AdminCabangIndex({ cabangs }: Props) {
                         </p>
                     </div>
                     <Button asChild size="sm" className="w-fit">
-                        <Link href={admin.cabang.create()}>
+                        <Link href={admin.cabang.create().url}>
                             <Plus className="mr-1.5 h-4 w-4" />
                             Tambah Cabang
                         </Link>
@@ -229,12 +229,12 @@ export default function AdminCabangIndex({ cabangs }: Props) {
                                             <td className="py-2.5 align-middle text-right">
                                                 <div className="flex items-center justify-end gap-1">
                                                     <Button variant="ghost" size="sm" asChild className="h-7 px-2">
-                                                        <Link href={admin.cabang.show(cabang.id)}>
+                                                        <Link href={admin.cabang.show(cabang.id).url}>
                                                             <Eye className="h-3.5 w-3.5" />
                                                         </Link>
                                                     </Button>
                                                     <Button variant="ghost" size="sm" asChild className="h-7 px-2">
-                                                        <Link href={admin.cabang.edit(cabang.id)}>
+                                                        <Link href={admin.cabang.edit(cabang.id).url}>
                                                             <Pencil className="h-3.5 w-3.5" />
                                                         </Link>
                                                     </Button>

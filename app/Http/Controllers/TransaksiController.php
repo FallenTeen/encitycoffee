@@ -26,9 +26,33 @@ class TransaksiController extends Controller
             ->with(['cabang:id,kode,nama', 'user:id,name,email', 'shift:id,status'])
             ->latest();
 
-        if (method_exists($user, 'isItSupport') && ! ($user->isItSupport() || $user->isManager())) {
-            $cabangIds = $user->cabang()->pluck('cabang.id')->all();
-            $query->whereIn('cabang_id', $cabangIds);
+        // Get authorized branches
+        $userCabangIds = [];
+        if (method_exists($user, 'cabang')) {
+            $user->load('cabang:id'); // Eager load to avoid N+1
+            $userCabangIds = $user->cabang->pluck('id')->all();
+        }
+
+        // Apply authorized branch filter for non-it_support roles
+        // it_support has full access to all branches
+        if (method_exists($user, 'isItSupport') && !$user->isItSupport()) {
+            // For manager, supervisor, kasir - only show assigned branches
+            if (!empty($userCabangIds)) {
+                $query->whereIn('cabang_id', $userCabangIds);
+            } else {
+                // If user has no assigned branches, return no results
+                $query->where('cabang_id', 0); // Force no results
+            }
+        }
+
+        // Apply specific branch filter if provided
+        if (! empty($validated['cabang_id'])) {
+            $cabangId = (int) $validated['cabang_id'];
+            // Validate user has access to this branch
+            if (!empty($userCabangIds) && !in_array($cabangId, $userCabangIds)) {
+                abort(403, 'Tidak memiliki akses ke cabang ini');
+            }
+            $query->where('cabang_id', $cabangId);
         }
 
         if (! empty($validated['status'])) {
@@ -110,6 +134,7 @@ class TransaksiController extends Controller
             'sort_by'         => ['nullable', 'in:tanggal,total,diskon'],
             'sort_dir'        => ['nullable', 'in:asc,desc'],
             'search'          => ['nullable', 'string', 'max:100'],
+            'cabang_id'       => ['nullable', 'integer', 'exists:cabang,id'],
         ]);
 
         $tanggalMulai   = $validated['tanggal_mulai']   ?? null;
@@ -118,6 +143,17 @@ class TransaksiController extends Controller
 
         $perPage    = (int) ($validated['per_page'] ?? 15);
         $transaksis = $query->paginate($perPage)->withQueryString();
+
+        // Get user's authorized branches for outlet filter
+        $user = $request->user();
+        $cabangList = [];
+        if (method_exists($user, 'cabang') && $user->cabang) {
+            $cabangList = $user->cabang->map(fn($c) => [
+                'id' => $c->id,
+                'nama' => $c->nama,
+                'kode' => $c->kode ?? null,
+            ])->all();
+        }
 
         return Inertia::render('transaksi/Index', [
             'transaksis'   => $transaksis,
@@ -132,7 +168,9 @@ class TransaksiController extends Controller
                 'per_page'        => $perPage,
                 'tanggal_mulai'   => $tanggalMulai,
                 'tanggal_selesai' => $tanggalSelesai,
+                'cabang_id'       => $validated['cabang_id'] ?? null,
             ],
+            'cabang_list' => $cabangList,
         ]);
     }
 

@@ -67,6 +67,48 @@ class Produk extends Model
         return $query->where('aktif', true);
     }
 
+    /**
+     * Exclude Beans products from the query.
+     *
+     * A product is considered "Beans" if EITHER:
+     *  - its `tipe` column equals 'beans', OR
+     *  - its related KategoriProduk has nama/slug equal to 'beans' (case-insensitive)
+     *
+     * Beans are shown on a separate customer-facing screen, so every other
+     * category (Coffee, Non-Coffee, Tea, Drinks, Snacks, Desserts, Sets, and
+     * any future category) must still come through untouched.
+     */
+    public function scopeBukanBeans($query)
+    {
+        return $query
+            ->where(function ($q) {
+                $q->whereNull('tipe')->orWhere('tipe', '!=', 'beans');
+            })
+            ->whereDoesntHave('kategori', function ($q) {
+                $q->whereRaw('LOWER(nama) = ?', ['beans'])
+                    ->orWhereRaw('LOWER(slug) = ?', ['beans']);
+            });
+    }
+
+    /**
+     * Restrict to products available at a given cabang, based on stok_etalase.
+     *
+     * Each cabang has its own menu — a product only belongs to a cabang if it
+     * has a stok_etalase row for that cabang_id. As a safety net for products
+     * that haven't been assigned to any cabang yet (no stok_etalase rows at
+     * all), they still show up everywhere so nothing silently disappears
+     * while branch data entry is still in progress. Once a product gets its
+     * first stok_etalase row, it becomes branch-specific.
+     */
+    public function scopeUntukCabang($query, $cabangId)
+    {
+        return $query->where(function ($q) use ($cabangId) {
+            $q->whereHas('stokEtalase', function ($sq) use ($cabangId) {
+                $sq->where('cabang_id', $cabangId);
+            })->orWhereDoesntHave('stokEtalase');
+        });
+    }
+
     public function scopeTipe($query, $tipe)
     {
         return $query->where('tipe', $tipe);

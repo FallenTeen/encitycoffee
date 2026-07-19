@@ -377,7 +377,7 @@ Route::prefix('pos')->group(function () {
                     ]);
             });
 
-            Route::post('discount/preview', [DiscountController::class, 'preview'])
+            Route::match(['get', 'post'], 'discount/preview', [DiscountController::class, 'preview'])
                 ->middleware([
                     \App\Http\Middleware\EnsureDiscountPermission::class.':kasir,supervisor,manager,it_support',
                     \App\Http\Middleware\AuditDiscountActivity::class.':DiscountPreview',
