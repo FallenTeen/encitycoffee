@@ -27,6 +27,7 @@ class Produk extends Model
         'aktif',
         'perlu_kalibrasi',
         'audit_log',
+        'cabang_id',
     ];
 
     protected $casts = [
@@ -40,6 +41,15 @@ class Produk extends Model
     public function kategori()
     {
         return $this->belongsTo(KategoriProduk::class, 'kategori_id');
+    }
+
+    /**
+     * Relasi ke cabang tempat produk dibuat.
+     * NULL berarti produk adalah legacy (sebelum sistem branch isolation).
+     */
+    public function cabang()
+    {
+        return $this->belongsTo(Cabang::class, 'cabang_id');
     }
 
     public function satuan()
@@ -91,21 +101,61 @@ class Produk extends Model
     }
 
     /**
-     * Restrict to products available at a given cabang, based on stok_etalase.
-     *
-     * Each cabang has its own menu — a product only belongs to a cabang if it
-     * has a stok_etalase row for that cabang_id. As a safety net for products
-     * that haven't been assigned to any cabang yet (no stok_etalase rows at
-     * all), they still show up everywhere so nothing silently disappears
-     * while branch data entry is still in progress. Once a product gets its
-     * first stok_etalase row, it becomes branch-specific.
+     * Restrict to products available at a given cabang, based on cabang_id.
+     * 
+     * ATURAN (Cabang Isolation):
+     * - Produk dengan cabang_id NULL hanya bisa dilihat oleh IT Support (legacy data)
+     * - Produk dengan cabang_id = X hanya bisa dilihat oleh:
+     *   - IT Support (semua cabang)
+     *   - Manager yang mengampu cabang X
+     *   - Manager multi-cabang yang mengampu cabang X
+     * 
+     * PENTING: Filter ini harus dikombinasikan dengan filter akses user di controller
+     * karena scope ini tidak tahu role/user mana yang mengakses.
      */
     public function scopeUntukCabang($query, $cabangId)
     {
         return $query->where(function ($q) use ($cabangId) {
-            $q->whereHas('stokEtalase', function ($sq) use ($cabangId) {
-                $sq->where('cabang_id', $cabangId);
-            })->orWhereDoesntHave('stokEtalase');
+            // Produk yang dibuat di cabang ini
+            $q->where('cabang_id', $cabangId)
+            // ATAU produk yang ada di stok_etalase cabang ini (untuk backward compatibility)
+              ->orWhereHas('stokEtalase', function ($sq) use ($cabangId) {
+                  $sq->where('cabang_id', $cabangId);
+              });
+        });
+    }
+    
+    /**
+     * Scope untuk mengambil produk yang dibuat oleh cabang tertentu.
+     * NULL cabang_id berarti legacy product (sebelum sistem branch isolation).
+     */
+    public function scopeDibuatDiCabang($query, $cabangId)
+    {
+        return $query->where('cabang_id', $cabangId);
+    }
+    
+    /**
+     * Scope untuk produk legacy (tanpa cabang_id).
+     * Hanya untuk IT Support.
+     */
+    public function scopeLegacyProduk($query)
+    {
+        return $query->whereNull('cabang_id');
+    }
+    
+    /**
+     * Scope untuk filter produk berdasarkan daftar cabang yang diizinkan.
+     * Untuk manager multi-cabang yang bisa akses semua cabangnya.
+     */
+    public function scopeDiCabangManapun($query, array $cabangIds)
+    {
+        return $query->where(function ($q) use ($cabangIds) {
+            // Produk yang dibuat di salah satu cabang yang diizinkan
+            $q->whereIn('cabang_id', $cabangIds)
+            // ATAU produk yang ada di stok_etalase salah satu cabang yang diizinkan
+              ->orWhereHas('stokEtalase', function ($sq) use ($cabangIds) {
+                  $sq->whereIn('cabang_id', $cabangIds);
+              });
         });
     }
 
@@ -131,16 +181,24 @@ class Produk extends Model
 
     public function scopeCabang($query, $cabangId)
     {
-        return $query->whereHas('stokEtalase', function ($q) use ($cabangId) {
-            $q->where('cabang_id', $cabangId);
+        // Filter berdasarkan cabang_id produk atau stok_etalase
+        return $query->where(function ($q) use ($cabangId) {
+            $q->where('cabang_id', $cabangId)
+              ->orWhereHas('stokEtalase', function ($sq) use ($cabangId) {
+                  $sq->where('cabang_id', $cabangId);
+              });
         });
     }
 
     public function scopeWithStokCabang($query, $cabangId)
     {
-        return $query->with(['stokEtalase' => function ($q) use ($cabangId) {
-            $q->where('cabang_id', $cabangId);
-        }, 'kategori']);
+        return $query->with([
+            'stokEtalase' => function ($q) use ($cabangId) {
+                $q->where('cabang_id', $cabangId);
+            }, 
+            'kategori',
+            'cabang'
+        ]);
     }
 
     public function getStokCabang($cabangId)
@@ -161,9 +219,26 @@ class Produk extends Model
         $log[] = [
             'action' => $action,
             'user_id' => auth()->id(),
+            'cabang_id' => $this->cabang_id, // Track cabang_id
             'timestamp' => now()->toDateTimeString(),
             'data' => $data,
         ];
         $this->update(['audit_log' => $log]);
+    }
+    
+    /**
+     * Check apakah produk adalah legacy (sebelum sistem branch isolation).
+     */
+    public function isLegacy(): bool
+    {
+        return is_null($this->cabang_id);
+    }
+    
+    /**
+     * Get nama cabang tempat produk dibuat.
+     */
+    public function getCabangNameAttribute(): ?string
+    {
+        return $this->cabang?->nama;
     }
 }

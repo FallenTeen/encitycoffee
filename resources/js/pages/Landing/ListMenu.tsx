@@ -45,7 +45,7 @@ function formatRupiah(value: number | string | undefined | null) {
     });
 }
 
-export default function ListMenu({ cabangList, selectedCabang, namaCabang, produkList }: ListMenuProps) {
+export default function ListMenu({ cabangList = [], selectedCabang = null, namaCabang = null, produkList = [] }: ListMenuProps) {
     const products = useMemo(() => produkList ?? [], [produkList]);
     const hasSelectedCabang = Boolean(selectedCabang);
 

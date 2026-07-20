@@ -1,35 +1,59 @@
-import { useMemo, useState } from 'react';
+import AppLayout from '@/layouts/app-layout';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 import { Head, Link } from '@inertiajs/react';
-import { cn } from '@/lib/utils';
-import SafeImage from '@/components/SafeImage';
+import {
+    ArrowLeft,
+    Building2,
+    Edit,
+    Flame,
+    Package,
+    Snowflake,
+    ImageIcon,
+} from 'lucide-react';
+import { ImagePreview } from '@/components/ImageUploader';
 
-interface Cabang {
+interface Kategori {
     id: number;
-    kode: string;
     nama: string;
-    alamat: string;
-    aktif: boolean;
+    slug: string;
 }
 
-interface Product {
+interface SatuanStok {
     id: number;
+    cabang?: { id: number; nama?: string | null } | null;
+    jumlah: number | string;
+}
+
+interface Produk {
+    id: number;
+    kategori_id: number;
+    sku: string;
     nama: string;
+    kelompok_nama?: string | null;
+    varian?: string | null;
     deskripsi?: string | null;
-    harga_jual: number | string;
     image_path?: string | null;
     image_url?: string | null;
-    kategori?: {
-        id: number;
-        nama: string;
-        slug: string;
-    } | null;
+    tipe: string;
+    base?: string | null;
+    satuan_dasar: string;
+    harga_modal: number | string;
+    harga_jual: number | string;
+    perlu_kalibrasi?: boolean | number | null;
+    aktif: boolean;
+    cabang_id?: number | null;
+    cabang?: { id: number; nama: string; kode: string } | null;
 }
 
-interface ListMenuProps {
-    cabangList: Cabang[];
-    selectedCabang?: Cabang | null;
-    namaCabang?: string | null;
-    produkList?: Product[] | null;
+interface Props {
+    produk: Produk;
+    selectedCabang?: { id: number; nama: string; kode: string } | null;
+    kategori: Kategori[];
+    stok_tersedia: SatuanStok[];
+    cabangList?: Array<{ id: number; nama: string; kode: string }>;
 }
 
 function formatRupiah(value: number | string | undefined | null) {
@@ -45,266 +69,237 @@ function formatRupiah(value: number | string | undefined | null) {
     });
 }
 
-export default function ListMenu({ cabangList, selectedCabang, namaCabang, produkList }: ListMenuProps) {
-    const products = useMemo(() => produkList ?? [], [produkList]);
-    const hasSelectedCabang = Boolean(selectedCabang);
+export default function ProdukShow({
+    produk,
+    selectedCabang,
+    kategori,
+    stok_tersedia,
+    cabangList = [],
+}: Props) {
+    const tipeLabel = {
+        'beans': 'Beans',
+        'minuman': 'Minuman',
+        'snack': 'Snack',
+    }[produk.tipe] || produk.tipe;
 
-    // Category tabs are derived entirely from the products already loaded from
-    // the database — no extra request, and any new kategori_produk row shows
-    // up automatically the next time it has a product attached to it.
-    const categoryTabs = useMemo(() => {
-        const seen = new Map<string, string>();
-        products.forEach((product) => {
-            if (product.kategori) {
-                seen.set(product.kategori.slug, product.kategori.nama);
-            }
-        });
-        return Array.from(seen.entries())
-            .sort((a, b) => a[1].localeCompare(b[1]))
-            .map(([slug, nama]) => ({ slug, nama }));
-    }, [products]);
+    const kategoriNama = kategori.find(k => k.id === produk.kategori_id)?.nama || '-';
+    const variantIcon = produk.varian === 'Hot'
+        ? <Flame className="h-4 w-4 text-orange-500" />
+        : produk.varian === 'Ice'
+            ? <Snowflake className="h-4 w-4 text-blue-500" />
+            : <Package className="h-4 w-4 text-muted-foreground" />;
 
-    const [activeTab, setActiveTab] = useState<string>('all');
-    const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-
-    const filteredProducts = useMemo(() => {
-        if (activeTab === 'all') return products;
-        return products.filter((product) => product.kategori?.slug === activeTab);
-    }, [products, activeTab]);
-
-    const handleSelectProduct = (product: Product) => {
-        // Clicking the already-selected row again deselects it and brings
-        // back the promo hero on the left.
-        setSelectedProduct((current) => (current?.id === product.id ? null : product));
-    };
+    const imageUrl = produk.image_path
+        ? `/storage/${produk.image_path}`
+        : null;
 
     return (
-        <>
-            <Head title={selectedCabang ? `Menu - ${selectedCabang.nama}` : 'Menu - Encity Coffee'} />
-
-            {/*
-                Layout notes:
-                - On md+ (kiosk / cashier display: desktop or tablet) the whole page is
-                  pinned to the viewport height and never scrolls. The left "now viewing"
-                  panel and the right menu panel share that exact height, so the left
-                  panel physically cannot move. Only the product list inside the right
-                  panel scrolls; the "menu" header + category tabs stay put above it.
-                - Below md (a customer opening the link on their phone) everything reverts
-                  to a normal, naturally scrolling single column, with the "now viewing"
-                  panel sticking to the top so switching products doesn't require
-                  scrolling back up.
-            */}
-            <div className="flex min-h-screen flex-col bg-neutral-50 font-sans text-gray-900 md:h-screen md:overflow-hidden">
-                {/* Topbar — thin and sticky so it stays disposable/out of the way while scrolling */}
-                <header className="sticky top-0 z-30 flex-none border-b border-gray-200 bg-white/95 px-3 py-1.5 backdrop-blur supports-[backdrop-filter]:bg-white/80 sm:px-4">
-                    <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-baseline gap-1.5 truncate">
-                            <span className="text-sm font-extrabold tracking-tight text-gray-900 sm:text-base">
-                                Encity Coffee
-                            </span>
-                            {selectedCabang ? (
-                                <span className="truncate text-xs text-gray-500 sm:text-sm">· {selectedCabang.nama}</span>
-                            ) : null}
+        <AppLayout breadcrumbs={[
+            { title: 'Produk', href: '/produk' },
+            { title: produk.nama, href: `/produk/${produk.id}` }
+        ]}>
+            <Head title={`Detail Produk - ${produk.nama}`} />
+            
+            <div className="space-y-6">
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <Button variant="ghost" size="icon" asChild>
+                            <Link href="/produk">
+                                <ArrowLeft className="h-5 w-5" />
+                            </Link>
+                        </Button>
+                        <div>
+                            <h1 className="text-2xl font-semibold">{produk.nama}</h1>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <code className="text-xs">{produk.sku}</code>
+                                {selectedCabang && (
+                                    <>
+                                        <span>•</span>
+                                        <span>{selectedCabang.nama}</span>
+                                    </>
+                                )}
+                            </div>
                         </div>
-
-                        <select
-                            className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 font-sans text-xs text-gray-700 sm:px-3 sm:py-1.5 sm:text-sm"
-                            value={namaCabang ?? ''}
-                            onChange={(event) => {
-                                const selectedNama = event.target.value;
-                                if (!selectedNama) return;
-                                window.location.href = `/menupercabang/${encodeURIComponent(selectedNama)}`;
-                            }}
-                        >
-                            <option value="">pilih cabang</option>
-                            {cabangList.map((cabang) => (
-                                <option key={cabang.id} value={cabang.nama}>
-                                    {cabang.nama}
-                                </option>
-                            ))}
-                        </select>
                     </div>
-                </header>
+                    <Button asChild>
+                        <Link href={`/produk/${produk.id}/edit`}>
+                            <Edit className="h-4 w-4 mr-2" />
+                            Edit Produk
+                        </Link>
+                    </Button>
+                </div>
 
-                {/* Main content */}
-                <div className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col gap-4 p-2 sm:p-3 md:min-h-0 md:grid md:grid-cols-[2fr_3fr] md:gap-5 md:overflow-hidden md:p-4">
-                    {hasSelectedCabang ? (
-                        <>
-                            {/* Left panel — fixed to the row height on desktop/tablet, never shifts.
-                                On mobile it sticks below the topbar instead. */}
-                            {selectedProduct ? (
-                                <aside className="sticky top-11 z-10 flex min-h-[320px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-br from-sky-100 via-sky-200 to-sky-300 p-4 shadow-lg sm:top-12 sm:p-5 md:static md:top-auto md:z-auto md:h-full md:min-h-0 md:shadow-none">
-                                    <button
-                                        type="button"
-                                        className="flex h-7 w-7 self-end items-center justify-center rounded-full border border-white/90 bg-white/70 text-base leading-none text-sky-900 hover:bg-white"
-                                        onClick={() => setSelectedProduct(null)}
-                                        aria-label="Tutup detail produk"
-                                    >
-                                        ×
-                                    </button>
-
-                                    {selectedProduct.image_url ? (
-                                        <SafeImage
-                                            src={selectedProduct.image_url}
-                                            alt={selectedProduct.nama}
-                                            className="mt-3 h-40 w-full flex-none rounded-xl border border-white/90 object-cover shadow-lg sm:h-52 md:h-1/2 md:flex-1"
-                                            fallbackClassName="mt-3 h-40 w-full flex-none rounded-xl border border-white/90 bg-gradient-to-br from-slate-100 to-sky-100 shadow-lg sm:h-52 md:h-1/2 md:flex-1"
-                                            showIcon={false}
+                <div className="grid gap-6 md:grid-cols-2">
+                    {/* Left Column - Image & Basic Info */}
+                    <div className="space-y-6">
+                        {/* Image */}
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Gambar Produk</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                {imageUrl ? (
+                                    <div className="relative aspect-[4/3] overflow-hidden rounded-lg border bg-muted">
+                                        <img
+                                            src={imageUrl}
+                                            alt={produk.nama}
+                                            className="h-full w-full object-cover"
                                         />
-                                    ) : (
-                                        <div
-                                            className="mt-3 h-40 w-full flex-none rounded-xl border border-white/90 bg-gradient-to-br from-slate-100 to-sky-100 shadow-lg sm:h-52 md:h-1/2 md:flex-1"
-                                            aria-hidden="true"
-                                        />
-                                    )}
-
-                                    <div className="mt-4 min-h-0 overflow-y-auto">
-                                        {selectedProduct.kategori ? (
-                                            <span className="inline-flex self-start rounded-full border border-white/90 bg-white/70 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-sky-900">
-                                                {selectedProduct.kategori.nama.toLowerCase()}
-                                            </span>
-                                        ) : null}
-                                        <h1 className="mb-1 mt-2.5 text-lg font-extrabold leading-tight tracking-tight text-sky-950 sm:text-xl">
-                                            {selectedProduct.nama}
-                                        </h1>
-                                        <div className="mb-2.5 text-base font-bold text-sky-900">
-                                            {formatRupiah(selectedProduct.harga_jual)}
+                                    </div>
+                                ) : (
+                                    <div className="flex aspect-[4/3] items-center justify-center rounded-lg border bg-muted">
+                                        <div className="text-center text-muted-foreground">
+                                            <ImageIcon className="mx-auto h-12 w-12" />
+                                            <p className="mt-2 text-sm">Tidak ada gambar</p>
                                         </div>
-                                        <p className="text-sm leading-6 text-sky-800">
-                                            {selectedProduct.deskripsi || 'Deskripsi produk belum tersedia.'}
-                                        </p>
                                     </div>
-                                </aside>
-                            ) : (
-                                <aside className="sticky top-11 z-10 flex min-h-[320px] flex-col justify-between overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-br from-sky-100 via-sky-200 to-sky-300 p-5 shadow-lg sm:top-12 sm:p-6 md:static md:top-auto md:z-auto md:h-full md:min-h-0 md:shadow-none">
-                                    <span className="inline-flex self-start rounded-full border border-white/90 bg-white/70 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-sky-900">
-                                        {selectedCabang?.nama || 'Encity Coffee'}
-                                    </span>
+                                )}
+                            </CardContent>
+                        </Card>
+
+                        {/* Status */}
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Status</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="flex items-center gap-3">
+                                    <Badge variant={produk.aktif ? 'default' : 'secondary'}
+                                        className={produk.aktif ? 'bg-green-500' : 'bg-gray-400'}>
+                                        {produk.aktif ? 'Aktif' : 'Nonaktif'}
+                                    </Badge>
+                                    {produk.perlu_kalibrasi && (
+                                        <Badge variant="outline" className="border-orange-500 text-orange-600">
+                                            Perlu Kalibrasi
+                                        </Badge>
+                                    )}
+                                    {produk.cabang_id && !produk.cabang && (
+                                        <Badge variant="outline" className="border-blue-500 text-blue-600">
+                                            Legacy (Cabang {produk.cabang_id})
+                                        </Badge>
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+
+                    {/* Right Column - Details */}
+                    <div className="space-y-6">
+                        {/* Product Details */}
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Informasi Produk</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <h1 className="mb-1.5 mt-3 text-xl font-extrabold leading-tight tracking-tight text-sky-950 sm:text-2xl md:text-[1.75rem]">
-                                            Kopi segar,
-                                            <br />
-                                            disajikan tiap hari
-                                        </h1>
-                                        <p className="max-w-[34ch] text-sm leading-relaxed text-sky-800">
-                                            Best Coffee in town
-                                        </p>
+                                        <p className="text-sm text-muted-foreground">Tipe</p>
+                                        <div className="flex items-center gap-2">
+                                            {variantIcon}
+                                            <span className="font-medium">{tipeLabel}</span>
+                                        </div>
                                     </div>
-
-                                    <div className="relative -mx-1 mt-4 flex flex-1 items-end justify-center gap-2.5">
-                                        <div className="h-20 w-12 rounded-t-xl rounded-b-md border border-white/90 bg-white/55 shadow-lg sm:h-24 sm:w-14" />
-                                        <div className="h-32 w-12 rounded-t-xl rounded-b-md border border-white/90 bg-white/55 shadow-lg sm:h-36 sm:w-14" />
-                                        <div className="h-26 w-12 rounded-t-xl rounded-b-md border border-white/90 bg-white/55 shadow-lg sm:h-28 sm:w-14" />
-                                        <div className="absolute bottom-1 right-1 h-16 w-24 rounded-xl border border-gray-200 bg-white shadow-lg" />
+                                    <div>
+                                        <p className="text-sm text-muted-foreground">Kategori</p>
+                                        <p className="font-medium">{kategoriNama}</p>
                                     </div>
-
-                                    <div className="mt-4 flex items-center justify-between text-sm font-semibold text-sky-900">
-                                        <span className="truncate">{selectedCabang?.nama}</span>
-                                        <span className="flex-none">{filteredProducts.length} produk</span>
-                                    </div>
-                                </aside>
-                            )}
-
-                            {/* Right panel — header (menu label + category tabs + count) stays fixed;
-                                only the product list beneath it scrolls on desktop/tablet. */}
-                            <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5 md:h-full">
-                                <div className="mb-3 flex flex-none flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
-                                    <span className="text-sm font-bold text-gray-900 sm:text-base">menu</span>
-
-                                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                                        <nav className="flex max-w-full gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                                            <button
-                                                type="button"
-                                                className={cn(
-                                                    'flex-none rounded-full border px-3 py-1.5 text-xs font-semibold tracking-wide lowercase transition-colors sm:px-3.5 sm:text-sm',
-                                                    activeTab === 'all'
-                                                        ? 'border-gray-900 bg-gray-900 text-white'
-                                                        : 'border-gray-200 bg-white text-gray-600 hover:border-sky-300',
-                                                )}
-                                                onClick={() => setActiveTab('all')}
-                                            >
-                                                semua
-                                            </button>
-                                            {categoryTabs.map((tab) => (
-                                                <button
-                                                    type="button"
-                                                    key={tab.slug}
-                                                    className={cn(
-                                                        'flex-none rounded-full border px-3 py-1.5 text-xs font-semibold tracking-wide lowercase transition-colors sm:px-3.5 sm:text-sm',
-                                                        activeTab === tab.slug
-                                                            ? 'border-gray-900 bg-gray-900 text-white'
-                                                            : 'border-gray-200 bg-white text-gray-600 hover:border-sky-300',
-                                                    )}
-                                                    onClick={() => setActiveTab(tab.slug)}
-                                                >
-                                                    {tab.nama.toLowerCase()}
-                                                </button>
-                                            ))}
-                                        </nav>
-                                        <span className="flex-none text-xs text-gray-400 sm:text-sm">
-                                            {filteredProducts.length} item
-                                        </span>
+                                    {produk.varian && (
+                                        <div>
+                                            <p className="text-sm text-muted-foreground">Varian</p>
+                                            <p className="font-medium">{produk.varian}</p>
+                                        </div>
+                                    )}
+                                    {produk.kelompok_nama && produk.kelompok_nama !== produk.nama && (
+                                        <div>
+                                            <p className="text-sm text-muted-foreground">Kelompok</p>
+                                            <p className="font-medium">{produk.kelompok_nama}</p>
+                                        </div>
+                                    )}
+                                    <div>
+                                        <p className="text-sm text-muted-foreground">Satuan Dasar</p>
+                                        <p className="font-medium">{produk.satuan_dasar}</p>
                                     </div>
                                 </div>
 
-                                {filteredProducts.length > 0 ? (
-                                    <div className="flex flex-col gap-2.5 md:min-h-0 md:flex-1 md:overflow-y-auto md:pr-1">
-                                        {filteredProducts.map((product) => (
-                                            <button
-                                                type="button"
-                                                key={product.id}
-                                                className={cn(
-                                                    'flex w-full cursor-pointer items-center gap-3 rounded-xl border bg-white px-3 py-2.5 text-left shadow-sm transition-all hover:border-sky-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 sm:gap-4 sm:px-4 sm:py-3',
-                                                    selectedProduct?.id === product.id
-                                                        ? 'border-sky-900 bg-sky-50 shadow-md'
-                                                        : 'border-gray-200',
-                                                )}
-                                                onClick={() => handleSelectProduct(product)}
-                                            >
-                                                {product.image_url ? (
-                                                    <SafeImage
-                                                        src={product.image_url}
-                                                        alt={product.nama}
-                                                        className="h-12 w-12 flex-none rounded-xl border border-gray-200 object-cover sm:h-14 sm:w-14"
-                                                        fallbackClassName="h-12 w-12 flex-none rounded-xl border border-gray-200 bg-gradient-to-br from-slate-100 to-slate-200 sm:h-14 sm:w-14"
-                                                        showIcon={false}
-                                                    />
-                                                ) : (
-                                                    <div
-                                                        className="h-12 w-12 flex-none rounded-xl border border-gray-200 bg-gradient-to-br from-slate-100 to-slate-200 sm:h-14 sm:w-14"
-                                                        aria-hidden="true"
-                                                    />
-                                                )}
-                                                <div className="min-w-0 flex-1">
-                                                    <div className="truncate text-sm font-bold text-gray-900">
-                                                        {product.nama}
-                                                    </div>
-                                                    <div className="mt-0.5 truncate text-xs text-gray-400">
-                                                        {product.deskripsi || 'Deskripsi produk belum tersedia.'}
-                                                    </div>
+                                <Separator />
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <p className="text-sm text-muted-foreground">Harga Modal</p>
+                                        <p className="font-medium">{formatRupiah(produk.harga_modal)}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm text-muted-foreground">Harga Jual</p>
+                                        <p className="text-lg font-bold text-primary">{formatRupiah(produk.harga_jual)}</p>
+                                    </div>
+                                </div>
+
+                                {produk.deskripsi && (
+                                    <>
+                                        <Separator />
+                                        <div>
+                                            <p className="text-sm text-muted-foreground">Deskripsi</p>
+                                            <p className="mt-1 text-sm">{produk.deskripsi}</p>
+                                        </div>
+                                    </>
+                                )}
+                            </CardContent>
+                        </Card>
+
+                        {/* Stock Info */}
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Stok Tersedia</CardTitle>
+                                <CardDescription>
+                                    Stok produk di etalase cabang
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                {stok_tersedia && stok_tersedia.length > 0 ? (
+                                    <div className="space-y-3">
+                                        {stok_tersedia.map((stok) => (
+                                            <div key={stok.id} className="flex items-center justify-between rounded-lg border p-3">
+                                                <div className="flex items-center gap-2">
+                                                    <Building2 className="h-4 w-4 text-muted-foreground" />
+                                                    <span className="text-sm">
+                                                        {stok.cabang?.nama || `Cabang ${stok.cabang?.id || '-'}`}
+                                                    </span>
                                                 </div>
-                                                <div className="flex-none text-sm font-bold text-gray-900">
-                                                    {formatRupiah(product.harga_jual)}
-                                                </div>
-                                            </button>
+                                                <span className="font-bold">
+                                                    {Number(stok.jumlah).toLocaleString('id-ID')} {produk.satuan_dasar}
+                                                </span>
+                                            </div>
                                         ))}
                                     </div>
                                 ) : (
-                                    <div className="rounded-xl border border-dashed border-gray-200 bg-slate-50 p-10 text-center text-sm text-gray-400">
-                                        Tidak ada produk pada kategori ini.
-                                    </div>
+                                    <p className="text-sm text-muted-foreground">
+                                        Tidak ada data stok etalase
+                                    </p>
                                 )}
-                            </section>
-                        </>
-                    ) : (
-                        <div className="col-span-2 rounded-2xl border border-gray-200 bg-white p-8 leading-7 text-gray-600">
-                            {namaCabang
-                                ? 'Cabang tidak ditemukan. Pastikan nama cabang sudah benar atau pilih dari dropdown di atas.'
-                                : 'Pilih cabang dari dropdown di atas untuk melihat menu.'}
-                        </div>
-                    )}
+                            </CardContent>
+                        </Card>
+
+                        {/* Branch Info */}
+                        {produk.cabang && (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>Cabang Pembuat</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="flex items-center gap-2">
+                                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                                        <span className="font-medium">{produk.cabang.nama}</span>
+                                        <code className="text-xs text-muted-foreground">
+                                            ({produk.cabang.kode})
+                                        </code>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+                    </div>
                 </div>
             </div>
-        </>
+        </AppLayout>
     );
 }

@@ -68,6 +68,8 @@ interface ProdukItem {
         jumlah: number | string;
         stok_minimum?: number | string;
     }>;
+    branch_id?: number | null;
+    cabang?: { id: number; nama: string; kode: string } | null;
 }
 
 interface ProdukPaginator {
@@ -366,13 +368,13 @@ export default function ProdukIndex({
         setTogglingId(produk.id);
 
         try {
-            const token = (window as any)?.Laravel?.csrfToken;
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
             const response = await fetch(`/produk/${produk.id}/toggle-aktif`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     Accept: 'application/json',
-                    ...(token ? { 'X-CSRF-TOKEN': token } : {}),
+                    'X-CSRF-TOKEN': csrfToken,
                 },
                 body: JSON.stringify({}),
             });
@@ -386,9 +388,14 @@ export default function ProdukIndex({
                         typeof responseData.message === 'string'
                     ) {
                         message = responseData.message;
+                    } else if (response.status === 419) {
+                        message = 'Sesi expired. Silakan refresh halaman dan coba lagi.';
                     }
                 } catch (parseError) {
                     console.error(parseError);
+                    if (response.status === 419) {
+                        message = 'Sesi CSRF expired. Silakan refresh halaman.';
+                    }
                 }
                 alert(message);
             } else {
@@ -396,8 +403,9 @@ export default function ProdukIndex({
                     only: ['produks'],
                 });
             }
-        } catch {
-            alert('Gagal mengubah status produk');
+        } catch (err) {
+            console.error('Toggle status error:', err);
+            alert('Gagal mengubah status produk. Silakan coba lagi.');
         } finally {
             setTogglingId(null);
         }
@@ -581,7 +589,9 @@ export default function ProdukIndex({
 
     const getImageUrl = (imagePath?: string | null) => {
         if (!imagePath) return null;
-        return `/storage/${imagePath}`;
+        // Don't prepend /storage/ here - LazyImage's resolveImageUrl will handle it
+        // This prevents double /storage/ prefix
+        return imagePath;
     };
 
     const groupedProducts = useMemo(() => {
@@ -1158,6 +1168,15 @@ export default function ProdukIndex({
                                                 <SortIcon field="stok" />
                                             </button>
                                         </th>
+                                        <th className="px-4 py-3 text-left">
+                                            <button
+                                                type="button"
+                                                className="flex items-center gap-1 font-medium hover:text-primary"
+                                            >
+                                                <Building2 className="h-3 w-3 mr-1" />
+                                                Cabang
+                                            </button>
+                                        </th>
                                         <th className="px-4 py-3 text-center">
                                             Status
                                         </th>
@@ -1250,6 +1269,24 @@ export default function ProdukIndex({
                                                         {stockStatus.icon}{' '}
                                                         {stok ?? '-'}
                                                     </Badge>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    {p.cabang ? (
+                                                        <Badge
+                                                            variant="outline"
+                                                            className="text-xs bg-blue-50 border-blue-200 text-blue-700"
+                                                        >
+                                                            <Building2 className="h-3 w-3 mr-1" />
+                                                            {p.cabang.nama}
+                                                        </Badge>
+                                                    ) : (
+                                                        <Badge
+                                                            variant="secondary"
+                                                            className="text-xs"
+                                                        >
+                                                            Legacy
+                                                        </Badge>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-3 text-center">
                                                     <ToggleStatusBadge

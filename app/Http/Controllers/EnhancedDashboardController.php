@@ -44,7 +44,7 @@ class EnhancedDashboardController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->isItSupport() && !$user->isManager()) {
+        if (!$user->isItSupport()) {
             abort(403, 'Unauthorized access');
         }
 

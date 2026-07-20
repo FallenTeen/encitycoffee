@@ -72,7 +72,7 @@ $backofficeRouteCallback = function () {
         // Prefix: /dashboard
         // ------------------------------------------------------------------------
         Route::prefix('dashboard')->name('dashboard.')->group(function () {
-            Route::get('/admin', [EnhancedDashboardController::class, 'adminDashboard'])->name('admin')->middleware('role:admin,it_support');
+            Route::get('/admin', [EnhancedDashboardController::class, 'adminDashboard'])->name('admin')->middleware('role:it_support');
             Route::get('/manager', [EnhancedDashboardController::class, 'managerDashboard'])->name('manager')->middleware('role:manager');
             Route::get('/supervisor', [EnhancedDashboardController::class, 'supervisorDashboard'])->name('supervisor')->middleware('role:supervisor');
             Route::get('/kasir', [EnhancedDashboardController::class, 'kasirDashboard'])->name('kasir')->middleware('role:kasir');

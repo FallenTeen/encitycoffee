@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Session;
 use Inertia\Inertia;
 use App\Models\Cabang;
 use App\Models\Produk;
@@ -47,21 +48,39 @@ class ProdukController extends Controller
                 'validated_input' => $validated,
             ]);
 
-            $cabangId = $this->getCabangId($request, $user);
+            $cabangIds = $this->getCabangId($request, $user);
 
-            if (!$cabangId) {
+            if (!$cabangIds || (is_array($cabangIds) && count($cabangIds) === 0)) {
                 Log::warning('PRODUK INDEX - No cabang assigned for user', ['user_id' => $user->id]);
-
                 return $this->renderEmptyProductList($user);
             }
 
-            $produk = $this->getProdukByCabang($cabangId, $request);
-            $selectedCabang = Cabang::find($cabangId);
+            $produk = $this->getProdukByCabang($cabangIds, $request);
+            $selectedCabang = null;
+            
+            // Ambil selectedCabang berdasarkan cabang_id request
+            $requestedCabangId = $request->input('cabang_id');
+            if ($requestedCabangId && $requestedCabangId !== 'all') {
+                $selectedCabang = is_numeric($requestedCabangId) ? Cabang::find((int)$requestedCabangId) : null;
+            } else {
+                $selectedCabang = null;
+            }
 
+            // getCacheStats() hanya menerima single int, jadi ambil salah satu
+            // cabang id yang representatif (cabang pertama jika multi-cabang)
+            $cabangIdForCache = is_array($cabangIds) ? ($cabangIds[0] ?? null) : $cabangIds;
+            
             $perPage = $this->getValidatedPerPage($request);
             $page = max(1, (int) $request->input('page', 1));
             $total = $produk->count();
-
+            
+            // Log filter yang diterapkan
+            Log::info('PRODUK INDEX - Branch Filter Applied', [
+                'filtered_by_cabang_ids' => $cabangIds,
+                'is_multi_branch' => is_array($cabangIds) && count($cabangIds) > 1,
+                'total_produk_after_filter' => $total,
+            ]);
+            
             Log::info('PRODUK INDEX - After Filtering', [
                 'total_produk' => $total,
                 'per_page' => $perPage,
@@ -107,7 +126,7 @@ class ProdukController extends Controller
                 'selectedCabang' => $selectedCabang,
                 'filter_aktif' => [
                     'search' => $request->input('search', ''),
-                    'cabang_id' => $cabangId,
+                    'cabang_id' => $requestedCabangId,
                     'kategori_id' => $request->input('kategori_id', ''),
                     'tipe' => $request->input('tipe', ''),
                     'aktif' => $request->input('aktif', null),
@@ -116,7 +135,7 @@ class ProdukController extends Controller
                     'per_page' => $perPage,
                 ],
                 'kategori_list' => KategoriProduk::select('id', 'nama')->get(),
-                'cacheInfo' => $this->productCacheService->getCacheStats($cabangId),
+                'cacheInfo' => $cabangIdForCache ? $this->productCacheService->getCacheStats($cabangIdForCache) : null,
                 'canManageProduk' => $this->canManageProduk($user),
                 'canDeleteProduk' => $this->canDeleteProduk($user),
             ]);
@@ -188,12 +207,15 @@ class ProdukController extends Controller
 
             $cabangId = $this->getCabangId($request, $user);
 
-            if (!$cabangId) {
+            if (empty($cabangId)) {
                 Log::warning('PRODUK SHOW - No cabang assigned', ['user_id' => $user->id]);
                 return back()->with('error', 'Cabang belum dipilih');
             }
 
-            $produk = $this->productCacheService->getProdukById($cabangId, $produkId);
+            // Handle both single value and array
+            $firstCabangId = is_array($cabangId) ? $cabangId[0] : $cabangId;
+
+            $produk = $this->productCacheService->getProdukById($firstCabangId, $produkId);
 
             if (!$produk) {
                 Log::warning('PRODUK SHOW - Produk not found', [
@@ -203,9 +225,25 @@ class ProdukController extends Controller
                 return back()->with('error', 'Produk tidak ditemukan di cabang ini');
             }
 
+            // Get additional data for the show page
+            $kategoriList = KategoriProduk::select('id', 'nama', 'slug')->get();
+            
+            $stokTersedia = $produk->stokEtalase->map(function ($s) {
+                return [
+                    'id' => $s->id,
+                    'cabang' => $s->cabang ? ['id' => $s->cabang->id, 'nama' => $s->cabang->nama] : null,
+                    'jumlah' => $s->jumlah,
+                ];
+            })->values();
+
+            $cabangList = $this->getCabangList($user);
+
             return Inertia::render('produk/Show', [
                 'produk' => $produk,
-                'selectedCabang' => Cabang::find($cabangId)
+                'selectedCabang' => $firstCabangId ? Cabang::find($firstCabangId) : null,
+                'kategori' => $kategoriList,
+                'stok_tersedia' => $stokTersedia,
+                'cabangList' => $cabangList,
             ]);
         } catch (\Exception $e) {
             Log::error('Error fetching produk detail', [
@@ -221,16 +259,20 @@ class ProdukController extends Controller
     {
         try {
             $user = auth()->user();
-            $cabangId = $this->getCabangId($request, $user);
+            $cabangIds = $this->getCabangId($request, $user);
 
-            if (!$cabangId) {
+            if (empty($cabangIds)) {
                 return back()->with('error', 'Cabang belum dipilih');
             }
 
-            $this->productCacheService->clearCache($cabangId);
+            // Clear cache for all assigned branches
+            $idsToClear = is_array($cabangIds) ? $cabangIds : [$cabangIds];
+            foreach ($idsToClear as $id) {
+                $this->productCacheService->clearCache($id);
+            }
 
             Log::info('Product cache cleared', [
-                'cabang_id' => $cabangId,
+                'cabang_ids' => $idsToClear,
                 'user_id' => $user->id
             ]);
 
@@ -245,22 +287,25 @@ class ProdukController extends Controller
     {
         try {
             $user = auth()->user();
-            $cabangId = $this->getCabangId($request, $user);
+            $cabangIds = $this->getCabangId($request, $user);
 
-            if (!$cabangId) {
+            if (empty($cabangIds)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Cabang belum ditetapkan'
                 ], 400);
             }
 
+            // For API, use first branch if multiple
+            $firstCabangId = is_array($cabangIds) ? $cabangIds[0] : $cabangIds;
+            
             $search = $request->input('search', '');
             $kategoriId = $request->input('kategori_id', '');
             $base = $request->input('base', '');
             $perPage = $request->input('per_page', 20);
             $page = $request->input('page', 1);
 
-            $produk = $this->getProdukForApi($cabangId, $search, $kategoriId, '', $base);
+            $produk = $this->getProdukForApi($firstCabangId, $search, $kategoriId, '', $base);
 
             $total = $produk->count();
             $offset = ($page - 1) * $perPage;
@@ -308,7 +353,28 @@ class ProdukController extends Controller
             $produk = Produk::with(['stokEtalase'])->findOrFail($id);
 
             if (in_array($user->role, ['manager', 'supervisor'])) {
-                $produkCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
+                // Get branch IDs from both stokEtalase AND produk's branch_id
+                // Filter out NULL values to avoid issues
+                $produkCabangIds = $produk->stokEtalase
+                    ->pluck('cabang_id')
+                    ->filter()
+                    ->all();
+                
+                // Also include produk's own branch_id for the new isolation system
+                if ($produk->branch_id && !in_array($produk->branch_id, $produkCabangIds)) {
+                    $produkCabangIds[] = $produk->branch_id;
+                }
+                
+                // If product has no branch assignment at all (legacy), only IT Support can manage
+                if (empty($produkCabangIds) && $user->role !== 'it_support') {
+                    if ($request->wantsJson()) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Produk ini belum ditugaskan ke cabang manapun. Hanya IT Support yang dapat mengubah status produk legacy.',
+                        ], 403);
+                    }
+                    return back()->with('error', 'Produk ini belum ditugaskan ke cabang manapun. Hanya IT Support yang dapat mengubah status produk legacy.');
+                }
 
                 if (!empty($produkCabangIds)) {
                     $assignedCabangIds = $user->cabang->pluck('id')->all();
@@ -440,17 +506,28 @@ class ProdukController extends Controller
 
     private function getCabangId(Request $request, $user)
     {
+        // IT Support - bisa pilih cabang atau default ke cabang pertama user
         if ($user->role === 'it_support') {
             $cabangId = $request->input('cabang_id');
 
             if (!$cabangId) {
-                $defaultCabang = Cabang::first();
-                $cabangId = $defaultCabang ? $defaultCabang->id : null;
+                $defaultCabang = Session::has('selected_cabang_id') 
+                    ? Session::get('selected_cabang_id') 
+                    : null;
+                
+                if (!$defaultCabang) {
+                    $defaultCabang = $user->cabang->first()?->id;
+                }
+                
+                if (!$defaultCabang) {
+                    $defaultCabang = Cabang::first()?->id;
+                }
             }
 
             return $cabangId;
         }
 
+        // Manager, Supervisor, Kasir - TINGKATKAN FILTERISASI
         if (in_array($user->role, ['manager', 'supervisor', 'kasir'])) {
             // Eager load cabang relationship
             $user->load('cabang:id');
@@ -463,23 +540,105 @@ class ProdukController extends Controller
 
             $cabangId = $request->input('cabang_id');
 
-            if ($cabangId) {
-                if (!in_array((int)$cabangId, $assignedCabangIds)) {
-                    Log::warning('Unauthorized cabang access attempt', [
-                        'user_id' => $user->id,
-                        'role' => $user->role,
-                        'requested_cabang_id' => $cabangId,
-                        'assigned_cabang_ids' => $assignedCabangIds
-                    ]);
-                    return null;
-                }
-                return $cabangId;
+            // Jika tidak ada cabang yang dipilih atau memilih "Semua"
+            if (!$cabangId || $cabangId === 'all') {
+                // UNTUK MANAGER MULTI-CABANG: Kembalikan array semua cabang yang diizinkan
+                // UNTUK MANAGER SINGLE-CABANG: Kembalikan array dengan 1 cabang
+                return $assignedCabangIds;
             }
 
-            return $assignedCabangIds[0];
+            // Validasi: Pastikan cabang yang diminta ada di daftar yang diizinkan
+            if (!in_array((int)$cabangId, $assignedCabangIds)) {
+                Log::warning('Unauthorized cabang access attempt via URL manipulation', [
+                    'user_id' => $user->id,
+                    'role' => $user->role,
+                    'requested_cabang_id' => $cabangId,
+                    'assigned_cabang_ids' => $assignedCabangIds,
+                    'action' => 'BLOCKED - Attempting to access unauthorized branch'
+                ]);
+                // Kembalikan daftar cabang yang diizinkan, BUKAN null
+                // Ini mencegah akses ke cabang yang tidak diizinkan
+                return $assignedCabangIds;
+            }
+
+            // Return sebagai array untuk konsistensi
+            return [(int)$cabangId];
         }
 
         return null;
+    }
+    
+    /**
+     * Check apakah user adalah manager multi-cabang.
+     */
+    private function isMultiBranchManager($user): bool
+    {
+        if (!in_array($user->role, ['manager', 'supervisor'])) {
+            return false;
+        }
+        
+        $user->load('cabang:id');
+        return $user->cabang->count() > 1;
+    }
+    
+    /**
+     * Ambil semua cabang ID yang diizinkan untuk user.
+     */
+    private function getAuthorizedCabangIds($user): array
+    {
+        if ($user->role === 'it_support') {
+            // IT Support bisa akses semua cabang - return empty untuk indicate "all"
+            return [];
+        }
+        
+        if (in_array($user->role, ['manager', 'supervisor', 'kasir'])) {
+            $user->load('cabang:id');
+            return $user->cabang->pluck('id')->all();
+        }
+        
+        return [];
+    }
+    
+    /**
+     * Check apakah user bisa mengakses produk tertentu.
+     * Aturan:
+     * - IT Support: bisa akses semua
+     * - Manager/Supervisor single-cabang: hanya produk dengan cabang_id = cabangnya
+     * - Manager/Supervisor multi-cabang: produk dengan cabang_id di salah satu cabangnya
+     */
+    private function canAccessProduk($user, $produk): bool
+    {
+        // IT Support bisa akses semuanya
+        if ($user->role === 'it_support') {
+            return true;
+        }
+        
+        // Supervisor/kasir tidak bisa edit/delete produk (hanya bisa toggle status)
+        if (!in_array($user->role, ['manager', 'supervisor'])) {
+            return false;
+        }
+        
+        $authorizedCabangIds = $this->getAuthorizedCabangIds($user);
+        
+        if (empty($authorizedCabangIds)) {
+            return false;
+        }
+        
+        // Untuk multi-cabang manager, cek apakah cabang_id produk ada di daftar authorized
+        if ($produk->cabang_id) {
+            return in_array($produk->cabang_id, $authorizedCabangIds);
+        }
+        
+        // Legacy product (cabang_id NULL) - cek via stok_etalase
+        $produkCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
+        
+        if (!empty($produkCabangIds)) {
+            return count(array_intersect($authorizedCabangIds, $produkCabangIds)) > 0;
+        }
+        
+        // Produk tanpa cabang_id dan tanpa stok_etalase - legacy product
+        // Biarkan IT Support yang handle
+        return false;
     }
 
     private function getCabangList($user)
@@ -503,6 +662,10 @@ class ProdukController extends Controller
         return null;
     }
 
+    /**
+     * Ambil produk berdasarkan cabang yang diizinkan.
+     * Mendukung single branch ID atau array dari branch IDs.
+     */
     private function getProdukByCabang($cabangId, Request $request)
     {
         try {
@@ -513,13 +676,16 @@ class ProdukController extends Controller
             $tipe = $request->input('tipe', '');
             $sortBy = $request->input('sort_by', '');
             $sortDir = strtolower($request->input('sort_dir', 'asc'));
+            
+            // Normalisasi cabangId ke array
+            $cabangIds = is_array($cabangId) ? $cabangId : [$cabangId];
 
             if (!in_array($sortDir, ['asc', 'desc'])) {
                 $sortDir = 'asc';
             }
 
             Log::info('getProdukByCabang - Start', [
-                'cabang_id' => $cabangId,
+                'cabang_ids' => $cabangIds,
                 'search' => $search,
                 'kategori_id' => $kategoriId,
                 'tipe' => $tipe,
@@ -528,10 +694,11 @@ class ProdukController extends Controller
                 'sort_dir' => $sortDir,
             ]);
 
+            // Gunakan ProductCacheService dengan logika baru
             if ($search) {
-                $produk = $this->productCacheService->searchProduk($cabangId, $search, $useCache);
+                $produk = $this->productCacheService->searchProdukMultiCabang($cabangIds, $search, $useCache);
             } else {
-                $produk = $this->productCacheService->getProdukByCabang($cabangId, $useCache);
+                $produk = $this->productCacheService->getProdukByCabangMulti($cabangIds, $useCache);
             }
 
             Log::info('getProdukByCabang - After base query', ['count' => $produk->count()]);
@@ -578,7 +745,7 @@ class ProdukController extends Controller
             Log::error('Error in getProdukByCabang', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'cabang_id' => $cabangId,
+                'cabang_ids' => $cabangIds,
             ]);
 
             return collect();
@@ -685,6 +852,8 @@ class ProdukController extends Controller
             Log::info('PRODUK CREATE - Authorization passed');
 
             $cabangId = $this->getCabangId($request, $user);
+            $isMultiBranch = $this->isMultiBranchManager($user);
+            $userCabangIds = $this->getAuthorizedCabangIds($user);
 
             $kategoriList = KategoriProduk::select('id', 'nama', 'slug')->get();
             $snackVarianOptions = Produk::where('tipe', 'snack')
@@ -701,10 +870,16 @@ class ProdukController extends Controller
                 'satuan_count' => count($satuanOptions),
                 'satuan_list' => $satuanOptions,
                 'selected_cabang_id' => $cabangId,
+                'is_multi_branch' => $isMultiBranch,
             ]);
 
             $cabangList = $this->getCabangList($user);
-            $selectedCabang = $cabangId ? Cabang::find($cabangId) : null;
+
+            // $cabangId bisa berupa array (manager multi/single-cabang) atau
+            // single value (it_support). Cabang::find() butuh single id,
+            // kalau dikasih array akan mengembalikan Collection, bukan Model.
+            $singleCabangId = is_array($cabangId) ? ($cabangId[0] ?? null) : $cabangId;
+            $selectedCabang = $singleCabangId ? Cabang::find($singleCabangId) : null;
 
             Log::info('PRODUK CREATE - Rendering form', [
                 'cabang_list_count' => is_array($cabangList) ? count($cabangList) : 0,
@@ -718,7 +893,9 @@ class ProdukController extends Controller
                 'satuan_options' => $satuanOptions,
                 'snack_varian_options' => $snackVarianOptions,
                 'cabangList' => $cabangList,
-                'selectedCabang' => $selectedCabang
+                'selectedCabang' => $selectedCabang,
+                'isMultiBranchManager' => $isMultiBranch,
+                'userCabangIds' => $userCabangIds,
             ]);
         } catch (\Exception $e) {
             Log::error('Error loading create produk form', ['error' => $e->getMessage()]);
@@ -801,6 +978,46 @@ class ProdukController extends Controller
             }
 
             $affectedCabangIds = [];
+            
+            // Tentukan cabang_id untuk produk baru berdasarkan role dan jumlah cabang manager
+            $cabangId = null;
+            $authorizedCabangIds = [];
+            
+            if ($user->role === 'it_support') {
+                // IT Support bisa memilih cabang atau biarkan NULL
+                $cabangId = $request->input('cabang_id');
+            } elseif (in_array($user->role, ['manager', 'supervisor'])) {
+                $user->load('cabang:id');
+                $authorizedCabangIds = $user->cabang->pluck('id')->all();
+                
+                if (count($authorizedCabangIds) === 1) {
+                    // Single cabang manager - auto set ke cabangnya
+                    $cabangId = $authorizedCabangIds[0];
+                } else {
+                    // Multi-cabang manager - pilih dari cabangnya
+                    $requestedCabangId = $request->input('cabang_id');
+                    if ($requestedCabangId && in_array((int)$requestedCabangId, $authorizedCabangIds)) {
+                        $cabangId = (int)$requestedCabangId;
+                    } else {
+                        // Validasi: multi-cabang manager HARUS memilih cabang
+                        if (!$requestedCabangId) {
+                            return back()->with('error', 'Anda harus memilih cabang untuk produk ini')->withInput();
+                        }
+                        return back()->with('error', 'Anda tidak memiliki akses ke cabang yang dipilih')->withInput();
+                    }
+                }
+            }
+
+            // Validasi: pastikan cabang_id valid dan diizinkan
+            if ($cabangId && !empty($authorizedCabangIds) && !in_array($cabangId, $authorizedCabangIds)) {
+                Log::warning('PRODUK STORE - Attempt to assign to unauthorized cabang', [
+                    'user_id' => $user->id,
+                    'role' => $user->role,
+                    'requested_cabang_id' => $cabangId,
+                    'authorized_cabangs' => $authorizedCabangIds,
+                ]);
+                return back()->with('error', 'Anda tidak memiliki akses ke cabang yang dipilih. Manipulasi data terdeteksi.')->withInput();
+            }
 
             if (in_array($user->role, ['manager', 'supervisor']) && $request->has('stok_etalase')) {
                 $assignedCabangIds = $user->cabang->pluck('id')->all();
@@ -883,6 +1100,7 @@ class ProdukController extends Controller
                         'aktif' => $request->boolean('aktif', true),
                         'perlu_kalibrasi' => $request->boolean('perlu_kalibrasi', false),
                         'image_path' => $imagePath,
+                        'cabang_id' => $cabangId,
                     ];
 
                     $produk = Produk::create($produkData);
@@ -916,7 +1134,7 @@ class ProdukController extends Controller
             }
 
             $data = $validator->validated();
-
+            
             if (($data['tipe'] ?? null) !== 'minuman') {
                 $data['base'] = null;
             }
@@ -933,6 +1151,9 @@ class ProdukController extends Controller
                 $path = $request->file('image')->store('foto-produk', 'public');
                 $data['image_path'] = $path;
             }
+            
+            // Set cabang_id untuk produk
+            $data['cabang_id'] = $cabangId;
 
             $produk = Produk::create($data);
 
@@ -1012,26 +1233,28 @@ class ProdukController extends Controller
                 'stok_cabang_ids' => $produk->stokEtalase->pluck('cabang_id')->all(),
             ]);
 
-            // For manager/supervisor, check if they have access to this produk's cabang
+            // For manager/supervisor, check if they have access to this produk's cabang_id
+            // ATURAN: Manager hanya bisa edit produk yang dibuat di cabangnya
             if (in_array($user->role, ['manager', 'supervisor'])) {
-                $assignedCabangIds = $user->cabang->pluck('id')->all();
-                $produkCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
+                $authorizedCabangIds = $this->getAuthorizedCabangIds($user);
 
                 // DEBUG: Log access check
-                Log::info('PRODUK EDIT - Cabang Access Check', [
-                    'user_assigned_cabang' => $assignedCabangIds,
-                    'produk_cabang_ids' => $produkCabangIds,
-                    'has_intersection' => count(array_intersect($assignedCabangIds, $produkCabangIds)) > 0,
+                Log::info('PRODUK EDIT - Cabin Isolation Access Check', [
+                    'user_assigned_cabang' => $authorizedCabangIds,
+                    'produk_cabang_id' => $produk->cabang_id,
+                    'is_multi_cabang' => $this->isMultiBranchManager($user),
                 ]);
 
-                if (!empty($produkCabangIds) && !array_intersect($assignedCabangIds, $produkCabangIds)) {
+                // Gunakan helper method canAccessProduk untuk pengecekan yang lebih ketat
+                if (!$this->canAccessProduk($user, $produk)) {
                     Log::warning('PRODUK EDIT - Unauthorized cabang access', [
                         'user_id' => $user->id,
                         'produk_id' => $id,
-                        'user_cabang' => $assignedCabangIds,
-                        'produk_cabang' => $produkCabangIds,
+                        'user_cabang' => $authorizedCabangIds,
+                        'produk_cabang_id' => $produk->cabang_id,
+                        'message' => 'Produk ini bukan dibuat di cabang yang Anda kelola',
                     ]);
-                    return back()->with('error', 'Anda tidak memiliki akses untuk mengedit produk ini');
+                    return back()->with('error', 'Anda tidak memiliki akses untuk mengedit produk ini. Produk ini dibuat oleh cabang lain.');
                 }
             }
 
@@ -1053,11 +1276,17 @@ class ProdukController extends Controller
                 ];
             })->values();
 
+            $isMultiBranch = $this->isMultiBranchManager($user);
+            $userCabangIds = $this->getAuthorizedCabangIds($user);
+            $cabangList = $this->getCabangList($user);
+
             // DEBUG: Log rendering details
             Log::info('PRODUK EDIT - Rendering form', [
                 'kategori_count' => $kategoriList->count(),
                 'satuan_count' => count($satuanOptions),
                 'stok_tersedia_count' => $stokTersedia->count(),
+                'is_multi_branch' => $isMultiBranch,
+                'user_cabang_ids' => $userCabangIds,
             ]);
 
             return Inertia::render('produk/Edit', [
@@ -1067,6 +1296,9 @@ class ProdukController extends Controller
                 'satuan_options' => $satuanOptions,
                 'stok_tersedia' => $stokTersedia,
                 'snack_varian_options' => $snackVarianOptions,
+                'isMultiBranchManager' => $isMultiBranch,
+                'userCabangIds' => $userCabangIds,
+                'cabangList' => $cabangList,
             ]);
         } catch (\Exception $e) {
             Log::error('Error loading edit produk form', ['error' => $e->getMessage()]);
@@ -1119,20 +1351,42 @@ class ProdukController extends Controller
             ]);
 
             if (in_array($user->role, ['manager', 'supervisor'])) {
-                $assignedCabangIds = $user->cabang->pluck('id')->all();
-                $produkCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
+                $authorizedCabangIds = $this->getAuthorizedCabangIds($user);
 
-                Log::info('PRODUK UPDATE - Cabang Access Check', [
-                    'user_assigned_cabang' => $assignedCabangIds,
-                    'produk_cabang_ids' => $produkCabangIds,
+                Log::info('PRODUK UPDATE - Cabin Isolation Access Check', [
+                    'user_assigned_cabang' => $authorizedCabangIds,
+                    'produk_cabang_id' => $produk->cabang_id,
+                    'is_multi_cabang' => $this->isMultiBranchManager($user),
                 ]);
 
-                if (!empty($produkCabangIds) && !array_intersect($assignedCabangIds, $produkCabangIds)) {
+                // Gunakan helper method canAccessProduk untuk pengecekan yang lebih ketat
+                if (!$this->canAccessProduk($user, $produk)) {
                     Log::warning('PRODUK UPDATE - Unauthorized cabang access', [
                         'user_id' => $user->id,
                         'produk_id' => $id,
+                        'user_cabang' => $authorizedCabangIds,
+                        'produk_cabang_id' => $produk->cabang_id,
                     ]);
-                    return back()->with('error', 'Anda tidak memiliki akses untuk mengedit produk ini');
+                    return back()->with('error', 'Anda tidak memiliki akses untuk mengedit produk ini. Produk ini dibuat oleh cabang lain.');
+                }
+                
+                // Multi-cabang manager: izinkan perubahan cabang_id jika produk ada di cabangnya
+                // Pastikan cabang_id baru ada di authorized branches
+                if ($this->isMultiBranchManager($user)) {
+                    $requestedNewCabangId = $request->input('cabang_id');
+                    if ($requestedNewCabangId && !in_array((int)$requestedNewCabangId, $authorizedCabangIds)) {
+                        return back()->with('error', 'Anda tidak memiliki akses ke cabang yang dipilih untuk penugasan ulang produk')->withInput();
+                    }
+                }
+            }
+            
+            // Validasi cabang_id jika ada perubahan
+            $newCabangId = $request->input('cabang_id');
+            if ($newCabangId && in_array($user->role, ['manager', 'supervisor'])) {
+                $user->load('cabang:id');
+                $authCabangs = $user->cabang->pluck('id')->all();
+                if (!in_array((int)$newCabangId, $authCabangs)) {
+                    return back()->with('error', 'Anda tidak memiliki akses ke cabang yang dipilih')->withInput();
                 }
             }
 
@@ -1220,6 +1474,27 @@ class ProdukController extends Controller
                 $path = $request->file('image')->store('foto-produk', 'public');
                 $data['image_path'] = $path;
             }
+            
+            // Handle cabang_id update for multi-cabang managers
+            $requestedCabangId = $request->input('cabang_id');
+            if ($requestedCabangId !== null) {
+                $user->load('cabang:id');
+                $authorizedCabangs = $user->cabang->pluck('id')->all();
+                
+                // IT Support can set any cabang or NULL
+                // Manager/Supervisor can only set to their authorized branches
+                if ($user->role === 'it_support') {
+                    $data['cabang_id'] = $requestedCabangId ?: null;
+                } elseif (in_array($user->role, ['manager', 'supervisor'])) {
+                    if (in_array((int)$requestedCabangId, $authorizedCabangs)) {
+                        $data['cabang_id'] = (int)$requestedCabangId;
+                    }
+                    // If single cabang manager, auto-set to their only branch
+                    elseif (count($authorizedCabangs) === 1) {
+                        $data['cabang_id'] = $authorizedCabangs[0];
+                    }
+                }
+            }
 
             $affectedCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
 
@@ -1304,25 +1579,29 @@ class ProdukController extends Controller
             Log::info('PRODUK DESTROY - Produk Details', [
                 'produk_id' => $produk->id,
                 'produk_nama' => $produk->nama,
+                'produk_cabang_id' => $produk->cabang_id,
                 'stok_etalase_count' => $produk->stokEtalase->count(),
                 'affected_cabang_ids' => $produk->stokEtalase->pluck('cabang_id')->all(),
             ]);
 
-            if (in_array($user->role, ['manager', 'supervisor'])) {
-                $assignedCabangIds = $user->cabang->pluck('id')->all();
-                $produkCabangIds = $produk->stokEtalase->pluck('cabang_id')->all();
+            if (in_array($user->role, ['manager'])) {
+                $authorizedCabangIds = $this->getAuthorizedCabangIds($user);
 
-                Log::info('PRODUK DESTROY - Cabang Access Check', [
-                    'user_assigned_cabang' => $assignedCabangIds,
-                    'produk_cabang_ids' => $produkCabangIds,
+                Log::info('PRODUK DESTROY - Cabin Isolation Access Check', [
+                    'user_assigned_cabang' => $authorizedCabangIds,
+                    'produk_cabang_id' => $produk->cabang_id,
+                    'is_multi_cabang' => $this->isMultiBranchManager($user),
                 ]);
 
-                if (!empty($produkCabangIds) && !array_intersect($assignedCabangIds, $produkCabangIds)) {
+                // Gunakan helper method canAccessProduk untuk pengecekan yang lebih ketat
+                if (!$this->canAccessProduk($user, $produk)) {
                     Log::warning('PRODUK DESTROY - Unauthorized cabang access', [
                         'user_id' => $user->id,
                         'produk_id' => $id,
+                        'user_cabang' => $authorizedCabangIds,
+                        'produk_cabang_id' => $produk->cabang_id,
                     ]);
-                    return back()->with('error', 'Anda tidak memiliki akses untuk menghapus produk ini');
+                    return back()->with('error', 'Anda tidak memiliki akses untuk menghapus produk ini. Produk ini dibuat oleh cabang lain.');
                 }
             }
 
