@@ -751,15 +751,20 @@ class LaporanController extends Controller
         }
 
         // ── Base query builder (di-clone dua kali) ─────────────────────────────
-        $baseQuery = function () use ($start, $end, $cabangId) {
+        $baseQuery = function () use ($start, $end, $cabangId, $cabangIds) {
             $q = ItemTransaksi::query()
                 ->join('transaksi', 'item_transaksi.transaksi_id', '=', 'transaksi.id')
                 ->join('produk',    'item_transaksi.produk_id',    '=', 'produk.id')
                 ->where('transaksi.status', 'selesai')
                 ->whereBetween('transaksi.waktu_selesai', [$start, $end]);
             if ($cabangId) {
+                // User selected specific branch - use that
                 $q->where('transaksi.cabang_id', $cabangId);
+            } elseif (!empty($cabangIds)) {
+                // User didn't select branch but has authorized branches - filter by those
+                $q->whereIn('transaksi.cabang_id', $cabangIds);
             }
+            // If both $cabangId and $cabangIds are empty (IT Support), show all branches
             return $q;
         };
 
@@ -867,6 +872,11 @@ class LaporanController extends Controller
             ],
             'filters'       => $filters,
             'cabangOptions' => $cabangOptions,
+            'user' => [
+                'role' => $user->role,
+                'is_it_support' => $user->isItSupport(),
+                'authorized_branch_count' => count($cabangIds),
+            ],
         ]);
     }
 
@@ -992,7 +1002,7 @@ class LaporanController extends Controller
         $validated = $request->validate([
             'tanggal_mulai' => 'nullable|date',
             'tanggal_selesai' => 'nullable|date|after_or_equal:tanggal_mulai',
-            'cabang_id' => ['nullable', 'integer'],
+            'cabang_id' => ['nullable', 'integer', Rule::in($cabangIds)],
             'tipe' => 'nullable|in:shift,harian,all',
         ]);
 
@@ -1243,6 +1253,12 @@ class LaporanController extends Controller
             return response()->json($result);
         }
 
+        $result['user'] = [
+            'role' => $user->role,
+            'is_it_support' => $user->isItSupport(),
+            'authorized_branch_count' => count($cabangIds),
+        ];
+
         return Inertia::render('laporan/RiwayatTransaksi', $result);
     }
 
@@ -1256,7 +1272,7 @@ class LaporanController extends Controller
         $validated = $request->validate([
             'tanggal_mulai' => 'nullable|date',
             'tanggal_selesai' => 'nullable|date|after_or_equal:tanggal_mulai',
-            'cabang_id' => ['nullable', 'integer'],
+            'cabang_id' => ['nullable', 'integer', Rule::in($cabangIds)],
             'kategori_id' => 'nullable|integer',
             'harga_min' => 'nullable|numeric|min:0',
             'harga_max' => 'nullable|numeric|min:0|gte:harga_min',
@@ -1424,12 +1440,23 @@ class LaporanController extends Controller
     {
         Gate::authorize('view-laporan');
 
-        $cabangId = $request->integer('cabang_id');
-        $userId = $request->integer('user_id');
-        $tanggalMulai = $request->get('tanggal_mulai', date('Y-m-01'));
-        $tanggalAkhir = $request->get('tanggal_akhir', date('Y-m-t'));
+        $user = Auth::user();
+        $cabangIds = $this->tentukanCabangIds($user);
 
-        $kinerja = User::join('shift', 'users.id', '=', 'shift.user_id')
+        $validated = $request->validate([
+            'cabang_id' => ['nullable', 'integer', Rule::in($cabangIds)],
+            'user_id' => ['nullable', 'integer'],
+            'tanggal_mulai' => ['nullable', 'date'],
+            'tanggal_akhir' => ['nullable', 'date'],
+        ]);
+
+        $cabangId = !empty($validated['cabang_id']) ? (int) $validated['cabang_id'] : null;
+        $userId = !empty($validated['user_id']) ? (int) $validated['user_id'] : null;
+        $tanggalMulai = $validated['tanggal_mulai'] ?? date('Y-m-01');
+        $tanggalAkhir = $validated['tanggal_akhir'] ?? date('Y-m-t');
+
+        // Filter kasir only for user's authorized branches
+        $kinerjaQuery = User::join('shift', 'users.id', '=', 'shift.user_id')
             ->leftJoin('transaksi', function ($join) {
                 $join->on('shift.id', '=', 'transaksi.shift_id')
                     ->where('transaksi.status', 'selesai');
@@ -1444,11 +1471,13 @@ class LaporanController extends Controller
                 DB::raw('SUM(ABS(shift.selisih)) as selisih_total')
             )
             ->whereBetween('shift.waktu_buka', [$tanggalMulai, $tanggalAkhir])
+            ->when(!empty($cabangIds), fn($q) => $q->whereIn('shift.cabang_id', $cabangIds))
             ->when($cabangId, fn($q) => $q->where('shift.cabang_id', $cabangId))
             ->when($userId, fn($q) => $q->where('users.id', $userId))
             ->groupBy('users.id', 'users.name')
-            ->orderByDesc('total_penjualan')
-            ->get()
+            ->orderByDesc('total_penjualan');
+
+        $kinerja = $kinerjaQuery->get()
             ->map(function ($row) {
                 $jamKerja = ($row->menit_kerja ?? 0) / 60.0;
                 $row->jam_kerja = round($jamKerja, 2);
@@ -1468,6 +1497,7 @@ class LaporanController extends Controller
 
 
         $trendBulanan = Transaksi::where('status', 'selesai')
+            ->when(!empty($cabangIds), fn($q) => $q->whereIn('cabang_id', $cabangIds))
             ->when($cabangId, fn($q) => $q->where('cabang_id', $cabangId))
             ->whereBetween('waktu_selesai', [$tanggalMulai, $tanggalAkhir])
             ->select(DB::raw('DATE_FORMAT(waktu_selesai, "%Y-%m") as bulan'), DB::raw('SUM(total) as total'))
@@ -1558,9 +1588,29 @@ class LaporanController extends Controller
     {
         Gate::authorize('view-laporan');
 
-        $cabangId = $cabang ? (int) $cabang : $request->integer('cabang_id');
-        $kategoriId = $request->integer('kategori_id');
-        $status = $request->get('status');
+        $user = Auth::user();
+        $cabangIds = $this->tentukanCabangIds($user);
+
+        $validated = $request->validate([
+            'cabang_id' => ['nullable', 'integer', Rule::in($cabangIds)],
+            'kategori_id' => 'nullable|integer',
+            'status' => 'nullable|string',
+        ]);
+
+        $requestedCabangId = $cabang ? (int) $cabang : ($validated['cabang_id'] ?? null);
+        $kategoriId = $validated['kategori_id'] ?? null;
+        $status = $validated['status'] ?? null;
+
+        // Determine filter branches based on authorization
+        if ($requestedCabangId !== null) {
+            // Validate user has access to this branch
+            if (!empty($cabangIds) && !in_array($requestedCabangId, $cabangIds)) {
+                abort(403, 'Tidak memiliki akses ke cabang ini');
+            }
+            $filterCabangIds = [$requestedCabangId];
+        } else {
+            $filterCabangIds = $cabangIds;
+        }
 
         $base = StokEtalase::query()
             ->join('produk', 'stok_etalase.produk_id', '=', 'produk.id')
@@ -1578,8 +1628,8 @@ class LaporanController extends Controller
                 DB::raw('(stok_etalase.jumlah * produk.harga_modal) as nilai')
             );
 
-        if ($cabangId) {
-            $base->where('stok_etalase.cabang_id', $cabangId);
+        if (!empty($filterCabangIds)) {
+            $base->whereIn('stok_etalase.cabang_id', $filterCabangIds);
         }
         if ($kategoriId) {
             $base->where('produk.kategori_id', $kategoriId);
@@ -1609,7 +1659,7 @@ class LaporanController extends Controller
 
         $expired = BatchStok::join('stok_etalase', 'batch_stok.stok_etalase_id', '=', 'stok_etalase.id')
             ->join('produk', 'stok_etalase.produk_id', '=', 'produk.id')
-            ->when($cabangId, fn($q) => $q->where('stok_etalase.cabang_id', $cabangId))
+            ->when(!empty($filterCabangIds), fn($q) => $q->whereIn('stok_etalase.cabang_id', $filterCabangIds))
             ->when($kategoriId, fn($q) => $q->where('produk.kategori_id', $kategoriId))
             ->whereDate('batch_stok.tanggal_kadaluarsa', '<=', now())
             ->select(
@@ -1627,13 +1677,14 @@ class LaporanController extends Controller
         $potensiKerugian = $expired->sum('nilai');
         $oldestBatch = BatchStok::join('stok_etalase', 'batch_stok.stok_etalase_id', '=', 'stok_etalase.id')
             ->join('produk', 'stok_etalase.produk_id', '=', 'produk.id')
-            ->when($cabangId, fn($q) => $q->where('stok_etalase.cabang_id', $cabangId))
+            ->when(!empty($filterCabangIds), fn($q) => $q->whereIn('stok_etalase.cabang_id', $filterCabangIds))
             ->when($kategoriId, fn($q) => $q->where('produk.kategori_id', $kategoriId))
             ->select('stok_etalase.produk_id', 'produk.nama', DB::raw('MIN(batch_stok.tanggal_kadaluarsa) as tanggal_tertua'))
             ->groupBy('stok_etalase.produk_id', 'produk.nama')
             ->get();
         $perCabang = StokEtalase::join('produk', 'stok_etalase.produk_id', '=', 'produk.id')
             ->join('cabang', 'stok_etalase.cabang_id', '=', 'cabang.id')
+            ->when(!empty($filterCabangIds), fn($q) => $q->whereIn('stok_etalase.cabang_id', $filterCabangIds))
             ->when($kategoriId, fn($q) => $q->where('produk.kategori_id', $kategoriId))
             ->select(
                 'cabang.id as cabang_id',
@@ -1646,7 +1697,8 @@ class LaporanController extends Controller
             ->get();
         $perKategori = StokEtalase::join('produk', 'stok_etalase.produk_id', '=', 'produk.id')
             ->join('kategori_produk', 'produk.kategori_id', '=', 'kategori_produk.id')
-            ->when($cabangId, fn($q) => $q->where('stok_etalase.cabang_id', $cabangId))
+            ->when(!empty($filterCabangIds), fn($q) => $q->whereIn('stok_etalase.cabang_id', $filterCabangIds))
+            ->when($kategoriId, fn($q) => $q->where('produk.kategori_id', $kategoriId))
             ->select(
                 'kategori_produk.id as kategori_id',
                 'kategori_produk.nama as kategori',

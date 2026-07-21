@@ -746,10 +746,27 @@ HTML;
 
     public function daftarOpenBill(Request $request)
     {
+        $user = $request->user();
+        $userCabangIds = [];
+        if (method_exists($user, 'cabang')) {
+            $user->load('cabang:id');
+            $userCabangIds = $user->cabang->pluck('id')->all();
+        }
+
+        // Apply authorized branch filter for non-it_support roles
+        if (method_exists($user, 'isItSupport') && !$user->isItSupport()) {
+            if (!empty($userCabangIds)) {
+                $query = OpenBill::whereIn('cabang_id', $userCabangIds);
+            } else {
+                $query = OpenBill::where('cabang_id', 0); // Force no results
+            }
+        } else {
+            $query = OpenBill::query();
+        }
+
         $status = $request->string('status')->toString();
 
-        $query = OpenBill::query()
-            ->with(['cabang:id,kode,nama', 'shift:id,status', 'user:id,name'])
+        $query->with(['cabang:id,kode,nama', 'shift:id,status', 'user:id,name'])
             ->latest();
 
         if ($request->expectsJson()) {

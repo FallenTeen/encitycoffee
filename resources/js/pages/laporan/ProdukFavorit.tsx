@@ -59,7 +59,12 @@ interface PageProps {
         tanggal_selesai: string;
         cabang_id?: number | null;
     };
-    cabangOptions: CabangOption[];
+    cabangOptions: CabreraOption[];
+    user?: {
+        role: string;
+        is_it_support: boolean;
+        authorized_branch_count: number;
+    };
 }
 
 // ─────────────────────────────────────────────
@@ -172,7 +177,7 @@ function RankBar({ row, max, totalQty }: { row: ProdukFavoritRow; max: number; t
 // ─────────────────────────────────────────────
 
 export default function LaporanProdukFavorit(props: PageProps) {
-    const { data, filters, cabangOptions } = props;
+    const { data, filters, cabangOptions, user } = props;
     const { url } = usePage();
     const queryIndex = String(url).indexOf('?');
     const rawQuery   = queryIndex >= 0 ? String(url).substring(queryIndex + 1) : '';
@@ -307,7 +312,9 @@ export default function LaporanProdukFavorit(props: PageProps) {
                                     defaultValue={filters.cabang_id ?? ''}
                                     className="h-9 rounded border border-input bg-background px-2"
                                 >
-                                    <option value="">Semua Cabang</option>
+                                    {!(user?.authorized_branch_count === 1 && !user?.is_it_support) && (
+                                        <option value="">Semua Cabang</option>
+                                    )}
                                     {cabangOptions.map((c) => (
                                         <option key={c.id} value={c.id}>{c.nama}</option>
                                     ))}

@@ -147,8 +147,13 @@ interface Props {
     performa_per_kasir?: PerformaKasirRow[];
     perbandingan_kemarin?: PerbandinganKemarin | null;
     filter_aktif: FilterAktif;
-    cabang_options: CabangOption[];
+    cabang_options: CabreraOption[];
     tipe: string;
+    user?: {
+        role: string;
+        is_it_support: boolean;
+        authorized_branch_count: number;
+    };
 }
 
 const RUPIAH_FORMATTER = new Intl.NumberFormat('id-ID', {
@@ -371,6 +376,7 @@ export default function RiwayatTransaksi({
     filter_aktif,
     cabang_options,
     tipe,
+    user,
 }: Props) {
     const [activeTab, setActiveTab] = useState<TipeLaporan>(tipe === 'harian' ? 'harian' : 'shift');
     const [rangeMulai, setRangeMulai] = useState(
@@ -573,7 +579,9 @@ export default function RiwayatTransaksi({
                                             <SelectValue placeholder="Semua cabang" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="all">Semua cabang</SelectItem>
+                                            {!(user?.authorized_branch_count === 1 && !user?.is_it_support) && (
+                                                <SelectItem value="all">Semua cabang</SelectItem>
+                                            )}
                                             {(cabang_options ?? []).map((c) => (
                                                 <SelectItem key={c.id} value={String(c.id)}>
                                                     {c.nama} {c.kode ? `(${c.kode})` : ''}

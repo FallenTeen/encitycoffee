@@ -476,6 +476,19 @@ class ProdukController extends Controller
                 ], 400);
             }
 
+            // For mobile app: getCabangId returns array for kasir/supervisor/manager
+            // Extract single branch ID (kasir should only have 1 branch assigned)
+            if (is_array($cabangId)) {
+                $cabangId = $cabangId[0] ?? null;
+            }
+
+            if (!$cabangId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cabang tidak tersedia'
+                ], 400);
+            }
+
             $search = $request->input('search', '');
             $kategoriId = $request->input('kategori_id', '');
             $tipe = $request->input('tipe', '');
