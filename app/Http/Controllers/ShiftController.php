@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Shift;
 use App\Models\Cabang;
 use App\Models\Transaksi;
+use App\Models\OpenBill;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
@@ -28,9 +29,45 @@ class ShiftController extends Controller
         return $this->tutupShift($request, $shift);
     }
 
+    public function openBills(Request $request, Shift $shift)
+    {
+        // SECURITY: Verify user has access to this shift's branch
+        $policy = new \App\Policies\BranchAccessPolicy();
+        $currentUser = $request->user() ?? auth()->user();
+        if (!$currentUser || !$policy->viewShift($currentUser, $shift)) {
+            return response()->json([
+                'error' => 'Anda tidak memiliki akses ke shift ini.'
+            ], 403);
+        }
+
+        $openBills = OpenBill::with(['items.produk'])
+            ->where('shift_id', $shift->id)
+            ->where('status', 'open')
+            ->orderBy('created_at')
+            ->get()
+            ->map(function (OpenBill $bill) {
+                return [
+                    'id' => (int) $bill->id,
+                    'nomor_open_bill' => (string) $bill->nomor_open_bill,
+                    'nama_pelanggan' => $bill->nama_pelanggan,
+                    'total' => (float) $bill->total,
+                    'subtotal' => (float) $bill->subtotal,
+                    'item_count' => $bill->items->count(),
+                    'created_at' => $bill->created_at?->toDateTimeString(),
+                ];
+            });
+
+        return response()->json([
+            'shift_id' => (int) $shift->id,
+            'has_open_bills' => $openBills->isNotEmpty(),
+            'count' => $openBills->count(),
+            'open_bills' => $openBills->values(),
+        ]);
+    }
+
     public function tampilkan(Shift $shift)
     {
-        return $this->tampilkanShift($shift);
+        return $this->tampilkanShift(request(), $shift);
     }
 
     public function daftar(Request $request)
@@ -103,6 +140,19 @@ class ShiftController extends Controller
             return response()->json(['error' => 'Cabang tidak valid'], 400);
         }
 
+        // SECURITY: Verify user has access to this cabang
+        $policy = new \App\Policies\BranchAccessPolicy();
+        if (!$policy->canAccessCabang($user, (int) $cabang->id)) {
+            Log::warning('User mencoba buka shift di cabang yang tidak diizinkan', [
+                'user_id' => $user->id,
+                'cabang_id' => $cabang->id,
+                'user_role' => $user->role,
+            ]);
+            return response()->json([
+                'error' => 'Anda tidak diizinkan membuka shift di cabang ini.'
+            ], 403);
+        }
+
         $existing = Shift::where('user_id', $user->id)->where('status', 'buka')->first();
         if ($existing) {
             Log::warning('Percobaan buka shift ganda', [
@@ -173,6 +223,20 @@ class ShiftController extends Controller
             'timestamp' => now()
         ]);
 
+        // SECURITY: Verify user has access to this shift's branch
+        $policy = new \App\Policies\BranchAccessPolicy();
+        $currentUser = $request->user() ?? auth()->user();
+        if ($currentUser && !$policy->viewShift($currentUser, $shift)) {
+            Log::warning('User mencoba tutup shift di cabang yang tidak diizinkan', [
+                'user_id' => $currentUser->id,
+                'shift_id' => $shift->id,
+                'shift_cabang_id' => $shift->cabang_id,
+            ]);
+            return response()->json([
+                'error' => 'Anda tidak memiliki akses ke shift ini.'
+            ], 403);
+        }
+
         // ===================================================================
         // VALIDASI INPUT
         // ===================================================================
@@ -181,6 +245,7 @@ class ShiftController extends Controller
             'total_tunai' => 'nullable|numeric|min:0',
             'total_qris' => 'nullable|numeric|min:0',
             'catatan' => 'nullable|string|max:500',
+            'force_close_open_bills' => 'nullable|boolean',
         ]);
 
         if ($v->fails()) {
@@ -227,6 +292,40 @@ class ShiftController extends Controller
             return response()->json([
                 'error' => 'Shift tidak dapat ditutup (status: ' . $shift->status . ')'
             ], 400);
+        }
+
+        // ===================================================================
+        // CHECK OPEN BILLS - BARU: Deteksi tagihan yang belum diclose
+        // ===================================================================
+        // Jika masih ada bill terbuka, minta konfirmasi dari mobile (409)
+        // agar UI menampilkan snackbar dengan daftar bill.
+        $forceClose = $request->boolean('force_close_open_bills');
+        $openBills = OpenBill::where('shift_id', $shift->id)
+            ->where('status', 'open')
+            ->orderBy('created_at')
+            ->get(['id', 'nomor_open_bill', 'nama_pelanggan', 'subtotal', 'total', 'created_at']);
+
+        if ($openBills->isNotEmpty() && !$forceClose) {
+            Log::info('⚠️ SHIFT CLOSE BLOCKED: ada open bills', [
+                'shift_id' => $shift->id,
+                'user_id' => $user->id,
+                'open_bill_count' => $openBills->count(),
+            ]);
+
+            return response()->json([
+                'error' => 'Masih terdapat tagihan (bill) yang belum diclose pada shift ini.',
+                'code' => 'OPEN_BILLS_EXIST',
+                'requires_confirmation' => true,
+                'confirmation_prompt' => 'apakah anda yakin ingin close semua bill dan melakukan pengakhiran shift?',
+                'open_bills' => $openBills->map(function (OpenBill $bill) {
+                    return [
+                        'id' => (int) $bill->id,
+                        'nomor_open_bill' => (string) $bill->nomor_open_bill,
+                        'nama_pelanggan' => $bill->nama_pelanggan,
+                        'total' => (float) $bill->total,
+                    ];
+                })->values(),
+            ], 409);
         }
 
         // ===================================================================
@@ -317,6 +416,47 @@ class ShiftController extends Controller
             }
 
             // ===================================================================
+            // FORCE CLOSE OPEN BILLS (jika diminta oleh mobile)
+            // ===================================================================
+            $closedBills = [];
+            if ($forceClose) {
+                $stillOpen = OpenBill::where('shift_id', $shiftLocked->id)
+                    ->where('status', 'open')
+                    ->lockForUpdate()
+                    ->get();
+
+                if ($stillOpen->isNotEmpty()) {
+                    Log::info('🔁 FORCE-CLOSING OPEN BILLS', [
+                        'shift_id' => $shiftLocked->id,
+                        'count' => $stillOpen->count(),
+                        'user_id' => $user->id,
+                    ]);
+
+                    foreach ($stillOpen as $bill) {
+                        $log = $bill->audit_log ?? [];
+                        $log[] = [
+                            'action' => 'force_closed_on_shift_close',
+                            'user_id' => $user->id,
+                            'timestamp' => now()->toDateTimeString(),
+                            'data' => ['shift_id' => $shiftLocked->id],
+                        ];
+                        $bill->update([
+                            'status' => 'batal',
+                            'catatan' => trim(($bill->catatan ?? '') . ' [Force-closed saat tutup shift oleh user #' . $user->id . ']'),
+                            'audit_log' => $log,
+                            'deleted_by' => $user->id,
+                            'delete_reason' => 'force_closed_on_shift_close',
+                        ]);
+                        $closedBills[] = [
+                            'id' => (int) $bill->id,
+                            'nomor_open_bill' => (string) $bill->nomor_open_bill,
+                            'nama_pelanggan' => $bill->nama_pelanggan,
+                        ];
+                    }
+                }
+            }
+
+            // ===================================================================
             // HITUNG TOTAL DARI TRANSAKSI
             // ===================================================================
             Log::info('📊 CALCULATING TOTALS', ['shift_id' => $shift->id]);
@@ -390,7 +530,9 @@ class ShiftController extends Controller
 
             return response()->json([
                 'message' => 'Shift berhasil ditutup',
-                'shift' => $shiftLocked
+                'shift' => $shiftLocked,
+                'closed_open_bills' => $closedBills,
+                'closed_open_bills_count' => count($closedBills),
             ], 200);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -407,8 +549,16 @@ class ShiftController extends Controller
         }
     }
 
-    public function tampilkanShift(Shift $shift)
+    public function tampilkanShift(Request $request, Shift $shift)
     {
+        // SECURITY: Verify user has access to this shift's branch
+        $policy = new \App\Policies\BranchAccessPolicy();
+        if (!$policy->viewShift($request->user(), $shift)) {
+            return response()->json([
+                'error' => 'Anda tidak memiliki akses ke shift ini.'
+            ], 403);
+        }
+
         $shift->load([
             'user',
             'cabang',

@@ -46,19 +46,58 @@ class AuthController extends Controller
             'password' => 'required',
         ]);
 
-        $user = User::where('email', $request->email)->first();
+        // Normalize email: trim whitespace and lowercase to avoid case-sensitivity issues
+        // that may occur across different DB collations or user typing errors.
+        $email = strtolower(trim((string) $request->email));
+        $password = (string) $request->password;
+        $expectsJson = (bool) $request->expectsJson();
+        $clientIp = (string) $request->ip();
 
-        if (!$user || !Hash::check($request->password, $user->password)) {
+        // Use withTrashed() to find user even if soft-deleted, so we can give
+        // a clear error message instead of generic "Kredensial salah"
+        $user = User::withTrashed()
+            ->whereRaw('LOWER(email) = ?', [$email])
+            ->first();
+
+        if (!$user || !Hash::check($password, $user->password)) {
             $error = ['email' => 'Kredensial salah'];
-            Log::warning('Login failed', ['email' => (string) $request->email, 'expects_json' => (bool) $request->expectsJson()]);
 
-            return $request->expectsJson()
+            // CRITICAL: Detailed logging for debugging production issues
+            // Includes enough info to diagnose without leaking sensitive data
+            Log::warning('Login failed', [
+                'email' => $email,
+                'expects_json' => $expectsJson,
+                'ip' => $clientIp,
+                'user_agent' => substr((string) $request->userAgent(), 0, 200),
+                'user_found' => $user !== null,
+                'user_id' => $user?->id,
+                'user_trashed' => $user?->trashed() ?? false,
+                'password_length' => strlen($password),
+                'email_length' => strlen($email),
+            ]);
+
+            return $expectsJson
                 ? response()->json(['errors' => $error], 401)
                 : back()->withErrors($error)->onlyInput('email');
         }
 
+        // Check if user is soft-deleted (this can happen if the user was deleted but
+        // record still exists in DB due to SoftDeletes trait)
+        if ($user->trashed()) {
+            Log::warning('Login attempt for soft-deleted user', [
+                'email' => $email,
+                'user_id' => (int) $user->id,
+                'deleted_at' => (string) $user->deleted_at,
+                'ip' => $clientIp,
+            ]);
+            $error = ['email' => 'Akun Anda telah dinonaktifkan. Silakan hubungi administrator.'];
+            return $expectsJson
+                ? response()->json(['errors' => $error], 403)
+                : back()->withErrors($error)->onlyInput('email');
+        }
+
         // ❗ If API Login → No session, return token
-        if ($request->expectsJson()) {
+        if ($expectsJson) {
             if ((bool) ($user->aktif ?? true) === false) {
                 Log::warning('Mobile login rejected: user inactive', ['user_id' => (int) $user->id]);
                 return response()->json(['error' => 'Akun tidak aktif'], 403);
@@ -75,6 +114,12 @@ class AuthController extends Controller
             $user->load(['cabang' => function($query) {
                 $query->where('aktif', true);
             }]);
+
+            Log::info('Mobile login success', [
+                'user_id' => (int) $user->id,
+                'email' => $email,
+                'cabang_count' => $user->cabang->count(),
+            ]);
 
             return response()->json([
                 'message' => 'Login berhasil',

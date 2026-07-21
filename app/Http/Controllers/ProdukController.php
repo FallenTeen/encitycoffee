@@ -353,16 +353,16 @@ class ProdukController extends Controller
             $produk = Produk::with(['stokEtalase'])->findOrFail($id);
 
             if (in_array($user->role, ['manager', 'supervisor'])) {
-                // Get branch IDs from both stokEtalase AND produk's branch_id
+                // Get branch IDs from both stokEtalase AND produk's cabang_id
                 // Filter out NULL values to avoid issues
                 $produkCabangIds = $produk->stokEtalase
                     ->pluck('cabang_id')
                     ->filter()
                     ->all();
-                
-                // Also include produk's own branch_id for the new isolation system
-                if ($produk->branch_id && !in_array($produk->branch_id, $produkCabangIds)) {
-                    $produkCabangIds[] = $produk->branch_id;
+
+                // Also include produk's own cabang_id for the new isolation system
+                if ($produk->cabang_id && !in_array($produk->cabang_id, $produkCabangIds)) {
+                    $produkCabangIds[] = $produk->cabang_id;
                 }
                 
                 // If product has no branch assignment at all (legacy), only IT Support can manage

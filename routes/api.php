@@ -298,6 +298,7 @@ Route::prefix('pos')->group(function () {
                 Route::get('aktif', [ShiftController::class, 'dapatkanAktif']);
                 Route::post('buka', [ShiftController::class, 'buka']);
                 Route::post('{shift}/tutup', [ShiftController::class, 'tutup']);
+                Route::get('{shift}/open-bills', [ShiftController::class, 'openBills']);
                 Route::get('{shift}', [ShiftController::class, 'tampilkan']);
                 Route::get('/', [ShiftController::class, 'daftar']);
             });

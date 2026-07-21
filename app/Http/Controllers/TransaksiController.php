@@ -596,8 +596,14 @@ HTML;
         ]);
 
         $shift = Shift::findOrFail($validated['shift_id']);
-        if ($shift->status !== 'buka') {
-            return response()->json(['error' => 'Shift tidak terbuka'], 400);
+
+        // SECURITY: Verify user has access to this shift's branch
+        // (shift status is checked inside TransaksiService to keep error semantics intact)
+        $policy = new \App\Policies\BranchAccessPolicy();
+        if (!$policy->viewShift($request->user(), $shift)) {
+            return response()->json([
+                'error' => 'Anda tidak memiliki akses ke shift ini. Pastikan shift berada di cabang yang Anda tugaskan.'
+            ], 403);
         }
 
         try {
@@ -618,17 +624,25 @@ HTML;
         }
     }
 
-    public function tampilkanTransaksi(Transaksi $transaksi)
+    public function tampilkanTransaksi(Request $request, Transaksi $transaksi)
     {
+        // SECURITY: Verify user has access to this transaksi's branch
+        $policy = new \App\Policies\BranchAccessPolicy();
+        if (!$policy->viewTransaksi($request->user(), $transaksi)) {
+            return response()->json([
+                'error' => 'Anda tidak memiliki akses ke transaksi ini.'
+            ], 403);
+        }
+
         $transaksi->load(['item.produk', 'pembayaran', 'shift', 'cabang']);
-        
+
         // Append formatted datetime fields for receipt printing
         $transaksi->append([
             'waktu_selesai_formatted',
-            'created_at_formatted', 
+            'created_at_formatted',
             'updated_at_formatted'
         ]);
-        
+
         return response()->json($transaksi);
     }
 
@@ -639,6 +653,14 @@ HTML;
     public function batalkanTransaksi(Transaksi $transaksi, Request $request)
     {
         $request->validate(['alasan' => 'required|string|min:10']);
+
+        // SECURITY: Verify user has access to this transaksi's branch
+        $policy = new \App\Policies\BranchAccessPolicy();
+        if (!$policy->viewTransaksi($request->user(), $transaksi)) {
+            return response()->json([
+                'error' => 'Anda tidak memiliki akses ke transaksi ini.'
+            ], 403);
+        }
 
         try {
             $updated = $this->transaksiService->batalkanTransaksi(
@@ -659,6 +681,15 @@ HTML;
         if (!($user->isManager() || $user->isItSupport())) {
             return response()->json(['error' => 'Hanya manager dan IT Support yang bisa membatalkan transaksi'], 403);
         }
+
+        // SECURITY: Verify user has access to this transaksi's branch
+        $policy = new \App\Policies\BranchAccessPolicy();
+        if (!$policy->viewTransaksi($user, $transaksi)) {
+            return response()->json([
+                'error' => 'Anda tidak memiliki akses ke transaksi ini.'
+            ], 403);
+        }
+
         if ($transaksi->status === 'batal') {
             return response()->json(['error' => 'Transaksi sudah dibatalkan'], 400);
         }
@@ -724,8 +755,13 @@ HTML;
         ]);
 
         $shift = Shift::findOrFail($validated['shift_id']);
-        if ($shift->status !== 'buka') {
-            return response()->json(['error' => 'Shift tidak terbuka'], 400);
+
+        // SECURITY: Verify user has access to this shift's branch
+        $policy = new \App\Policies\BranchAccessPolicy();
+        if (!$policy->createOpenBillInShift($request->user(), $shift)) {
+            return response()->json([
+                'error' => 'Anda tidak memiliki akses ke shift ini. Pastikan shift berada di cabang yang Anda tugaskan.'
+            ], 403);
         }
 
         try {
@@ -812,6 +848,12 @@ HTML;
             'catatan'           => 'nullable|string',
         ]);
 
+        // SECURITY: Verify user has access to this open bill's branch
+        $policy = new \App\Policies\BranchAccessPolicy();
+        if (!$policy->viewOpenBill($request->user(), $openBill)) {
+            return response()->json(['error' => 'Anda tidak memiliki akses ke open bill ini.'], 403);
+        }
+
         $shift = $openBill->shift;
         if ($openBill->status !== 'open') return response()->json(['error' => 'Open bill sudah tidak aktif'], 400);
         if (!$shift)                       return response()->json(['error' => 'Shift tidak ditemukan'], 400);
@@ -835,6 +877,12 @@ HTML;
 
     public function tampilkanOpenBill(OpenBill $openBill, Request $request)
     {
+        // SECURITY: Verify user has access to this open bill's branch
+        $policy = new \App\Policies\BranchAccessPolicy();
+        if (!$policy->viewOpenBill($request->user(), $openBill)) {
+            return response()->json(['error' => 'Anda tidak memiliki akses ke open bill ini.'], 403);
+        }
+
         $openBill->load(['items.produk', 'shift', 'cabang', 'user']);
         if ($request->expectsJson()) return response()->json($openBill);
         return Inertia::render('transaksi/OpenBillShow', ['open_bill' => $openBill]);
@@ -842,6 +890,12 @@ HTML;
 
     public function hapusOpenBill(OpenBill $openBill, Request $request)
     {
+        // SECURITY: Verify user has access to this open bill's branch
+        $policy = new \App\Policies\BranchAccessPolicy();
+        if (!$policy->viewOpenBill($request->user(), $openBill)) {
+            return response()->json(['error' => 'Anda tidak memiliki akses ke open bill ini.'], 403);
+        }
+
         $shift = $openBill->shift;
         if ($shift && $shift->status === 'tutup') {
             return response()->json(['error' => 'Tidak bisa menghapus open bill dari shift yang sudah ditutup'], 400);
@@ -869,6 +923,12 @@ HTML;
             'pajak'                  => 'nullable|numeric|min:0',
             'catatan'                => 'nullable|string',
         ]);
+
+        // SECURITY: Verify user has access to this open bill's branch
+        $policy = new \App\Policies\BranchAccessPolicy();
+        if (!$policy->viewOpenBill($request->user(), $openBill)) {
+            return response()->json(['error' => 'Anda tidak memiliki akses ke open bill ini.'], 403);
+        }
 
         $shift = $openBill->shift;
         if (!$shift)                      return response()->json(['error' => 'Shift tidak ditemukan'], 400);

@@ -6,6 +6,7 @@ use App\Models\BatchStok;
 use App\Models\Cabang;
 use App\Models\Produk;
 use App\Models\MutasiStok;
+use App\Services\ProductCacheService;
 use App\Services\StokService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -16,9 +17,11 @@ use Carbon\Carbon;
 
 class StokController extends Controller
 {
-    public function __construct()
-    {
+    protected ProductCacheService $productCacheService;
 
+    public function __construct(ProductCacheService $productCacheService)
+    {
+        $this->productCacheService = $productCacheService;
     }
 
     public function index(Request $request)
@@ -370,6 +373,12 @@ class StokController extends Controller
             return back()->withErrors(['error' => $e->getMessage()])->withInput();
         }
 
+        // CRITICAL: Invalidate product cache for this cabang so kasir sees new produk.
+        // Without this, the cached product list (scoped to cabang) becomes stale and
+        // produk that just got their first stok_etalase won't appear in mobile home.
+        $this->productCacheService->clearCache((int) $validated['cabang_id']);
+        $this->productCacheService->incrementCacheVersion();
+
         return redirect()->route('stok.index')->with('success', 'Stok berhasil ditambahkan');
     }
 
@@ -404,6 +413,9 @@ class StokController extends Controller
         } catch (\Exception $e) {
             return back()->withErrors(['error' => $e->getMessage()])->withInput();
         }
+
+        // CRITICAL: Invalidate product cache so mobile home reflects new stok immediately.
+        $this->productCacheService->clearCache((int) $stokEtalase->cabang_id);
 
         return back()->with('success', 'Stok berhasil disesuaikan');
     }

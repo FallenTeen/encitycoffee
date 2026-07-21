@@ -11,6 +11,27 @@ class Produk extends Model
 
     protected $table = 'produk';
 
+    protected static function booted(): void
+    {
+        // Invalidate product cache whenever a produk is created/updated/deleted
+        // or when its cabang_id changes. This ensures kasir sees the freshest list.
+        $invalidate = function (Produk $produk) {
+            try {
+                /** @var \App\Services\ProductCacheService $service */
+                $service = app(\App\Services\ProductCacheService::class);
+                $service->clearAllCache();
+            } catch (\Throwable $e) {
+                \Log::warning('Produk model event: cache clear failed', [
+                    'error' => $e->getMessage(),
+                    'produk_id' => $produk->id,
+                ]);
+            }
+        };
+
+        static::saved($invalidate);
+        static::deleted($invalidate);
+    }
+
     protected $fillable = [
         'kategori_id',
         'sku',
