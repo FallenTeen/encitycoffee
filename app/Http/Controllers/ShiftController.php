@@ -441,7 +441,7 @@ class ShiftController extends Controller
                             'data' => ['shift_id' => $shiftLocked->id],
                         ];
                         $bill->update([
-                            'status' => 'batal',
+                            'status' => 'closed',
                             'catatan' => trim(($bill->catatan ?? '') . ' [Force-closed saat tutup shift oleh user #' . $user->id . ']'),
                             'audit_log' => $log,
                             'deleted_by' => $user->id,
