@@ -309,32 +309,26 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth, cabang_
     return params.toString();
   }
 
-  async function handleSoftDelete() {
+  function handleSoftDelete() {
     if (!deleteTx || deleteReason.trim().length < 5) return;
     setIsDeleting(true);
-    try {
-      const res = await fetch(`/transaksi/${deleteTx.id}/soft-delete`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type':  'application/json',
-          'X-CSRF-TOKEN':  document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '',
-        },
-        body: JSON.stringify({ reason: deleteReason }),
-      });
-      const json = await res.json();
-      if (res.ok) {
+
+    router.delete(`/transaksi/${deleteTx.id}/soft-delete`, {
+      data: { reason: deleteReason },
+      preserveScroll: true,
+      onSuccess: () => {
         setDeleteOpen(false);
         setDeleteTx(null);
         setDeleteReason('');
         router.reload({ only: ['transaksis'] });
-      } else {
-        alert(json.error ?? 'Gagal menghapus transaksi');
-      }
-    } catch {
-      alert('Terjadi kesalahan jaringan');
-    } finally {
-      setIsDeleting(false);
-    }
+      },
+      onError: (errors) => {
+        alert(Object.values(errors)[0] ?? 'Gagal menghapus transaksi');
+      },
+      onFinish: () => {
+        setIsDeleting(false);
+      },
+    });
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────

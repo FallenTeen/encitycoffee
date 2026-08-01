@@ -23,6 +23,16 @@ interface PeakDay {
     jumlah: number;
 }
 
+interface BundlingFavoritRow {
+    nomor: number;
+    produk_id: number;
+    nama: string;
+    total_terjual: number;
+    harga: number;
+    total_hasil: number;
+    total_potongan_bundling: number;
+}
+
 interface ProdukFavoritRow {
     nomor: number;
     produk_id: number;
@@ -50,6 +60,7 @@ interface CabangOption {
 interface PageProps {
     data: {
         items: ProdukFavoritRow[];
+        bundling_items: BundlingFavoritRow[];
         ringkasan: RingkasanProps;
     };
     filters: {
@@ -191,6 +202,7 @@ export default function LaporanProdukFavorit(props: PageProps) {
     const [chartTab, setChartTab] = useState<'bar' | 'donut'>('bar');
 
     const items    = data?.items    ?? [];
+    const bundlingItems = data?.bundling_items ?? [];
     const ringkasan = data?.ringkasan;
 
     const totalQty = ringkasan?.total_jumlah_terjual ?? 0;
@@ -632,6 +644,79 @@ export default function LaporanProdukFavorit(props: PageProps) {
                         )}
                     </CardContent>
                 </Card>
+
+                {/* ── Bundling Favorit ── */}
+                {bundlingItems.length > 0 && (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2 text-base">
+                                <span className="text-amber-500">📦</span>
+                                Bundling Favorit
+                            </CardTitle>
+                            <p className="text-sm text-muted-foreground">
+                                Performa penjualan bundling menu beserta potongan bundling yang diberikan
+                            </p>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-xs">
+                                    <thead>
+                                        <tr className="border-b bg-muted/40">
+                                            <th className="py-2.5 pl-4 pr-3 text-left font-medium text-muted-foreground">#</th>
+                                            <th className="py-2.5 pr-3 text-left font-medium text-muted-foreground">Nama Bundling</th>
+                                            <th className="py-2.5 pr-3 text-right font-medium text-muted-foreground">Terjual</th>
+                                            <th className="py-2.5 pr-3 text-right font-medium text-muted-foreground">Harga Bundling</th>
+                                            <th className="py-2.5 pr-3 text-right font-medium text-muted-foreground">Total Pendapatan</th>
+                                            <th className="py-2.5 pr-3 text-right font-medium text-muted-foreground">Potongan Bundling</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y">
+                                        {bundlingItems.map((row) => (
+                                            <tr key={row.produk_id} className="hover:bg-muted/30">
+                                                <td className="py-2.5 pl-4 pr-3 align-middle">
+                                                    <div
+                                                        className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                                                        style={{ background: rankColor(row.nomor - 1) }}
+                                                    >
+                                                        {row.nomor}
+                                                    </div>
+                                                </td>
+                                                <td className="py-2.5 pr-3 align-middle font-medium">{row.nama}</td>
+                                                <td className="py-2.5 pr-3 text-right align-middle font-medium">
+                                                    {row.total_terjual.toLocaleString('id-ID')}
+                                                </td>
+                                                <td className="py-2.5 pr-3 text-right align-middle text-muted-foreground">
+                                                    {formatRupiah(row.harga)}
+                                                </td>
+                                                <td className="py-2.5 pr-3 text-right align-middle font-medium">
+                                                    {formatRupiah(row.total_hasil)}
+                                                </td>
+                                                <td className="py-2.5 pr-3 text-right align-middle text-green-600 dark:text-green-400 font-medium">
+                                                    -{formatRupiah(row.total_potongan_bundling)}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                    <tfoot>
+                                        <tr className="border-t bg-muted/30">
+                                            <td colSpan={2} className="py-2.5 pr-3 pl-4 text-xs font-semibold">Total</td>
+                                            <td className="py-2.5 pr-3 text-right text-xs font-semibold">
+                                                {bundlingItems.reduce((s, r) => s + r.total_terjual, 0).toLocaleString('id-ID')}
+                                            </td>
+                                            <td className="py-2.5 pr-3" />
+                                            <td className="py-2.5 pr-3 text-right text-xs font-semibold">
+                                                {formatRupiah(bundlingItems.reduce((s, r) => s + r.total_hasil, 0))}
+                                            </td>
+                                            <td className="py-2.5 pr-3 text-right text-xs font-semibold text-green-600 dark:text-green-400">
+                                                -{formatRupiah(bundlingItems.reduce((s, r) => s + r.total_potongan_bundling, 0))}
+                                            </td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
 
             </div>
         </AppLayout>

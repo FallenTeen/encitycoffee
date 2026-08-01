@@ -76,11 +76,13 @@ export default function ProdukShow({
     stok_tersedia,
     cabangList = [],
 }: Props) {
-    const tipeLabel = {
+    const TIPE_LABELS: Record<string, string> = {
         'beans': 'Beans',
         'minuman': 'Minuman',
         'snack': 'Snack',
-    }[produk.tipe] || produk.tipe;
+        'makanan': 'Makanan',
+    };
+    const tipeLabel = TIPE_LABELS[produk.tipe] || produk.tipe;
 
     const kategoriNama = kategori.find(k => k.id === produk.kategori_id)?.nama || '-';
     const variantIcon = produk.varian === 'Hot'

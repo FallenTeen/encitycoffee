@@ -16,12 +16,14 @@ class ItemTransaksi extends Model
         'jumlah',
         'harga_satuan',
         'subtotal',
+        'potongan_bundling',
         'catatan',
     ];
 
     protected $casts = [
         'harga_satuan' => 'decimal:2',
         'subtotal'     => 'decimal:2',
+        'potongan_bundling' => 'decimal:2',
     ];
 
     public function transaksi()

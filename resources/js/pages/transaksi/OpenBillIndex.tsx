@@ -113,32 +113,26 @@ export default function OpenBillIndex({ open_bills, per_page, status, auth }: Pr
     );
   }
 
-  async function handleSoftDelete() {
+  function handleSoftDelete() {
     if (!selectedBill || deleteReason.trim().length < 5) return;
     setIsDeleting(true);
-    try {
-      const res = await fetch(`/transaksi/open-bill/${selectedBill.id}/soft-delete`, {
-        method:  'DELETE',
-        headers: {
-          'Content-Type':  'application/json',
-          'X-CSRF-TOKEN':  document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '',
-        },
-        body: JSON.stringify({ reason: deleteReason }),
-      });
-      const json = await res.json();
-      if (res.ok) {
+
+    router.delete(`/transaksi/open-bill/${selectedBill.id}/soft-delete`, {
+      data: { reason: deleteReason },
+      preserveScroll: true,
+      onSuccess: () => {
         setDeleteOpen(false);
         setSelectedBill(null);
         setDeleteReason('');
         router.reload({ only: ['open_bills'] });
-      } else {
-        alert(json.error ?? 'Gagal menghapus bill');
-      }
-    } catch {
-      alert('Terjadi kesalahan jaringan');
-    } finally {
-      setIsDeleting(false);
-    }
+      },
+      onError: (errors) => {
+        alert(Object.values(errors)[0] ?? 'Gagal menghapus bill');
+      },
+      onFinish: () => {
+        setIsDeleting(false);
+      },
+    });
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────

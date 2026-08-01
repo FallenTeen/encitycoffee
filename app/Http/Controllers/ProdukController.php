@@ -32,7 +32,7 @@ class ProdukController extends Controller
                 'search' => 'nullable|string|max:255',
                 'cabang_id' => 'nullable|integer|exists:cabang,id',
                 'kategori_id' => 'nullable|string|max:50',
-                'tipe' => 'nullable|string|in:beans,minuman,snack,__all__',
+                'tipe' => 'nullable|string|in:beans,minuman,snack,makanan,__all__',
                 'aktif' => 'nullable|string|in:0,1,__all__',
                 'sort_by' => 'nullable|string|in:nama,sku,harga_jual,kategori,stok',
                 'sort_dir' => 'nullable|string|in:asc,desc',
@@ -138,6 +138,7 @@ class ProdukController extends Controller
                 'cacheInfo' => $cabangIdForCache ? $this->productCacheService->getCacheStats($cabangIdForCache) : null,
                 'canManageProduk' => $this->canManageProduk($user),
                 'canDeleteProduk' => $this->canDeleteProduk($user),
+                'bundlings' => $this->getBundlingsForUser($user),
             ]);
         } catch (\Exception $e) {
             Log::error('Error fetching produk', [
@@ -182,6 +183,7 @@ class ProdukController extends Controller
             'cacheInfo' => null,
             'canManageProduk' => $this->canManageProduk($user),
             'canDeleteProduk' => $this->canDeleteProduk($user),
+            'bundlings' => $this->getBundlingsForUser($user),
         ]);
     }
 
@@ -192,6 +194,48 @@ class ProdukController extends Controller
         $perPage = is_numeric($perPage) ? (int) $perPage : 20;
 
         return max(1, min(1000, $perPage));
+    }
+
+    private function getBundlingsForUser($user): array
+    {
+        $query = Produk::with(['bundleItems.produk'])
+            ->where('tipe', 'bundling')
+            ->where('aktif', true)
+            ->orderBy('nama');
+
+        if ($user->role !== 'it_support') {
+            $user->loadMissing('cabang:id');
+            $cabangIds = $user->cabang->pluck('id')->all();
+            if (empty($cabangIds)) {
+                return ['data' => [], 'total' => 0];
+            }
+            $query->whereIn('cabang_id', $cabangIds);
+        }
+
+        $items = $query->get(['id', 'sku', 'nama', 'harga_jual', 'aktif', 'image_path']);
+
+        $data = $items->map(function ($produk) {
+            return [
+                'id'           => $produk->id,
+                'sku'          => $produk->sku,
+                'nama'         => $produk->nama,
+                'harga_jual'   => $produk->harga_jual,
+                'aktif'        => $produk->aktif,
+                'image_path'   => $produk->image_path,
+                'bundle_items' => $produk->bundleItems->map(fn($bi) => [
+                    'id'     => $bi->id,
+                    'jumlah' => $bi->jumlah,
+                    'produk' => $bi->produk ? [
+                        'id'         => $bi->produk->id,
+                        'nama'       => $bi->produk->nama,
+                        'sku'        => $bi->produk->sku,
+                        'harga_jual' => $bi->produk->harga_jual,
+                    ] : null,
+                ])->values()->all(),
+            ];
+        })->values()->all();
+
+        return ['data' => $data, 'total' => count($data)];
     }
 
     public function show(Request $request, $produkId)
@@ -902,7 +946,7 @@ class ProdukController extends Controller
 
             return Inertia::render('produk/Create', [
                 'kategori' => $kategoriList,
-                'tipe_options' => ['beans', 'minuman', 'snack'],
+                'tipe_options' => ['beans', 'minuman', 'snack', 'makanan'],
                 'satuan_options' => $satuanOptions,
                 'snack_varian_options' => $snackVarianOptions,
                 'cabangList' => $cabangList,
@@ -939,7 +983,7 @@ class ProdukController extends Controller
                     'kelompok_nama' => 'required|string|max:255',
                     'deskripsi' => 'nullable|string',
                     'kategori_id' => 'nullable|exists:kategori_produk,id',
-                    'tipe' => 'required|in:beans,minuman,snack',
+                    'tipe' => 'required|in:beans,minuman,snack,makanan',
                     'base' => 'nullable|in:coffee,milk,tea,others',
                     'satuan_dasar' => 'required|string|max:50',
                     'harga_modal_hot' => 'required|numeric|min:0',
@@ -964,7 +1008,7 @@ class ProdukController extends Controller
                     'varian' => 'nullable|string|max:50',
                     'deskripsi' => 'nullable|string',
                     'kategori_id' => 'nullable|exists:kategori_produk,id',
-                    'tipe' => 'required|in:beans,minuman,snack',
+                    'tipe' => 'required|in:beans,minuman,snack,makanan',
                     'base' => 'nullable|in:coffee,milk,tea,others',
                     'satuan_dasar' => 'required|string|max:50',
                     'harga_modal' => 'required|numeric|min:0',
@@ -1305,7 +1349,7 @@ class ProdukController extends Controller
             return Inertia::render('produk/Edit', [
                 'produk' => $produk,
                 'kategori' => $kategoriList,
-                'tipe_options' => ['beans', 'minuman', 'snack'],
+                'tipe_options' => ['beans', 'minuman', 'snack', 'makanan'],
                 'satuan_options' => $satuanOptions,
                 'stok_tersedia' => $stokTersedia,
                 'snack_varian_options' => $snackVarianOptions,
@@ -1410,7 +1454,7 @@ class ProdukController extends Controller
                 'varian' => 'nullable|string|max:50',
                 'deskripsi' => 'nullable|string',
                 'kategori_id' => 'nullable|exists:kategori_produk,id',
-                'tipe' => 'required|in:beans,minuman,snack',
+                'tipe' => 'required|in:beans,minuman,snack,makanan',
                 'base' => 'nullable|in:coffee,milk,tea,others',
                 'satuan_dasar' => 'required|string|max:50',
                 'harga_modal' => 'required|numeric|min:0',
@@ -1741,6 +1785,7 @@ class ProdukController extends Controller
                 'beans' => 'BNS',
                 'minuman' => 'BEV',
                 'snack' => 'SNK',
+                'makanan' => 'MKN',
                 default => 'PRD'
             };
 

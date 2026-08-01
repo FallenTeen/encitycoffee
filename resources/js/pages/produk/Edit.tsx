@@ -549,6 +549,7 @@ export default function ProdukEdit({
                             <SelectItem value="snack">Snack</SelectItem>
                             <SelectItem value="beans">Beans</SelectItem>
                             <SelectItem value="minuman">Minuman</SelectItem>
+                            <SelectItem value="makanan">Makanan</SelectItem>
                           </SelectContent>
                         </Select>
                         <InputError message={clientErrors.tipe || (errors.tipe as string)} />
@@ -836,6 +837,8 @@ export default function ProdukEdit({
                           <SelectItem value="pcs">Pcs</SelectItem>
                           <SelectItem value="botol">Botol</SelectItem>
                           <SelectItem value="cup">Cup</SelectItem>
+                          <SelectItem value="porsi">Porsi</SelectItem>
+                          <SelectItem value="mili liter">Mili liter</SelectItem>
                         </SelectContent>
                       </Select>
                       <InputError message={clientErrors.satuan_dasar || (errors.satuan_dasar as string)} />

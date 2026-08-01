@@ -21,6 +21,7 @@ use App\Http\Controllers\LandingController;
 use Inertia\Inertia;
 use App\Http\Controllers\TransaksiController;
 use App\Http\Controllers\EnhancedDashboardController;
+use App\Http\Controllers\BundlingController;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Cabang;
 use App\Services\StokService;
@@ -182,6 +183,14 @@ $backofficeRouteCallback = function () {
 
             // Cache management route
             Route::post('/cache/clear', [ProdukController::class, 'clearCache'])->name('cache.clear');
+
+            // Bundling routes (nested under /produk)
+            Route::get('/bundling', [BundlingController::class, 'index'])->name('bundling.index');
+            Route::get('/bundling/create', [BundlingController::class, 'create'])->name('bundling.create');
+            Route::post('/bundling', [BundlingController::class, 'store'])->name('bundling.store');
+            Route::get('/bundling/{bundling}/edit', [BundlingController::class, 'edit'])->name('bundling.edit');
+            Route::put('/bundling/{bundling}', [BundlingController::class, 'update'])->name('bundling.update');
+            Route::delete('/bundling/{bundling}', [BundlingController::class, 'destroy'])->name('bundling.destroy');
 
             // Kategori routes
             Route::get('/kategori', [KategoriProdukController::class, 'index'])->name('kategori.index');

@@ -12,6 +12,7 @@ use App\Http\Controllers\TransaksiController;
 use App\Http\Controllers\DiscountController;
 use App\Http\Controllers\LaporanController;
 use App\Http\Controllers\SinkronisasiController;
+use App\Http\Controllers\MobileBundlingController;
 use App\Models\Cabang;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -358,6 +359,8 @@ Route::prefix('pos')->group(function () {
                 Route::get('tipe/{tipe}', [ProdukController::class, 'produkBerdasarkanTipe']);
                 Route::get('{produk}/satuan', [ProdukController::class, 'satuanProduk']);
             });
+
+            Route::get('bundling', [MobileBundlingController::class, 'index']);
 
             Route::prefix('transaksi')->group(function () {
                 Route::post('/', [TransaksiController::class, 'buatTransaksi']);

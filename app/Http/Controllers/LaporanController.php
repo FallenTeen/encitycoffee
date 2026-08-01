@@ -829,6 +829,33 @@ class LaporanController extends Controller
             ];
         });
 
+        // ── 3b. Bundling Favorit ─────────────────────────────────────────────────
+        $bundlingRaw = $baseQuery()
+            ->where('produk.tipe', 'bundling')
+            ->select(
+                'item_transaksi.produk_id',
+                'produk.nama',
+                DB::raw('SUM(item_transaksi.jumlah)              as total_terjual'),
+                DB::raw('MAX(produk.harga_jual)                   as harga'),
+                DB::raw('SUM(item_transaksi.subtotal)             as total_hasil'),
+                DB::raw('SUM(item_transaksi.potongan_bundling)    as total_potongan_bundling')
+            )
+            ->groupBy('item_transaksi.produk_id', 'produk.nama')
+            ->orderByDesc('total_terjual')
+            ->get();
+
+        $bundlingItems = $bundlingRaw->values()->map(function ($row, $index) {
+            return [
+                'nomor'                   => $index + 1,
+                'produk_id'               => $row->produk_id,
+                'nama'                    => $row->nama,
+                'total_terjual'           => (int)   ($row->total_terjual           ?? 0),
+                'harga'                   => (float) ($row->harga                   ?? 0),
+                'total_hasil'             => (float) ($row->total_hasil             ?? 0),
+                'total_potongan_bundling' => (float) ($row->total_potongan_bundling ?? 0),
+            ];
+        });
+
         // ── 4. Ringkasan & filters ──────────────────────────────────────────────
         $ringkasan = [
             'interval'              => $interval,
@@ -867,8 +894,9 @@ class LaporanController extends Controller
 
         return Inertia::render('laporan/ProdukFavorit', [
             'data' => [
-                'items'     => $items,
-                'ringkasan' => $ringkasan,
+                'items'          => $items,
+                'bundling_items' => $bundlingItems,
+                'ringkasan'      => $ringkasan,
             ],
             'filters'       => $filters,
             'cabangOptions' => $cabangOptions,

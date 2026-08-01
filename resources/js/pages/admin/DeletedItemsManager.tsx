@@ -78,31 +78,25 @@ export default function DeletedItemsManager({ type }: Props) {
     fetchDeletedItems();
   }, [type]);
 
-  const handleRestore = async (item: DeletedItem) => {
-    try {
-      const endpoint = type === 'transaksi'
-        ? `/transaksi/${item.id}/restore`
-        : `/transaksi/open-bill/${item.id}/restore`;
-      
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+  const handleRestore = (item: DeletedItem) => {
+    const endpoint = type === 'transaksi'
+      ? `/transaksi/${item.id}/restore`
+      : `/transaksi/open-bill/${item.id}/restore`;
+
+    router.post(
+      endpoint,
+      {},
+      {
+        preserveScroll: true,
+        onSuccess: () => {
+          fetchDeletedItems();
+          setRestoreDialogOpen(false);
         },
-      });
-      
-      const data = await response.json();
-      
-      if (response.ok) {
-        await fetchDeletedItems();
-        setRestoreDialogOpen(false);
-      } else {
-        setError(data.error || 'Gagal mengembalikan data');
-      }
-    } catch (err) {
-      setError('Terjadi kesalahan saat mengembalikan data');
-    }
+        onError: (errors) => {
+          setError(Object.values(errors)[0] ?? 'Gagal mengembalikan data');
+        },
+      },
+    );
   };
 
   const filteredItems = deletedItems.filter(item => {

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\BundleItem;
 
 class Produk extends Model
 {
@@ -71,6 +72,11 @@ class Produk extends Model
     public function cabang()
     {
         return $this->belongsTo(Cabang::class, 'cabang_id');
+    }
+
+    public function bundleItems()
+    {
+        return $this->hasMany(BundleItem::class, 'bundle_id');
     }
 
     public function satuan()

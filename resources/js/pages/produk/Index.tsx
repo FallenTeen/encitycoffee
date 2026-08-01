@@ -27,15 +27,18 @@ import { cn } from '@/lib/utils';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import {
     AlertCircle,
+    Box,
     Building2,
     ChevronDown,
     ChevronUp,
     Eye,
     Flame,
     Grid3X3,
+    Layers,
     List,
     Package,
     Pencil,
+    Plus,
     Rows3,
     Search,
     Snowflake,
@@ -95,6 +98,27 @@ interface FilterAktif {
     per_page?: number | null;
 }
 
+interface BundleItemEntry {
+    id: number;
+    jumlah: number;
+    produk: {
+        id: number;
+        nama: string;
+        sku: string;
+        harga_jual: number | string;
+    };
+}
+
+interface BundleProduk {
+    id: number;
+    sku: string;
+    nama: string;
+    harga_jual: number | string;
+    aktif: boolean;
+    image_path?: string | null;
+    bundle_items: BundleItemEntry[];
+}
+
 interface Props {
     produks: ProdukPaginator;
     kategori_list: KategoriOption[];
@@ -104,6 +128,10 @@ interface Props {
     cacheInfo?: { has_cache: boolean; cache_key: string; ttl: number };
     canManageProduk?: boolean;
     canDeleteProduk?: boolean;
+    bundlings?: {
+        data: BundleProduk[];
+        total: number;
+    };
 }
 
 type ViewMode = 'table' | 'card' | 'compact';
@@ -133,6 +161,7 @@ export default function ProdukIndex({
     selectedCabang,
     canManageProduk = false,
     canDeleteProduk = false,
+    bundlings,
 }: Props) {
     // Get outlet context for persistent switching
     const { selectedOutlet, outlets, switchOutlet } = useOutlet();
@@ -214,6 +243,8 @@ export default function ProdukIndex({
     const [isClearing, setIsClearing] = useState(false);
     const [isCabangModalOpen, setIsCabangModalOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [activeTab, setActiveTab] = useState<'produk' | 'bundling'>('produk');
+    const [bundlingSearch, setBundlingSearch] = useState('');
     const [quickFilters, setQuickFilters] = useState<QuickFiltersState>({
         tipe: [],
         aktif: false,
@@ -362,53 +393,29 @@ export default function ProdukIndex({
         });
     };
 
-    const handleToggleStatus = async (produk: ProdukItem) => {
+    const handleToggleStatus = (produk: ProdukItem) => {
         if (!canManageProduk) return;
 
         setTogglingId(produk.id);
 
-        try {
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
-            const response = await fetch(`/produk/${produk.id}/toggle-aktif`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    'X-CSRF-TOKEN': csrfToken,
+        router.post(
+            `/produk/${produk.id}/toggle-aktif`,
+            {},
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    router.reload({ only: ['produks'] });
                 },
-                body: JSON.stringify({}),
-            });
-
-            if (!response.ok) {
-                let message = 'Gagal mengubah status produk';
-                try {
-                    const responseData = await response.json();
-                    if (
-                        responseData &&
-                        typeof responseData.message === 'string'
-                    ) {
-                        message = responseData.message;
-                    } else if (response.status === 419) {
-                        message = 'Sesi expired. Silakan refresh halaman dan coba lagi.';
-                    }
-                } catch (parseError) {
-                    console.error(parseError);
-                    if (response.status === 419) {
-                        message = 'Sesi CSRF expired. Silakan refresh halaman.';
-                    }
-                }
-                alert(message);
-            } else {
-                router.reload({
-                    only: ['produks'],
-                });
-            }
-        } catch (err) {
-            console.error('Toggle status error:', err);
-            alert('Gagal mengubah status produk. Silakan coba lagi.');
-        } finally {
-            setTogglingId(null);
-        }
+                onError: (errors) => {
+                    const message =
+                        Object.values(errors)[0] ?? 'Gagal mengubah status produk. Silakan coba lagi.';
+                    alert(message);
+                },
+                onFinish: () => {
+                    setTogglingId(null);
+                },
+            },
+        );
     };
 
     // Real-time search with debounce (optional)
@@ -483,12 +490,22 @@ export default function ProdukIndex({
 
         const validatedPerPage = Math.max(1, Math.min(1000, newPerPage));
 
-        const nextData = { ...data, per_page: validatedPerPage, page: 1 };
-
         setPerPage(validatedPerPage);
-        setData(nextData);
+        setData('per_page', validatedPerPage);
 
-        get('/produk', {
+        // Build params directly from current data + new per_page to avoid stale state
+        const params: Record<string, unknown> = {};
+        if (data.search) params.search = data.search;
+        if (data.cabang_id) params.cabang_id = data.cabang_id;
+        if (data.kategori_id && data.kategori_id !== '__all__') params.kategori_id = data.kategori_id;
+        if (data.tipe && data.tipe !== '__all__') params.tipe = data.tipe;
+        if (data.aktif && data.aktif !== '__all__') params.aktif = data.aktif;
+        if (data.sort_by) params.sort_by = data.sort_by;
+        if (data.sort_dir) params.sort_dir = data.sort_dir;
+        params.per_page = validatedPerPage;
+        params.page = 1;
+
+        router.get('/produk', params, {
             preserveState: viewMode === 'table',
             preserveScroll: false,
             replace: true,
@@ -622,6 +639,37 @@ export default function ProdukIndex({
         );
     };
 
+    const formatBundlingCurrency = (val: number | string) =>
+        'Rp ' + Number(val).toLocaleString('id-ID');
+
+    const filteredBundlings = useMemo(() => {
+        if (!bundlings?.data) return [];
+        if (!bundlingSearch.trim()) return bundlings.data;
+        const q = bundlingSearch.toLowerCase();
+        return bundlings.data.filter(
+            (b) => b.nama.toLowerCase().includes(q) || b.sku.toLowerCase().includes(q),
+        );
+    }, [bundlings, bundlingSearch]);
+
+    const handleDeleteBundling = (id: number, nama: string) => {
+        Swal.fire({
+            title: 'Hapus Bundling?',
+            text: `"${nama}" akan dihapus permanen.`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            confirmButtonText: 'Hapus',
+            cancelButtonText: 'Batal',
+        }).then((result) => {
+            if (result.isConfirmed) {
+                router.delete(`/produk/bundling/${id}`, {
+                    onSuccess: () =>
+                        Swal.fire({ title: 'Dihapus!', icon: 'success', timer: 1500, showConfirmButton: false }),
+                });
+            }
+        });
+    };
+
     return (
         <AppLayout breadcrumbs={[{ title: 'Produk', href: '/produk' }]}>
             <Head title="Produk" />
@@ -630,10 +678,14 @@ export default function ProdukIndex({
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <h1 className="text-2xl font-semibold">
-                            Daftar Produk
+                            {activeTab === 'produk' ? 'Daftar Produk' : 'Bundling Menu'}
                         </h1>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <span>{produks?.total ?? 0} produk</span>
+                            {activeTab === 'produk' ? (
+                                <span>{produks?.total ?? 0} produk</span>
+                            ) : (
+                                <span>{bundlings?.total ?? 0} bundling</span>
+                            )}
                             {selectedCabang && (
                                 <>
                                     <span>•</span>
@@ -643,7 +695,7 @@ export default function ProdukIndex({
                                     </span>
                                 </>
                             )}
-                            {activeFiltersCount > 0 && (
+                            {activeTab === 'produk' && activeFiltersCount > 0 && (
                                 <Badge variant="secondary">
                                     {activeFiltersCount} filter aktif
                                 </Badge>
@@ -651,69 +703,92 @@ export default function ProdukIndex({
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        {/* View Mode Toggle - EXISTING */}
+                        {/* Tab Switcher */}
                         <div className="flex items-center rounded-md border">
                             <Button
-                                variant={
-                                    viewMode === 'table' ? 'default' : 'ghost'
-                                }
+                                variant={activeTab === 'produk' ? 'default' : 'ghost'}
                                 size="sm"
-                                onClick={() => setViewMode('table')}
-                                className="rounded-r-none"
+                                onClick={() => setActiveTab('produk')}
+                                className="rounded-r-none gap-1.5"
                             >
-                                <List className="h-4 w-4" />
+                                <Package className="h-4 w-4" />
+                                Produk
                             </Button>
                             <Button
-                                variant={
-                                    viewMode === 'card' ? 'default' : 'ghost'
-                                }
+                                variant={activeTab === 'bundling' ? 'default' : 'ghost'}
                                 size="sm"
-                                onClick={() => setViewMode('card')}
-                                className="rounded-none border-x"
+                                onClick={() => setActiveTab('bundling')}
+                                className="rounded-l-none border-l gap-1.5"
                             >
-                                <Grid3X3 className="h-4 w-4" />
-                            </Button>
-                            <Button
-                                variant={
-                                    viewMode === 'compact'
-                                        ? 'default'
-                                        : 'ghost'
-                                }
-                                size="sm"
-                                onClick={() => setViewMode('compact')}
-                                className="rounded-l-none"
-                            >
-                                <Rows3 className="h-4 w-4" />
+                                <Layers className="h-4 w-4" />
+                                Bundling
+                                {(bundlings?.total ?? 0) > 0 && (
+                                    <span className={cn(
+                                        'ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-xs font-semibold',
+                                        activeTab === 'bundling'
+                                            ? 'bg-white/20 text-white'
+                                            : 'bg-muted text-muted-foreground'
+                                    )}>
+                                        {bundlings?.total}
+                                    </span>
+                                )}
                             </Button>
                         </div>
-                        {/* NEW: Group Mode Toggle */}
-                        <div className="flex items-center rounded-md border">
-                            <Button
-                                variant={
-                                    groupMode === 'list'
-                                        ? 'default'
-                                        : 'ghost'
-                                }
-                                size="sm"
-                                onClick={() => setGroupMode('list')}
-                                className="rounded-r-none"
-                            >
-                                List All
-                            </Button>
-                            <Button
-                                variant={
-                                    groupMode === 'grouped'
-                                        ? 'default'
-                                        : 'ghost'
-                                }
-                                size="sm"
-                                onClick={() => setGroupMode('grouped')}
-                                className="rounded-l-none"
-                            >
-                                <Package className="mr-1 h-4 w-4" />
-                                Grouped
-                            </Button>
-                        </div>
+
+                        {/* Produk-only controls */}
+                        {activeTab === 'produk' && (
+                            <>
+                                {/* View Mode Toggle */}
+                                <div className="flex items-center rounded-md border">
+                                    <Button
+                                        variant={viewMode === 'table' ? 'default' : 'ghost'}
+                                        size="sm"
+                                        onClick={() => setViewMode('table')}
+                                        className="rounded-r-none"
+                                    >
+                                        <List className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                        variant={viewMode === 'card' ? 'default' : 'ghost'}
+                                        size="sm"
+                                        onClick={() => setViewMode('card')}
+                                        className="rounded-none border-x"
+                                    >
+                                        <Grid3X3 className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                        variant={viewMode === 'compact' ? 'default' : 'ghost'}
+                                        size="sm"
+                                        onClick={() => setViewMode('compact')}
+                                        className="rounded-l-none"
+                                    >
+                                        <Rows3 className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                                {/* Group Mode Toggle */}
+                                <div className="flex items-center rounded-md border">
+                                    <Button
+                                        variant={groupMode === 'list' ? 'default' : 'ghost'}
+                                        size="sm"
+                                        onClick={() => setGroupMode('list')}
+                                        className="rounded-r-none"
+                                    >
+                                        List All
+                                    </Button>
+                                    <Button
+                                        variant={groupMode === 'grouped' ? 'default' : 'ghost'}
+                                        size="sm"
+                                        onClick={() => setGroupMode('grouped')}
+                                        className="rounded-l-none"
+                                    >
+                                        <Package className="mr-1 h-4 w-4" />
+                                        Grouped
+                                    </Button>
+                                </div>
+                            </>
+                        )}
+
+                        {/* Outlet picker (always visible) */}
                         {allOutlets.length > 0 && (
                             <Dialog
                                 open={isCabangModalOpen}
@@ -745,8 +820,8 @@ export default function ProdukIndex({
                                         <div
                                             className={cn(
                                                 'flex items-center justify-between rounded border px-3 py-2 cursor-pointer transition-colors',
-                                                !data.cabang_id || data.cabang_id === '' 
-                                                    ? 'bg-primary/10 border-primary' 
+                                                !data.cabang_id || data.cabang_id === ''
+                                                    ? 'bg-primary/10 border-primary'
                                                     : 'bg-muted/40 hover:bg-muted'
                                             )}
                                             onClick={() => {
@@ -766,7 +841,7 @@ export default function ProdukIndex({
                                                 <Badge variant="default">Aktif</Badge>
                                             )}
                                         </div>
-                                        
+
                                         {allOutlets.map((cabang) => (
                                             <div
                                                 key={cabang.id}
@@ -798,79 +873,189 @@ export default function ProdukIndex({
                                 </DialogContent>
                             </Dialog>
                         )}
-                        {canManageProduk && (
+
+                        {/* Action buttons — per tab */}
+                        {activeTab === 'produk' && canManageProduk && (
                             <Button asChild>
                                 <Link href="/produk/create">
-                                    + Tambah Produk
+                                    <Plus className="h-4 w-4 mr-1" /> Tambah Produk
+                                </Link>
+                            </Button>
+                        )}
+                        {activeTab === 'bundling' && canManageProduk && (
+                            <Button asChild>
+                                <Link href="/produk/bundling/create">
+                                    <Plus className="h-4 w-4 mr-1" /> Buat Bundling
                                 </Link>
                             </Button>
                         )}
                     </div>
                 </div>
 
+                {/* ── BUNDLING TAB CONTENT ─────────────────── */}
+                {activeTab === 'bundling' && (
+                    <div className="space-y-4">
+                        {/* Bundling Search */}
+                        <div className="relative max-w-sm">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <input
+                                className="w-full rounded-md border bg-background pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                                placeholder="Cari bundling..."
+                                value={bundlingSearch}
+                                onChange={(e) => setBundlingSearch(e.target.value)}
+                            />
+                        </div>
+
+                        {/* Bundling Grid */}
+                        {filteredBundlings.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
+                                <Box size={48} className="opacity-30" />
+                                <p className="font-medium">Belum ada bundling menu</p>
+                                <p className="text-sm">Buat paket bundling dari produk yang tersedia</p>
+                                {canManageProduk && (
+                                    <Button asChild className="gap-2">
+                                        <Link href="/produk/bundling/create">
+                                            <Plus size={14} /> Buat Bundling Pertama
+                                        </Link>
+                                    </Button>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                {filteredBundlings.map((bundle) => {
+                                    const realTotal = bundle.bundle_items.reduce(
+                                        (sum, item) => sum + Number(item.produk?.harga_jual ?? 0) * item.jumlah, 0
+                                    );
+                                    const discount = realTotal - Number(bundle.harga_jual);
+                                    return (
+                                        <div
+                                            key={bundle.id}
+                                            className="bg-card border rounded-xl p-4 flex flex-col gap-3 shadow-sm hover:shadow-md transition-shadow relative"
+                                        >
+                                            {/* BUNDLING badge */}
+                                            <span className="absolute top-2 right-2 bg-primary text-primary-foreground text-[10px] font-bold px-2 py-0.5 rounded-full tracking-wide">BUNDLING</span>
+
+                                            {/* Image */}
+                                            <div className="w-full h-36 rounded-lg overflow-hidden bg-muted flex items-center justify-center">
+                                                {bundle.image_path ? (
+                                                    <img
+                                                        src={`/storage/${bundle.image_path.replace(/^\/?(storage\/)?/, '')}`}
+                                                        alt={bundle.nama}
+                                                        className="w-full h-full object-cover"
+                                                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                                    />
+                                                ) : (
+                                                    <Box size={40} className="text-muted-foreground opacity-60" />
+                                                )}
+                                            </div>
+
+                                            {/* Info */}
+                                            <div className="flex-1">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div>
+                                                        <p className="font-semibold leading-tight">{bundle.nama}</p>
+                                                        <p className="text-xs text-muted-foreground mt-0.5">{bundle.sku}</p>
+                                                    </div>
+                                                    <Badge
+                                                        variant={bundle.aktif ? 'default' : 'secondary'}
+                                                        className="text-xs shrink-0"
+                                                    >
+                                                        {bundle.aktif ? 'Aktif' : 'Nonaktif'}
+                                                    </Badge>
+                                                </div>
+
+                                                {/* Items list */}
+                                                <div className="mt-2 space-y-0.5">
+                                                    {bundle.bundle_items.map((item) => (
+                                                        <p key={item.id} className="text-xs text-muted-foreground">
+                                                            • {item.produk?.nama} ×{item.jumlah}
+                                                        </p>
+                                                    ))}
+                                                </div>
+
+                                                {/* Pricing */}
+                                                <div className="mt-3 pt-3 border-t space-y-1">
+                                                    <div className="flex justify-between text-xs text-muted-foreground">
+                                                        <span>Total real</span>
+                                                        <span className="line-through">{formatBundlingCurrency(realTotal)}</span>
+                                                    </div>
+                                                    <div className="flex justify-between text-sm font-semibold">
+                                                        <span>Harga bundling</span>
+                                                        <span className="text-primary">{formatBundlingCurrency(bundle.harga_jual)}</span>
+                                                    </div>
+                                                    {discount > 0 && (
+                                                        <div className="flex justify-between text-xs text-green-600">
+                                                            <span>Hemat</span>
+                                                            <span>{formatBundlingCurrency(discount)}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Actions */}
+                                            {(canManageProduk || canDeleteProduk) && (
+                                                <div className="flex gap-2">
+                                                    {canManageProduk && (
+                                                        <Link href={`/produk/bundling/${bundle.id}/edit`} className="flex-1">
+                                                            <Button variant="outline" size="sm" className="w-full gap-1">
+                                                                <Pencil size={13} /> Edit
+                                                            </Button>
+                                                        </Link>
+                                                    )}
+                                                    {canDeleteProduk && (
+                                                        <Button
+                                                            variant="destructive"
+                                                            size="sm"
+                                                            className="gap-1"
+                                                            onClick={() => handleDeleteBundling(bundle.id, bundle.nama)}
+                                                        >
+                                                            <Trash2 size={13} />
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* Pagination info */}
+                        {(bundlings?.total ?? 0) > 0 && (
+                            <p className="text-sm text-muted-foreground text-center">
+                                Menampilkan {filteredBundlings.length} dari {bundlings?.total} bundling
+                            </p>
+                        )}
+                    </div>
+                )}
+
+                {/* ── PRODUK TAB CONTENT ─────────────────── */}
+                {activeTab === 'produk' && (
+                    <>
                 {/* Quick Filters */}
                 <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium text-muted-foreground">
                         Quick:
                     </span>
+                    {(['beans', 'minuman', 'snack', 'makanan'] as const).map((tipe) => (
+                        <Badge
+                            key={tipe}
+                            variant={quickFilters.tipe.includes(tipe) ? 'default' : 'outline'}
+                            className={cn(
+                                'cursor-pointer transition-all capitalize',
+                                quickFilters.tipe.includes(tipe) && 'ring-2 ring-primary ring-offset-1',
+                            )}
+                            onClick={() => handleToggleQuickFilter('tipe', tipe)}
+                        >
+                            {tipe.charAt(0).toUpperCase() + tipe.slice(1)}{' '}
+                            {quickFilters.tipe.includes(tipe) ? '✓' : null}
+                        </Badge>
+                    ))}
                     <Badge
-                        variant={
-                            quickFilters.tipe.includes('beans')
-                                ? 'default'
-                                : 'outline'
-                        }
+                        variant={quickFilters.aktif ? 'default' : 'outline'}
                         className={cn(
                             'cursor-pointer transition-all',
-                            quickFilters.tipe.includes('beans') &&
-                                'ring-2 ring-primary ring-offset-1',
-                        )}
-                        onClick={() => handleToggleQuickFilter('tipe', 'beans')}
-                    >
-                        Beans{' '}
-                        {quickFilters.tipe.includes('beans') ? '✓' : null}
-                    </Badge>
-                    <Badge
-                        variant={
-                            quickFilters.tipe.includes('minuman')
-                                ? 'default'
-                                : 'outline'
-                        }
-                        className={cn(
-                            'cursor-pointer transition-all',
-                            quickFilters.tipe.includes('minuman') &&
-                                'ring-2 ring-primary ring-offset-1',
-                        )}
-                        onClick={() =>
-                            handleToggleQuickFilter('tipe', 'minuman')
-                        }
-                    >
-                        Minuman{' '}
-                        {quickFilters.tipe.includes('minuman') ? '✓' : null}
-                    </Badge>
-                    <Badge
-                        variant={
-                            quickFilters.tipe.includes('snack')
-                                ? 'default'
-                                : 'outline'
-                        }
-                        className={cn(
-                            'cursor-pointer transition-all',
-                            quickFilters.tipe.includes('snack') &&
-                                'ring-2 ring-primary ring-offset-1',
-                        )}
-                        onClick={() => handleToggleQuickFilter('tipe', 'snack')}
-                    >
-                        Snack{' '}
-                        {quickFilters.tipe.includes('snack') ? '✓' : null}
-                    </Badge>
-                    <Badge
-                        variant={
-                            quickFilters.aktif ? 'default' : 'outline'
-                        }
-                        className={cn(
-                            'cursor-pointer transition-all',
-                            quickFilters.aktif &&
-                                'ring-2 ring-primary ring-offset-1',
+                            quickFilters.aktif && 'ring-2 ring-primary ring-offset-1',
                         )}
                         onClick={() => handleToggleQuickFilter('aktif')}
                     >
@@ -884,9 +1069,7 @@ export default function ProdukIndex({
                             className="h-6 px-2 text-xs"
                             disabled={isClearing}
                         >
-                            {isClearing
-                                ? 'Menghapus...'
-                                : `Clear All (${activeFiltersCount})`}
+                            {isClearing ? 'Menghapus...' : `Clear All (${activeFiltersCount})`}
                         </Button>
                     )}
                 </div>
@@ -1045,6 +1228,9 @@ export default function ProdukIndex({
                                         </SelectItem>
                                         <SelectItem value="snack">
                                             Snack
+                                        </SelectItem>
+                                        <SelectItem value="makanan">
+                                            Makanan
                                         </SelectItem>
                                     </SelectContent>
                                 </Select>
@@ -1247,7 +1433,9 @@ export default function ProdukIndex({
                                                             : p.tipe ===
                                                                 'minuman'
                                                               ? 'Minuman'
-                                                              : 'Snack'}
+                                                              : p.tipe === 'makanan'
+                                                                ? 'Makanan'
+                                                                : 'Snack'}
                                                     </Badge>
                                                     {p.kategori?.nama && (
                                                         <div className="mt-1 text-xs text-muted-foreground">
@@ -1604,7 +1792,9 @@ export default function ProdukIndex({
                                                         ? 'Beans'
                                                         : p.tipe === 'minuman'
                                                           ? 'Minuman'
-                                                          : 'Snack'}
+                                                          : p.tipe === 'makanan'
+                                                            ? 'Makanan'
+                                                            : 'Snack'}
                                                 </Badge>
                                                 <Badge
                                                     variant="secondary"
@@ -1906,6 +2096,8 @@ export default function ProdukIndex({
                         </Button>
                     </div>
                 </div>
+                    </>
+                )}
             </div>
         </AppLayout>
     );

@@ -136,14 +136,28 @@ class TransaksiService
         ]);
 
         foreach ($itemTransaksi as $item) {
+            $potonganBundling = 0;
+            if ($item['produk']->tipe === 'bundling') {
+                $item['produk']->loadMissing('bundleItems.produk');
+                $realTotal = 0;
+                foreach ($item['produk']->bundleItems as $bundleItem) {
+                    if ($bundleItem->produk) {
+                        $realTotal += $bundleItem->produk->harga_jual * $bundleItem->jumlah;
+                    }
+                }
+                $potonganBundling = ($realTotal - $item['produk']->harga_jual) * $item['jumlah'];
+            }
+
             ItemTransaksi::create([
                 'transaksi_id' => $transaksi->id,
                 'produk_id' => $item['produk']->id,
                 'jumlah' => $item['jumlah'],
                 'harga_satuan' => $item['harga_satuan'],
                 'subtotal' => $item['subtotal'],
+                'potongan_bundling' => max(0, $potonganBundling),
                 'catatan' => $item['catatan'],
             ]);
+            /* TODO: Temporarily disable stock deduction as requested
             if ($item['produk']->tipe === 'minuman') {
                 $this->kurangiStokMinuman($shift, $item['produk'], $item['jumlah']);
             }
@@ -165,7 +179,7 @@ class TransaksiService
                     "Transaksi #{$nomorInvoice}"
                 );
             }
-            if ($item['produk']->tipe === 'snack') {
+            if (in_array($item['produk']->tipe, ['snack', 'makanan'])) {
                 $stokEtalase = StokEtalase::where('cabang_id', $shift->cabang_id)
                     ->where('produk_id', $item['produk']->id)
                     ->where('tipe_stok', 'produksi_minuman')
@@ -182,6 +196,7 @@ class TransaksiService
                     "Transaksi #{$nomorInvoice}"
                 );
             }
+            */
         }
         foreach ($pembayaran as $bayar) {
             Pembayaran::create([
@@ -545,6 +560,7 @@ class TransaksiService
             ]);
 
             foreach ($transaksi->item as $item) {
+                /* TODO: Temporarily disable stock return as requested
                 $produk = $item->produk;
 
                 if ($produk->tipe === 'minuman') {
@@ -574,6 +590,7 @@ class TransaksiService
                         'catatan' => "Return pembatalan transaksi #{$transaksi->nomor_invoice}",
                     ]);
                 }
+                */
             }
 
             DB::commit();
