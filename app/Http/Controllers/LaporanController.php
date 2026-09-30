@@ -315,12 +315,20 @@ class LaporanController extends Controller
             ->where('pembayaran.metode_pembayaran', 'qris')
             ->sum('pembayaran.jumlah');
 
+        $totalPendapatanTransfer = DB::table('pembayaran')
+            ->join('transaksi', 'pembayaran.transaksi_id', '=', 'transaksi.id')
+            ->where('transaksi.shift_id', $shift->id)
+            ->where('transaksi.status', 'selesai')
+            ->where('pembayaran.metode_pembayaran', 'transfer')
+            ->sum('pembayaran.jumlah');
+
         $statistik = [
             'total_transaksi' => $totalTransaksi,
             'total_penjualan' => $totalPenjualan,
             'total_diskon' => (float) $shift->transaksi->where('status', 'selesai')->sum('diskon'),
             'total_tunai' => (float) $totalPendapatanTunai,
             'total_qris' => (float) $totalPendapatanQris,
+            'total_transfer' => (float) $totalPendapatanTransfer,
             'saldo_awal' => (float) ($shift->saldo_awal ?? 0),
             'saldo_akhir' => (float) ($shift->saldo_akhir ?? 0),
             'selisih' => (float) ($shift->selisih ?? 0),
@@ -504,6 +512,15 @@ class LaporanController extends Controller
             ->where('pembayaran.metode_pembayaran', 'qris')
             ->sum('pembayaran.jumlah');
 
+        $totalTransfer = DB::table('pembayaran')
+            ->join('transaksi', 'pembayaran.transaksi_id', '=', 'transaksi.id')
+            ->join('shift', 'transaksi.shift_id', '=', 'shift.id')
+            ->whereIn('shift.cabang_id', $cabangIds)
+            ->whereDate('transaksi.waktu_selesai', $tanggal)
+            ->where('transaksi.status', 'selesai')
+            ->where('pembayaran.metode_pembayaran', 'transfer')
+            ->sum('pembayaran.jumlah');
+
         $statistik = [
             'total_shift' => $totalShift,
             'shift_buka' => $shiftBuka,
@@ -513,6 +530,7 @@ class LaporanController extends Controller
             'total_penjualan' => (float) $totalPenjualan,
             'total_tunai' => (float) ($totalTunai ?? 0),
             'total_qris' => (float) ($totalQris ?? 0),
+            'total_transfer' => (float) ($totalTransfer ?? 0),
             'rata_rata_per_shift' => $totalShift > 0 ? round($totalPenjualan / $totalShift, 2) : 0,
             'rata_rata_per_transaksi' => $totalTransaksi > 0 ? round($totalPenjualan / $totalTransaksi, 2) : 0,
         ];
@@ -774,7 +792,7 @@ class LaporanController extends Controller
                 'item_transaksi.produk_id',
                 'produk.nama',
                 DB::raw('SUM(item_transaksi.jumlah)    as total_terjual'),
-                DB::raw('MAX(produk.harga_jual)         as harga'),
+                DB::raw('MAX(item_transaksi.harga_satuan)         as harga'),
                 DB::raw('SUM(item_transaksi.subtotal)   as total_hasil')
             )
             ->groupBy('item_transaksi.produk_id', 'produk.nama')
@@ -836,7 +854,7 @@ class LaporanController extends Controller
                 'item_transaksi.produk_id',
                 'produk.nama',
                 DB::raw('SUM(item_transaksi.jumlah)              as total_terjual'),
-                DB::raw('MAX(produk.harga_jual)                   as harga'),
+                DB::raw('MAX(item_transaksi.harga_satuan)                   as harga'),
                 DB::raw('SUM(item_transaksi.subtotal)             as total_hasil'),
                 DB::raw('SUM(item_transaksi.potongan_bundling)    as total_potongan_bundling')
             )
@@ -943,19 +961,19 @@ class LaporanController extends Controller
             $base->where('produk.kategori_id', $kategoriId);
         }
         if ($hargaMin !== null) {
-            $base->where('produk.harga_jual', '>=', $hargaMin);
+            $base->where('item_transaksi.harga_satuan', '>=', $hargaMin);
         }
         if ($hargaMax !== null) {
-            $base->where('produk.harga_jual', '<=', $hargaMax);
+            $base->where('item_transaksi.harga_satuan', '<=', $hargaMax);
         }
 
         $perKategori = (clone $base)
             ->select(
                 'kategori_produk.id as kategori_id',
                 'kategori_produk.nama as kategori',
-                DB::raw('SUM(item_transaksi.jumlah * produk.harga_jual) as pendapatan_kotor'),
-                DB::raw('SUM(item_transaksi.jumlah * produk.harga_modal) as total_modal'),
-                DB::raw('SUM(item_transaksi.jumlah * (produk.harga_jual - produk.harga_modal)) as margin')
+                DB::raw('SUM(item_transaksi.subtotal) as pendapatan_kotor'),
+                DB::raw('SUM(item_transaksi.jumlah * item_transaksi.harga_modal) as total_modal'),
+                DB::raw('SUM(item_transaksi.subtotal - (item_transaksi.jumlah * item_transaksi.harga_modal)) as margin')
             )
             ->groupBy('kategori_produk.id', 'kategori_produk.nama')
             ->orderByDesc('pendapatan_kotor')
@@ -1168,6 +1186,16 @@ class LaporanController extends Controller
                 ->where('pembayaran.metode_pembayaran', 'qris')
                 ->sum('pembayaran.jumlah');
 
+            $totalTransfer = DB::table('pembayaran')
+                ->join('transaksi', 'pembayaran.transaksi_id', '=', 'transaksi.id')
+                ->join('shift', 'transaksi.shift_id', '=', 'shift.id')
+                ->whereIn('shift.cabang_id', $cabangIds ?: [])
+                ->whereDate('transaksi.waktu_selesai', '>=', $tanggalMulai)
+                ->whereDate('transaksi.waktu_selesai', '<=', $tanggalSelesai)
+                ->where('transaksi.status', 'selesai')
+                ->where('pembayaran.metode_pembayaran', 'transfer')
+                ->sum('pembayaran.jumlah');
+
             $grafikPerJam = Transaksi::whereIn('cabang_id', $cabangIds ?: [])
                 ->whereDate('waktu_selesai', '>=', $tanggalMulai)
                 ->whereDate('waktu_selesai', '<=', $tanggalSelesai)
@@ -1349,8 +1377,8 @@ class LaporanController extends Controller
                 ->when(empty($cabangId) && !empty($cabangIds), fn($q) => $q->whereIn('transaksi.cabang_id', $cabangIds))
                 ->whereBetween('transaksi.waktu_selesai', [$tanggalMulai, Carbon::parse($tanggalSelesai)->endOfDay()->toDateTimeString()])
                 ->when($kategoriId, fn($q) => $q->where('produk.kategori_id', $kategoriId))
-                ->when($hargaMin !== null, fn($q) => $q->where('produk.harga_jual', '>=', $hargaMin))
-                ->when($hargaMax !== null, fn($q) => $q->where('produk.harga_jual', '<=', $hargaMax));
+                ->when($hargaMin !== null, fn($q) => $q->where('item_transaksi.harga_satuan', '>=', $hargaMin))
+                ->when($hargaMax !== null, fn($q) => $q->where('item_transaksi.harga_satuan', '<=', $hargaMax));
 
             $totalPendapatan = (clone $penjualanBase)
                 ->select(DB::raw('SUM(item_transaksi.subtotal) as pendapatan'))
@@ -1407,16 +1435,16 @@ class LaporanController extends Controller
                 ->when(empty($cabangId) && !empty($cabangIds), fn($q) => $q->whereIn('transaksi.cabang_id', $cabangIds))
                 ->whereBetween('transaksi.waktu_selesai', [$tanggalMulai, Carbon::parse($tanggalSelesai)->endOfDay()->toDateTimeString()])
                 ->when($kategoriId, fn($q) => $q->where('produk.kategori_id', $kategoriId))
-                ->when($hargaMin !== null, fn($q) => $q->where('produk.harga_jual', '>=', $hargaMin))
-                ->when($hargaMax !== null, fn($q) => $q->where('produk.harga_jual', '<=', $hargaMax));
+                ->when($hargaMin !== null, fn($q) => $q->where('item_transaksi.harga_satuan', '>=', $hargaMin))
+                ->when($hargaMax !== null, fn($q) => $q->where('item_transaksi.harga_satuan', '<=', $hargaMax));
 
             $perKategori = (clone $kategoriBase)
                 ->select(
                     'kategori_produk.id as kategori_id',
                     'kategori_produk.nama as kategori',
-                    DB::raw('SUM(item_transaksi.jumlah * produk.harga_jual) as pendapatan_kotor'),
-                    DB::raw('SUM(item_transaksi.jumlah * produk.harga_modal) as total_modal'),
-                    DB::raw('SUM(item_transaksi.jumlah * (produk.harga_jual - produk.harga_modal)) as margin')
+                    DB::raw('SUM(item_transaksi.subtotal) as pendapatan_kotor'),
+                    DB::raw('SUM(item_transaksi.jumlah * item_transaksi.harga_modal) as total_modal'),
+                    DB::raw('SUM(item_transaksi.subtotal - (item_transaksi.jumlah * item_transaksi.harga_modal)) as margin')
                 )
                 ->groupBy('kategori_produk.id', 'kategori_produk.nama')
                 ->orderByDesc('pendapatan_kotor')
@@ -1578,7 +1606,8 @@ class LaporanController extends Controller
                 ->select(
                     DB::raw('COUNT(DISTINCT transaksi.id) as total_transaksi'),
                     DB::raw('COALESCE(SUM(CASE WHEN pembayaran.metode_pembayaran = "tunai" THEN pembayaran.jumlah ELSE 0 END), 0) as total_pendapatan_tunai'),
-                    DB::raw('COALESCE(SUM(CASE WHEN pembayaran.metode_pembayaran = "qris" THEN pembayaran.jumlah ELSE 0 END), 0) as total_pendapatan_qris')
+                    DB::raw('COALESCE(SUM(CASE WHEN pembayaran.metode_pembayaran = "qris" THEN pembayaran.jumlah ELSE 0 END), 0) as total_pendapatan_qris'),
+                    DB::raw('COALESCE(SUM(CASE WHEN pembayaran.metode_pembayaran = "transfer" THEN pembayaran.jumlah ELSE 0 END), 0) as total_pendapatan_transfer')
                 )
                 ->first();
         } catch (\Exception $e) {
@@ -1591,6 +1620,7 @@ class LaporanController extends Controller
                 'total_transaksi' => 0,
                 'total_pendapatan_tunai' => 0,
                 'total_pendapatan_qris' => 0,
+                'total_pendapatan_transfer' => 0,
             ];
         }
 
@@ -1602,6 +1632,7 @@ class LaporanController extends Controller
                 'total_transaksi' => $totalTransaksi,
                 'total_pendapatan_tunai' => (float) ($keuangan->total_pendapatan_tunai ?? 0),
                 'total_pendapatan_qris' => (float) ($keuangan->total_pendapatan_qris ?? 0),
+                'total_pendapatan_transfer' => (float) ($keuangan->total_pendapatan_transfer ?? 0),
                 'saldo_awal' => (float) $shift->saldo_awal,
                 'saldo_akhir' => $shift->saldo_akhir !== null ? (float) $shift->saldo_akhir : null,
             ],
@@ -1609,6 +1640,7 @@ class LaporanController extends Controller
             'total_transaksi' => $totalTransaksi,
             'total_pendapatan_tunai' => (float) ($keuangan->total_pendapatan_tunai ?? 0),
             'total_pendapatan_qris' => (float) ($keuangan->total_pendapatan_qris ?? 0),
+            'total_pendapatan_transfer' => (float) ($keuangan->total_pendapatan_transfer ?? 0),
         ]);
     }
 
@@ -2229,8 +2261,8 @@ class LaporanController extends Controller
                 ->when(!empty($cabangIds), fn($q) => $q->whereIn('transaksi.cabang_id', $cabangIds))
                 ->whereBetween('transaksi.waktu_selesai', [$tanggalMulai, Carbon::parse($tanggalSelesai)->endOfDay()->toDateTimeString()])
                 ->when($kategoriId, fn($q) => $q->where('produk.kategori_id', $kategoriId))
-                ->when($hargaMin !== null, fn($q) => $q->where('produk.harga_jual', '>=', $hargaMin))
-                ->when($hargaMax !== null, fn($q) => $q->where('produk.harga_jual', '<=', $hargaMax));
+                ->when($hargaMin !== null, fn($q) => $q->where('item_transaksi.harga_satuan', '>=', $hargaMin))
+                ->when($hargaMax !== null, fn($q) => $q->where('item_transaksi.harga_satuan', '<=', $hargaMax));
 
             $totalPendapatan = (float) ((clone $penjualanBase)
                 ->select(DB::raw('SUM(item_transaksi.subtotal) as pendapatan'))
@@ -2280,16 +2312,16 @@ class LaporanController extends Controller
                 ->when(!empty($cabangIds), fn($q) => $q->whereIn('transaksi.cabang_id', $cabangIds))
                 ->whereBetween('transaksi.waktu_selesai', [$tanggalMulai, Carbon::parse($tanggalSelesai)->endOfDay()->toDateTimeString()])
                 ->when($kategoriId, fn($q) => $q->where('produk.kategori_id', $kategoriId))
-                ->when($hargaMin !== null, fn($q) => $q->where('produk.harga_jual', '>=', $hargaMin))
-                ->when($hargaMax !== null, fn($q) => $q->where('produk.harga_jual', '<=', $hargaMax));
+                ->when($hargaMin !== null, fn($q) => $q->where('item_transaksi.harga_satuan', '>=', $hargaMin))
+                ->when($hargaMax !== null, fn($q) => $q->where('item_transaksi.harga_satuan', '<=', $hargaMax));
 
             $perKategori = (clone $kategoriBase)
                 ->select(
                     'kategori_produk.id as kategori_id',
                     'kategori_produk.nama as kategori',
-                    DB::raw('SUM(item_transaksi.jumlah * produk.harga_jual) as pendapatan_kotor'),
-                    DB::raw('SUM(item_transaksi.jumlah * produk.harga_modal) as total_modal'),
-                    DB::raw('SUM(item_transaksi.jumlah * (produk.harga_jual - produk.harga_modal)) as margin')
+                    DB::raw('SUM(item_transaksi.subtotal) as pendapatan_kotor'),
+                    DB::raw('SUM(item_transaksi.jumlah * item_transaksi.harga_modal) as total_modal'),
+                    DB::raw('SUM(item_transaksi.subtotal - (item_transaksi.jumlah * item_transaksi.harga_modal)) as margin')
                 )
                 ->groupBy('kategori_produk.id', 'kategori_produk.nama')
                 ->orderByDesc('pendapatan_kotor')
@@ -2376,8 +2408,8 @@ class LaporanController extends Controller
                 ->when(!empty($cabangIds), fn($q) => $q->whereIn('transaksi.cabang_id', $cabangIds))
                 ->whereBetween('transaksi.waktu_selesai', [$tanggalMulai, Carbon::parse($tanggalSelesai)->endOfDay()->toDateTimeString()])
                 ->when($kategoriId, fn($q) => $q->where('produk.kategori_id', $kategoriId))
-                ->when($hargaMin !== null, fn($q) => $q->where('produk.harga_jual', '>=', $hargaMin))
-                ->when($hargaMax !== null, fn($q) => $q->where('produk.harga_jual', '<=', $hargaMax));
+                ->when($hargaMin !== null, fn($q) => $q->where('item_transaksi.harga_satuan', '>=', $hargaMin))
+                ->when($hargaMax !== null, fn($q) => $q->where('item_transaksi.harga_satuan', '<=', $hargaMax));
 
             $totalPendapatan = (float) ((clone $penjualanBase)
                 ->select(DB::raw('SUM(item_transaksi.subtotal) as pendapatan'))
@@ -2419,15 +2451,15 @@ class LaporanController extends Controller
                 ->when(!empty($cabangIds), fn($q) => $q->whereIn('transaksi.cabang_id', $cabangIds))
                 ->whereBetween('transaksi.waktu_selesai', [$tanggalMulai, Carbon::parse($tanggalSelesai)->endOfDay()->toDateTimeString()])
                 ->when($kategoriId, fn($q) => $q->where('produk.kategori_id', $kategoriId))
-                ->when($hargaMin !== null, fn($q) => $q->where('produk.harga_jual', '>=', $hargaMin))
-                ->when($hargaMax !== null, fn($q) => $q->where('produk.harga_jual', '<=', $hargaMax));
+                ->when($hargaMin !== null, fn($q) => $q->where('item_transaksi.harga_satuan', '>=', $hargaMin))
+                ->when($hargaMax !== null, fn($q) => $q->where('item_transaksi.harga_satuan', '<=', $hargaMax));
 
             $perKategori = (clone $kategoriBase)
                 ->select(
                     'kategori_produk.nama as kategori',
-                    DB::raw('SUM(item_transaksi.jumlah * produk.harga_jual) as pendapatan_kotor'),
-                    DB::raw('SUM(item_transaksi.jumlah * produk.harga_modal) as total_modal'),
-                    DB::raw('SUM(item_transaksi.jumlah * (produk.harga_jual - produk.harga_modal)) as margin')
+                    DB::raw('SUM(item_transaksi.subtotal) as pendapatan_kotor'),
+                    DB::raw('SUM(item_transaksi.jumlah * item_transaksi.harga_modal) as total_modal'),
+                    DB::raw('SUM(item_transaksi.subtotal - (item_transaksi.jumlah * item_transaksi.harga_modal)) as margin')
                 )
                 ->groupBy('kategori_produk.id', 'kategori_produk.nama')
                 ->orderByDesc('pendapatan_kotor')

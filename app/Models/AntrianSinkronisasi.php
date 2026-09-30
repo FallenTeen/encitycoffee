@@ -12,6 +12,7 @@ class AntrianSinkronisasi extends Model
 
     protected $fillable = [
         'id_perangkat',
+        'user_id',
         'tipe_entitas',
         'id_entitas',
         'payload',
@@ -23,6 +24,11 @@ class AntrianSinkronisasi extends Model
     protected $casts = [
         'waktu_sinkronisasi' => 'datetime',
     ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
 
     public function scopePending($query)
     {

@@ -141,6 +141,7 @@ class MobileDiscountFeatureTest extends TestCase
             'Authorization' => 'Bearer ' . $this->token,
         ])->postJson('/api/pos/transaksi', [
             'shift_id' => $this->shift['id'],
+            'client_transaction_id' => '99999999-9999-4999-8999-999999999999',
             'items' => [
                 [
                     'produk_id' => $this->produk->id,

@@ -5,6 +5,7 @@ use App\Models\Transaksi;
 use App\Models\OpenBill;
 use App\Models\Shift;
 use App\Services\TransaksiService;
+use App\Support\ApiErrorResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -57,6 +58,9 @@ class TransaksiController extends Controller
 
         if (! empty($validated['status'])) {
             $query->where('status', $validated['status']);
+        }
+        if (! empty($validated['tipe_pembayaran'])) {
+            $query->where('tipe_pembayaran', $validated['tipe_pembayaran']);
         }
 
         $tanggalMulai   = $validated['tanggal_mulai']   ?? null;
@@ -135,6 +139,7 @@ class TransaksiController extends Controller
             'sort_dir'        => ['nullable', 'in:asc,desc'],
             'search'          => ['nullable', 'string', 'max:100'],
             'cabang_id'       => ['nullable', 'integer', 'exists:cabang,id'],
+            'tipe_pembayaran' => ['nullable', 'in:tunai,qris,transfer'],
         ]);
 
         $tanggalMulai   = $validated['tanggal_mulai']   ?? null;
@@ -241,6 +246,7 @@ class TransaksiController extends Controller
                     . '<td>' . htmlspecialchars(optional($t->user)->name ?? '-') . '</td>'
                     . '<td style="text-align:right">' . number_format((float) ($t->total ?? 0), 0, ',', '.') . '</td>'
                     . '<td style="font-size:11px">' . htmlspecialchars($diskonLabel) . '</td>'
+                    . '<td>' . htmlspecialchars(strtoupper($t->tipe_pembayaran ?? '-')) . '</td>'
                     . '<td><span style="' . $badgeStyle . ';padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600">' . htmlspecialchars(ucfirst($status ?: '-')) . '</span></td>'
                     . '<td style="font-size:11px">' . htmlspecialchars(optional($t->created_at)?->format('d/m/Y H:i') ?? '-') . '</td>'
                     . '</tr>';
@@ -326,7 +332,8 @@ class TransaksiController extends Controller
       <th style="width:17%">Cabang</th>
       <th style="width:15%">Kasir</th>
       <th style="width:14%">Total (Rp)</th>
-      <th style="width:16%">Didiskon</th>
+      <th style="width:12%">Didiskon</th>
+      <th style="width:10%">Tipe</th>
       <th style="width:10%">Status</th>
       <th style="width:14%">Waktu</th>
     </tr>
@@ -525,6 +532,16 @@ HTML;
 
     public function transaksiPerShift(Shift $shift, Request $request)
     {
+        // Both the /api/pos and /api/viewer copies of this route only required a valid
+        // role, not access to this shift's branch, so a kasir could read another
+        // branch's transactions, payments and cashier identity.
+        $policy = new \App\Policies\BranchAccessPolicy();
+        if (! $policy->viewShift($request->user(), $shift)) {
+            return response()->json([
+                'error' => 'Anda tidak memiliki akses ke shift ini.'
+            ], 403);
+        }
+
         $status  = $request->string('status')->toString();
         $perPage = (int) $request->get('per_page', 15);
 
@@ -583,7 +600,7 @@ HTML;
             'items.*.jumlah'         => 'required|integer|min:1',
             'items.*.catatan'        => 'nullable|string',
             'pembayaran'             => 'required|array|min:1',
-            'pembayaran.*.metode'    => 'required|in:tunai,qris',
+            'pembayaran.*.metode'    => 'required|in:tunai,qris,transfer',
             'pembayaran.*.jumlah'    => 'required|numeric|min:0',
             'pembayaran.*.referensi' => 'nullable|string',
             'diskon'                 => 'nullable|numeric|min:0',
@@ -593,6 +610,10 @@ HTML;
             'pembulatan.unit'        => 'nullable|integer|min:1|max:1000000',
             'pajak'                  => 'nullable|numeric|min:0',
             'catatan'                => 'nullable|string',
+            // UUID v4 idempotency key dari Flutter, dibuat saat halaman pembayaran dibuka.
+            // Wajib: tanpa key ini, retry setelah timeout membuat penjualan ganda
+            // (INVARIANT-02). Flutter harus mengirim key yang sama persis saat retry.
+            'client_transaction_id'  => 'required|string|uuid|max:36',
         ]);
 
         $shift = Shift::findOrFail($validated['shift_id']);
@@ -617,11 +638,79 @@ HTML;
                 (float) ($validated['pajak']  ?? 0),
                 $validated['catatan']          ?? null,
                 $validated['nama_pelanggan']   ?? null,
+                $validated['client_transaction_id'] ?? null,
+                $request->user(),
             );
-            return response()->json($transaksi);
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 400);
+
+            // Jika ini adalah idempotent replay (transaksi sudah pernah dibuat sebelumnya),
+            // kembalikan response yang sama dengan status 200 (bukan 409 Conflict).
+            // Ini penting agar Flutter tidak menampilkan error saat retry karena jaringan lambat.
+            $responseData = $transaksi->toArray();
+            if (!empty($transaksi->idempotent_replay)) {
+                $responseData['_idempotent'] = true;
+                $responseData['_info'] = 'Transaksi ini sudah pernah diproses sebelumnya. Data yang dikembalikan adalah data transaksi asli.';
+            }
+
+            // Sertakan info penyesuaian overpay jika ada (agar Flutter bisa notifikasi kasir)
+            if (!empty($transaksi->payment_adjustments)) {
+                $responseData['payment_adjustments'] = $transaksi->payment_adjustments;
+            }
+
+            return response()->json($responseData);
+        } catch (\Throwable $e) {
+            // Only the retryable-infrastructure cases are handled here, because they
+            // are the ones the client must be able to recognise and retry. Everything
+            // else is rethrown to the global API handler, which already maps 422 / 403 /
+            // 404 / 409 correctly and returns a generic, correlated 500 for the rest
+            // (INVARIANT-10). This endpoint must never answer 400 for a server fault.
+            if (! $this->isTransientDatabaseFailure($e)) {
+                throw $e;
+            }
+
+            Log::error('Transaksi gagal karena gangguan database sementara', [
+                'shift_id' => (int) $validated['shift_id'],
+                'client_transaction_id' => $validated['client_transaction_id'] ?? null,
+                'user_id' => (int) $request->user()?->id,
+                'exception' => $e::class,
+                'error' => $e->getMessage(),
+            ]);
+
+            return ApiErrorResponse::make(
+                503,
+                'Layanan sedang sibuk. Silakan coba lagi.'
+            );
         }
+    }
+
+    /**
+     * Deadlock, lock-wait timeout and lost connections are transient: the
+     * transaction was rolled back, so the client can safely resend the same
+     * client_transaction_id. Everything else is a real fault or a client error.
+     *
+     * DeadlockException covers both MySQL 1213 (deadlock) and 1205 (lock wait
+     * timeout) in this framework version.
+     */
+    private function isTransientDatabaseFailure(\Throwable $e): bool
+    {
+        if ($e instanceof \Illuminate\Database\DeadlockException
+            || $e instanceof \Illuminate\Database\LostConnectionException) {
+            return true;
+        }
+
+        // A raw PDOException that never went through the Laravel connection still
+        // needs matching. The SQLSTATE shows up in getCode() for driver exceptions
+        // and in errorInfo[0] for the rest, so both are checked.
+        if ($e instanceof \PDOException) {
+            $states = [(string) $e->getCode()];
+
+            if (isset($e->errorInfo[0])) {
+                $states[] = (string) $e->errorInfo[0];
+            }
+
+            return (bool) array_intersect(['40001', 'HY000', '08S01', '40003'], $states);
+        }
+
+        return false;
     }
 
     public function tampilkanTransaksi(Request $request, Transaksi $transaksi)
@@ -670,8 +759,12 @@ HTML;
                 'message'   => 'Transaksi berhasil dibatalkan',
                 'transaksi' => $updated->load(['item.produk', 'pembayaran']),
             ]);
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $e) {
+            return response()->json(['error' => $e->getMessage()], $e->getStatusCode());
         } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 400);
+            return $this->isTransientDatabaseFailure($e)
+                ? response()->json(['error' => 'Gagal memproses pembatalan karena gangguan sementara. Coba lagi.'], 503)
+                : response()->json(['error' => 'Gagal membatalkan transaksi.'], 500);
         }
     }
 
@@ -912,7 +1005,7 @@ HTML;
     {
         $validated = $request->validate([
             'pembayaran'             => 'required|array|min:1',
-            'pembayaran.*.metode'    => 'required|in:tunai,qris',
+            'pembayaran.*.metode'    => 'required|in:tunai,qris,transfer',
             'pembayaran.*.jumlah'    => 'required|numeric|min:0',
             'pembayaran.*.referensi' => 'nullable|string',
             'diskon'                 => 'nullable|numeric|min:0',
@@ -948,8 +1041,12 @@ HTML;
                 'message'   => 'Open bill berhasil dibayar',
                 'transaksi' => $transaksi->load(['item.produk', 'pembayaran', 'shift', 'cabang', 'user']),
             ]);
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $e) {
+            return response()->json(['error' => $e->getMessage()], $e->getStatusCode());
         } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 400);
+            return $this->isTransientDatabaseFailure($e)
+                ? response()->json(['error' => 'Gagal memproses pembayaran karena gangguan sementara. Coba lagi.'], 503)
+                : response()->json(['error' => 'Gagal memproses pembayaran open bill.'], 500);
         }
     }
 

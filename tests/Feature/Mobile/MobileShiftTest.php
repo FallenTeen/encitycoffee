@@ -312,7 +312,15 @@ class MobileShiftTest extends TestCase
         Log::info('Unauthorized shift access correctly rejected');
     }
 
-    public function test_second_cashier_in_nama_kasir_sees_same_active_shift()
+    /**
+     * A second cashier must NOT be able to see or take over the first cashier's
+     * open shift, even though the shift is open, in the same branch, and the first
+     * cashier typed the second cashier's name and email into nama_kasir.
+     *
+     * This used to be asserted as "sees same active shift", which was relying on
+     * nama_kasir LIKE matching rather than real ownership.
+     */
+    public function test_second_cashier_cannot_see_another_cashiers_active_shift()
     {
         $secondUser = User::create([
             'name' => 'Kasir Kedua',
@@ -333,7 +341,6 @@ class MobileShiftTest extends TestCase
         ]);
 
         $openResponse->assertStatus(200);
-
         $shiftId = $openResponse->json('shift.id');
 
         $loginResponse = $this->postJson('/api/pos/auth/login', [
@@ -343,11 +350,30 @@ class MobileShiftTest extends TestCase
 
         $secondToken = $loginResponse->json('token');
 
+        // The Sanctum guard caches the user resolved from the first request, so it
+        // must be reset or this would still be authenticated as the first cashier.
+        $this->app['auth']->forgetGuards();
+
         $activeResponse = $this->withHeaders([
             'Authorization' => 'Bearer ' . $secondToken,
         ])->getJson('/api/pos/shift/aktif');
 
-        $activeResponse->assertStatus(200)
+        $activeResponse->assertStatus(404)
+            ->assertJsonMissingPath('shift.id');
+
+        $this->assertNotSame(
+            (int) $shiftId,
+            (int) ($activeResponse->json('shift.id') ?? 0),
+            'Shift milik kasir lain tidak boleh terlihat oleh kasir kedua'
+        );
+
+        // The original cashier still owns the shift.
+        $this->app['auth']->forgetGuards();
+
+        $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token,
+        ])->getJson('/api/pos/shift/aktif')
+            ->assertStatus(200)
             ->assertJsonPath('shift.id', $shiftId);
     }
 }

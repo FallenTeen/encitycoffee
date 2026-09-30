@@ -62,7 +62,7 @@ function formatCurrency(value: string | number | undefined | null) {
 function formatDateTime(value?: string | null) {
   if (!value) return '-';
   const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? value : d.toLocaleString('id-ID');
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────

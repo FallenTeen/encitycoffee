@@ -7,10 +7,14 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import AppLayout from '@/layouts/app-layout';
 import { Head, Link, router } from '@inertiajs/react';
-import { Trash2, AlertCircle, CalendarRange, Zap, Building2 } from 'lucide-react';
+import { Trash2, AlertCircle, CalendarRange, Zap, Building2, Banknote, QrCode, CreditCard } from 'lucide-react';
 import { useMemo, useState, useEffect } from 'react';
 import { useOutlet } from '@/contexts/OutletContext';
 import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { DatePickerWithRange } from '@/components/ui/date-range-picker';
+import { DateRange } from 'react-day-picker';
+import { format } from 'date-fns';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,6 +29,7 @@ interface Props {
       diskon_persen?: string | number | null;
       total?: string | number;
       status?: string;
+      tipe_pembayaran?: string;
       created_at?: string;
       cabang?: { id: number; kode?: string; nama?: string } | null;
       user?: { id: number; name?: string } | null;
@@ -48,6 +53,7 @@ interface Props {
     tanggal_mulai?: string;
     tanggal_selesai?: string;
     cabang_id?: number | null;
+    tipe_pembayaran?: string;
   };
   auth?: { user?: { role?: string } };
   cabang_list?: Array<{ id: number; nama: string; kode?: string }>;
@@ -131,7 +137,7 @@ function formatCurrency(value: unknown) {
 function formatDateTime(value?: string) {
   if (!value) return '-';
   const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? value : d.toLocaleString('id-ID');
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -151,8 +157,10 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth, cabang_
   const detectedPreset = detectPreset(serverMulai, serverSelesai);
 
   const [quickRange,    setQuickRange]    = useState<QuickRange>(detectedPreset);
-  const [customMulai,   setCustomMulai]   = useState(serverMulai);
-  const [customSelesai, setCustomSelesai] = useState(serverSelesai);
+  const [dateRange,     setDateRange]     = useState<DateRange | undefined>({
+    from: serverMulai ? new Date(serverMulai) : new Date(),
+    to: serverSelesai ? new Date(serverSelesai) : new Date(),
+  });
   const [status,        setStatus]        = useState(filter_aktif?.status ?? '');
   const [diskonStatus,  setDiskonStatus]  = useState(filter_aktif?.diskon_status ?? '');
   const [search,        setSearch]        = useState(filter_aktif?.search ?? '');
@@ -160,6 +168,7 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth, cabang_
   const [sortDir,       setSortDir]       = useState(filter_aktif?.sort_dir ?? 'desc');
   const [minDiskon,     setMinDiskon]     = useState(filter_aktif?.min_diskon ?? null);
   const [maxDiskon,     setMaxDiskon]     = useState(filter_aktif?.max_diskon ?? null);
+  const [tipePembayaran,setTipePembayaran]= useState(filter_aktif?.tipe_pembayaran ?? '');
   const [perPage,       setPerPage]       = useState(String(filter_aktif?.per_page ?? 15));
   const [cabangId,       setCabangId]      = useState<String>(filter_aktif?.cabang_id ? String(filter_aktif.cabang_id) : '');
   const [isLoading,     setIsLoading]     = useState(false);
@@ -194,9 +203,14 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth, cabang_
 
   // Tanggal aktual yang akan dikirim ke server
   const resolvedDates = useMemo(() => {
-    if (quickRange === 'kustom') return { mulai: customMulai, selesai: customSelesai };
+    if (quickRange === 'kustom') {
+      return {
+        mulai: dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : '',
+        selesai: dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : (dateRange?.from ? format(dateRange.from, 'yyyy-MM-dd') : ''),
+      };
+    }
     return datesForPreset(quickRange);
-  }, [quickRange, customMulai, customSelesai]);
+  }, [quickRange, dateRange]);
 
   // Label periode untuk subtitle header
   const periodLabel = useMemo(() => {
@@ -237,6 +251,7 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth, cabang_
     if (search.trim()) params.search = search.trim();
     if (sortBy) params.sort_by = sortBy;
     if (sortDir) params.sort_dir = sortDir;
+    if (tipePembayaran) params.tipe_pembayaran = tipePembayaran;
     if (minDiskon !== null && minDiskon !== undefined) params.min_diskon = minDiskon;
     if (maxDiskon !== null && maxDiskon !== undefined) params.max_diskon = maxDiskon;
     if (currentCabangId) params.cabang_id = currentCabangId;
@@ -277,8 +292,7 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth, cabang_
   function handleReset() {
     const dates = datesForPreset('hari_ini');
     setQuickRange('hari_ini');
-    setCustomMulai(today);
-    setCustomSelesai(today);
+    setDateRange({ from: new Date(), to: new Date() });
     setStatus('');
     setDiskonStatus('');
     setSearch('');
@@ -415,28 +429,15 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth, cabang_
               <p className="flex items-center gap-1.5 text-sm font-medium text-primary">
                 <CalendarRange className="h-4 w-4" /> Rentang Tanggal Kustom
               </p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Tanggal Mulai</label>
-                  <input
-                    type="date"
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    value={customMulai}
-                    max={today}
-                    onChange={(e) => { setCustomMulai(e.target.value); setDateError(null); }}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Tanggal Selesai</label>
-                  <input
-                    type="date"
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                    value={customSelesai}
-                    min={customMulai}
-                    max={today}
-                    onChange={(e) => { setCustomSelesai(e.target.value); setDateError(null); }}
-                  />
-                </div>
+              <div className="w-full">
+                <DatePickerWithRange 
+                  className="w-full sm:w-auto"
+                  date={dateRange} 
+                  setDate={(newDate) => {
+                    setDateRange(newDate);
+                    setDateError(null);
+                  }} 
+                />
               </div>
               {dateError && (
                 <p className="flex items-center gap-1 text-xs text-destructive">
@@ -482,6 +483,19 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth, cabang_
                   <SelectItem value="__all__">Semua</SelectItem>
                   <SelectItem value="discounted">Berdiskon</SelectItem>
                   <SelectItem value="no_discount">Tanpa Diskon</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="min-w-[12rem] space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Tipe Pembayaran</label>
+              <Select value={tipePembayaran || '__all__'} onValueChange={(v) => setTipePembayaran(v === '__all__' ? '' : v)}>
+                <SelectTrigger className="h-9"><SelectValue placeholder="Semua" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">Semua</SelectItem>
+                  <SelectItem value="tunai">Tunai</SelectItem>
+                  <SelectItem value="qris">QRIS</SelectItem>
+                  <SelectItem value="transfer">Transfer</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -599,6 +613,7 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth, cabang_
                     { label: 'Pelanggan', cls: 'text-left' },
                     { label: 'Diskon',  cls: 'text-left' },
                     { label: 'Total',   cls: 'text-right' },
+                    { label: 'Tipe',    cls: 'text-left' },
                     { label: 'Status',  cls: 'text-left' },
                     { label: 'Waktu',   cls: 'text-left' },
                     { label: 'Aksi',    cls: 'text-left' },
@@ -654,6 +669,23 @@ export default function TransaksiIndex({ transaksis, filter_aktif, auth, cabang_
                     </td>
                     <td className="py-3 px-4 text-right font-medium tabular-nums">
                       Rp {formatCurrency(t.total)}
+                    </td>
+                    <td className="py-3 px-4">
+                      <TooltipProvider delayDuration={100}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center justify-center rounded bg-secondary/50 p-2 text-secondary-foreground hover:bg-secondary/70 transition-colors">
+                              {t.tipe_pembayaran === 'qris' && <QrCode className="h-4 w-4" />}
+                              {t.tipe_pembayaran === 'tunai' && <Banknote className="h-4 w-4" />}
+                              {t.tipe_pembayaran === 'transfer' && <CreditCard className="h-4 w-4" />}
+                              {!['qris', 'tunai', 'transfer'].includes(t.tipe_pembayaran || '') && (t.tipe_pembayaran || '-')}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">
+                            <p className="text-xs capitalize">{t.tipe_pembayaran || '-'}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </td>
                     <td className="py-3 px-4">
                       <span className={[

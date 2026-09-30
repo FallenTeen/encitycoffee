@@ -1409,7 +1409,7 @@ export default function ProdukIndex({
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     <div className="font-medium">
-                                                        {p.varian
+                                                        {p.varian && p.varian !== 'none'
                                                             ? `${p.varian} ${p.kelompok_nama || p.nama}`
                                                             : p.nama}
                                                     </div>
@@ -1779,7 +1779,7 @@ export default function ProdukIndex({
                                         />
                                         <div className="flex-1 space-y-1">
                                             <h3 className="line-clamp-2 font-semibold">
-                                                {p.varian
+                                                {p.varian && p.varian !== 'none'
                                                     ? `${p.varian} ${p.kelompok_nama || p.nama}`
                                                     : p.nama}
                                             </h3>
@@ -1931,7 +1931,7 @@ export default function ProdukIndex({
                                         />
                                         <div>
                                             <div className="font-medium">
-                                                {p.varian
+                                                {p.varian && p.varian !== 'none'
                                                     ? `${p.varian} ${p.kelompok_nama || p.nama}`
                                                     : p.nama}
                                             </div>

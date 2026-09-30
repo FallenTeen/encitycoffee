@@ -147,7 +147,9 @@ class OpenBillFlowTest extends TestCase
             ],
         ]);
 
-        $payResp->assertStatus(400)
+        // Underpayment is a business-rule rejection, so it is 422 like the direct sale
+        // path, not the 400 this test previously asserted.
+        $payResp->assertStatus(422)
             ->assertJsonStructure(['error']);
 
         $this->assertDatabaseHas('open_bills', [

@@ -36,11 +36,14 @@ class MobileBundlingController extends Controller
             }
 
             // --- Fetch active bundling products with their items ---
+            // Filter by cabang: include products assigned to this cabang
+            // (Ignoring stok_etalase for now as requested)
             $bundlings = Produk::with([
                     'bundleItems.produk:id,nama,harga_jual,tipe',
                 ])
                 ->where('tipe', 'bundling')
                 ->where('aktif', true)
+                ->where('cabang_id', (int) $cabangId)
                 ->orderBy('nama')
                 ->get();
 

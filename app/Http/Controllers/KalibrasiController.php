@@ -1,14 +1,17 @@
 <?php
+
 namespace App\Http\Controllers;
 
 use App\Models\Kalibrasi;
-use App\Models\Shift;
-use App\Models\Produk;
-use App\Models\StokEtalase;
 use App\Models\MutasiStok;
+use App\Models\Produk;
+use App\Models\Shift;
+use App\Models\StokEtalase;
+use App\Support\ApiErrorResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 
 class KalibrasiController extends Controller
 {
@@ -38,13 +41,15 @@ class KalibrasiController extends Controller
             'catatan' => 'nullable|string',
         ]);
 
-        if ($v->fails()) return response()->json(['error' => $v->errors()], 422);
+        if ($v->fails()) {
+            return response()->json(['error' => $v->errors()], 422);
+        }
 
-            $user = $request->user() ?? auth()->user();
+        $user = $request->user() ?? auth()->user();
         $shift = Shift::findOrFail($request->shift_id);
         $produk = Produk::findOrFail($request->produk_id);
 
-            if (! $user || $shift->user_id != $user->id) {
+        if (! $user || $shift->user_id != $user->id) {
             return response()->json(['error' => 'Tidak memiliki akses'], 403);
         }
 
@@ -88,10 +93,17 @@ class KalibrasiController extends Controller
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['error' => $e->getMessage()], 400);
+            Log::error('Gagal menyimpan kalibrasi', [
+                'user_id' => $request->user()?->id,
+                'exception' => $e::class,
+                'error' => $e->getMessage(),
+            ]);
+
+            return ApiErrorResponse::make(500, ApiErrorResponse::GENERIC_SERVER_ERROR);
         }
 
         $kalibrasi->load('produk');
+
         return response()->json(['kalibrasi' => $kalibrasi]);
     }
 
@@ -109,6 +121,7 @@ class KalibrasiController extends Controller
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json(['error' => $e->getMessage()], 500);
         }
 

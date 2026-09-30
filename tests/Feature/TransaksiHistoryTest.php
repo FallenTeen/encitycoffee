@@ -104,12 +104,15 @@ test('riwayat transaksi per shift menampilkan transaksi hanya untuk shift terseb
         'status' => 'buka',
     ]);
 
+    // Same cashier, same branch, so the second shift has to be closed: one user may
+    // only hold one open shift per branch (shift_active_branch_unique).
     $shiftLain = Shift::create([
         'user_id' => $kasir->id,
         'cabang_id' => $cabang->id,
         'saldo_awal' => 150000,
         'waktu_buka' => Carbon::parse('2025-03-02 08:00:00'),
-        'status' => 'buka',
+        'waktu_tutup' => Carbon::parse('2025-03-02 20:00:00'),
+        'status' => 'tutup',
     ]);
 
     $tShiftTarget1 = Transaksi::create([

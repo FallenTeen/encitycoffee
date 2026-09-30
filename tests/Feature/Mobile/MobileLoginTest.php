@@ -185,7 +185,12 @@ class MobileLoginTest extends TestCase
                           'message' => 'Logout berhasil'
                       ]);
 
-        // Verify token is deleted by trying to access protected endpoint
+        // Verify token is deleted by trying to access protected endpoint.
+        // AuthManager/RequestGuard cache the resolved user for the lifetime of
+        // the test, so forget the guards to model the next real request (which
+        // always builds a fresh container) rather than the stale in-memory user.
+        $this->app['auth']->forgetGuards();
+
         $afterLogoutResponse = $this->withHeaders([
             'Authorization' => 'Bearer ' . $token
         ])->getJson('/api/pos/auth/me');

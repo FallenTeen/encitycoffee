@@ -39,12 +39,12 @@ function formatDateTime(value?: string | null) {
   if (!value) return '-';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString('id-ID');
+  return d.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
 }
 
 function formatCurrency(value?: number) {
   const n = typeof value === 'number' ? value : 0;
-  return n.toLocaleString('id-ID');
+  return n.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
 }
 
 export default function MonitoringShift({ shift, filter_aktif, statistik_ringkasan, cabang_list }: Props) {

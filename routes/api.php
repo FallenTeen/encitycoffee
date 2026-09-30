@@ -1,25 +1,24 @@
 <?php
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\CabangController;
-use App\Http\Controllers\ShiftController;
+use App\Http\Controllers\DiscountController;
 use App\Http\Controllers\KalibrasiController;
+use App\Http\Controllers\LaporanController;
+use App\Http\Controllers\MobileBundlingController;
 use App\Http\Controllers\ProdukController;
+use App\Http\Controllers\ShiftController;
+use App\Http\Controllers\SinkronisasiController;
 use App\Http\Controllers\StokController;
 use App\Http\Controllers\TransaksiController;
-use App\Http\Controllers\DiscountController;
-use App\Http\Controllers\LaporanController;
-use App\Http\Controllers\SinkronisasiController;
-use App\Http\Controllers\MobileBundlingController;
 use App\Models\Cabang;
 use App\Models\User;
+use App\Services\HierarchyAssignmentService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Validation\Rule;
-use App\Services\HierarchyAssignmentService;
 
 Route::middleware(['auth:sanctum', 'role:it_support'])->prefix('admin')->group(function () {
     Route::prefix('cabang')->group(function () {
@@ -37,6 +36,7 @@ Route::middleware(['auth:sanctum', 'role:it_support'])->prefix('admin')->group(f
             ]);
 
             $cabang = Cabang::create($validated);
+
             return response()->json(['cabang' => $cabang], 201);
         });
 
@@ -50,11 +50,13 @@ Route::middleware(['auth:sanctum', 'role:it_support'])->prefix('admin')->group(f
             ]);
 
             $cabang->fill($validated)->save();
+
             return response()->json(['cabang' => $cabang]);
         });
 
         Route::delete('{cabang}', function (Request $request, Cabang $cabang) {
             $cabang->delete();
+
             return response()->json(['deleted' => true]);
         });
     });
@@ -177,6 +179,7 @@ Route::middleware(['auth:sanctum', 'role:it_support,manager,supervisor'])->prefi
 
         $user->load('cabang:id,kode,nama');
         Log::info('API user created', ['actor_user_id' => (int) $actor->id, 'user_id' => (int) $user->id, 'role' => (string) $user->role]);
+
         return response()->json(['user' => $user], 201);
     });
 
@@ -220,6 +223,7 @@ Route::middleware(['auth:sanctum', 'role:it_support,manager,supervisor'])->prefi
 
         $user->load('cabang:id,kode,nama');
         Log::info('API user updated', ['actor_user_id' => (int) $actor->id, 'user_id' => (int) $user->id]);
+
         return response()->json(['user' => $user]);
     });
 
@@ -231,6 +235,7 @@ Route::middleware(['auth:sanctum', 'role:it_support,manager,supervisor'])->prefi
         app(HierarchyAssignmentService::class)->clearHierarchyForUser($user);
         $user->delete();
         Log::info('API user deleted', ['actor_user_id' => (int) $actor->id, 'user_id' => (int) $user->id]);
+
         return response()->json(['deleted' => true]);
     });
 
@@ -245,6 +250,7 @@ Route::middleware(['auth:sanctum', 'role:it_support,manager,supervisor'])->prefi
 
         app(HierarchyAssignmentService::class)->syncRoleAndCabang($request->user(), $user, (string) $user->role, array_map('intval', $validated['cabang_ids']));
         $user->load('cabang:id,kode,nama');
+
         return response()->json(['user' => $user]);
     });
 });
@@ -257,7 +263,9 @@ Route::prefix('pos')->group(function () {
     // Authentication (login tanpa auth)
     Route::prefix('auth')->group(function () {
         Route::post('login', [AuthController::class, 'login']);
-        Route::middleware(['auth:sanctum', 'ensure.token'])->group(function () {
+        // auth:sanctum already rejects unknown and expired tokens with a 401,
+        // so no extra token-checking middleware is needed here.
+        Route::middleware(['auth:sanctum'])->group(function () {
             Route::post('logout', [AuthController::class, 'logout']);
             Route::get('me', [AuthController::class, 'me']);
         });
@@ -420,10 +428,13 @@ Route::prefix('pos')->group(function () {
 });
 
 // -----------------------------
-// Viewer API (buat read-only JSON endpoints)
+// Viewer API (read-only JSON endpoints)
 // prefix: /api/viewer/...
+//
+// These expose POS data (shift, transaksi, stok, laporan), so they require an
+// authenticated POS user just like /api/pos/*.
 // -----------------------------
-Route::prefix('viewer')->group(function () {
+Route::middleware(['auth:sanctum', 'role:kasir,supervisor,manager,it_support'])->prefix('viewer')->group(function () {
     Route::prefix('shift')->group(function () {
         Route::get('aktif', [ShiftController::class, 'dapatkanAktif']);
         Route::get('{shift}', [ShiftController::class, 'tampilkan']);

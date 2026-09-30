@@ -1,6 +1,8 @@
 import { Head } from '@inertiajs/react';
 import AppLayout from '@/layouts/app-layout';
 import { formatDateTime } from '@/utils/formatters';
+import { Banknote, QrCode, CreditCard } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 function formatRupiah(value: number | string | null | undefined) {
     const num = typeof value === 'string' ? Number(value) : value ?? 0;
@@ -102,19 +104,32 @@ export default function LaporanTransaksi({
                                 ))}
                             </select>
                         </div>
-                        <div>
-                            <div className="text-xs text-muted-foreground mb-1">Status</div>
-                            <select
-                                name="status"
-                                defaultValue={filter_aktif?.status ?? ''}
-                                className="w-full border rounded px-2 py-1 text-sm"
-                            >
-                                <option value="">Semua Status</option>
-                                <option value="selesai">Selesai</option>
-                                <option value="pending">Pending</option>
-                                <option value="batal">Batal</option>
-                            </select>
-                        </div>
+                          <div>
+                              <div className="text-xs text-muted-foreground mb-1">Status</div>
+                              <select
+                                  name="status"
+                                  defaultValue={filter_aktif?.status ?? ''}
+                                  className="w-full border rounded px-2 py-1 text-sm"
+                              >
+                                  <option value="">Semua Status</option>
+                                  <option value="selesai">Selesai</option>
+                                  <option value="pending">Pending</option>
+                                  <option value="batal">Batal</option>
+                              </select>
+                          </div>
+                          <div>
+                              <div className="text-xs text-muted-foreground mb-1">Tipe Pembayaran</div>
+                              <select
+                                  name="tipe_pembayaran"
+                                  defaultValue={filter_aktif?.tipe_pembayaran ?? ''}
+                                  className="w-full border rounded px-2 py-1 text-sm"
+                              >
+                                  <option value="">Semua Tipe</option>
+                                  <option value="tunai">Tunai</option>
+                                  <option value="qris">QRIS</option>
+                                  <option value="transfer">Transfer</option>
+                              </select>
+                          </div>
                         <div className="flex flex-col gap-2">
                             <div className="grid grid-cols-2 gap-2">
                                 <div>
@@ -158,16 +173,17 @@ export default function LaporanTransaksi({
                     <div className="overflow-x-auto">
                         <table className="min-w-full text-sm">
                             <thead>
-                                <tr className="border-b">
-                                    <th className="text-left py-2 pr-4">Waktu</th>
-                                    <th className="text-left py-2 pr-4">Invoice</th>
-                                    <th className="text-left py-2 pr-4">Cabang</th>
-                                    <th className="text-left py-2 pr-4">Kasir</th>
-                                    <th className="text-right py-2 pr-4">Subtotal</th>
-                                    <th className="text-right py-2 pr-4">Diskon</th>
-                                    <th className="text-right py-2 pr-4">Total</th>
-                                    <th className="text-left py-2 pr-4">Status</th>
-                                </tr>
+                                  <tr className="border-b">
+                                      <th className="text-left py-2 pr-4">Waktu</th>
+                                      <th className="text-left py-2 pr-4">Invoice</th>
+                                      <th className="text-left py-2 pr-4">Cabang</th>
+                                      <th className="text-left py-2 pr-4">Kasir</th>
+                                      <th className="text-right py-2 pr-4">Subtotal</th>
+                                      <th className="text-right py-2 pr-4">Diskon</th>
+                                      <th className="text-right py-2 pr-4">Total</th>
+                                      <th className="text-left py-2 pr-4">Tipe Pembayaran</th>
+                                      <th className="text-left py-2 pr-4">Status</th>
+                                  </tr>
                             </thead>
                             <tbody>
                                 {rows.map((row: any) => (
@@ -207,6 +223,23 @@ export default function LaporanTransaksi({
                                             {formatRupiah(row.total)}
                                         </td>
                                         <td className="py-2 pr-4 align-top">
+                                            <TooltipProvider delayDuration={100}>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <span className="inline-flex items-center justify-center rounded bg-secondary/50 p-2 text-secondary-foreground hover:bg-secondary/70 transition-colors">
+                                                            {row.tipe_pembayaran === 'qris' && <QrCode className="h-4 w-4" />}
+                                                            {row.tipe_pembayaran === 'tunai' && <Banknote className="h-4 w-4" />}
+                                                            {row.tipe_pembayaran === 'transfer' && <CreditCard className="h-4 w-4" />}
+                                                            {!['qris', 'tunai', 'transfer'].includes(row.tipe_pembayaran || '') && (row.tipe_pembayaran || '-')}
+                                                        </span>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent side="top">
+                                                        <p className="text-xs capitalize">{row.tipe_pembayaran || '-'}</p>
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            </TooltipProvider>
+                                        </td>
+                                        <td className="py-2 pr-4 align-top">
                                             {row.status}
                                         </td>
                                     </tr>
@@ -214,7 +247,7 @@ export default function LaporanTransaksi({
                                 {rows.length === 0 && (
                                     <tr>
                                         <td
-                                            colSpan={8}
+                                            colSpan={9}
                                             className="py-4 text-center text-sm text-muted-foreground"
                                         >
                                             Tidak ada data transaksi

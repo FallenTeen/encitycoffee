@@ -18,6 +18,8 @@ class Transaksi extends Model
         'user_id',
         'nama_pelanggan',
         'nomor_invoice',
+        'client_transaction_id',  // UUID idempotency key dari Flutter
+        'tipe_pembayaran',
         'subtotal',
         'diskon',
         'diskon_persen',

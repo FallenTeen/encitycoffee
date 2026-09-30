@@ -501,10 +501,10 @@ export default function ProdukCreate({
                         <InputError message={clientErrors.tipe || (errors.tipe as string)} />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="kategori_id">Kategori Produk (opsional)</Label>
+                        <Label htmlFor="kategori_id">Kategori Produk </Label>
                         <Select value={data.kategori_id} onValueChange={handleKategoriChange}>
                           <SelectTrigger id="kategori_id">
-                            <SelectValue placeholder="Pilih kategori (jika ada)" />
+                            <SelectValue placeholder="Pilih kategori" />
                           </SelectTrigger>
                           <SelectContent>
                             {kategori.map((k) => (
@@ -593,7 +593,7 @@ export default function ProdukCreate({
 
                     {data.kelompok_nama && data.tipe === 'snack' && (
                       <div className="space-y-2">
-                        <Label>Varian Snack (opsional)</Label>
+                        <Label>Varian Snack </Label>
                         <Select
                           value={
                             snackVarianMode === 'existing'
@@ -1049,13 +1049,13 @@ export default function ProdukCreate({
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="deskripsi">Deskripsi (opsional)</Label>
+                    <Label htmlFor="deskripsi">Deskripsi </Label>
                     <textarea
                       id="deskripsi"
                       className="flex min-h-[90px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       value={data.deskripsi}
                       onChange={(e) => setData('deskripsi', e.target.value)}
-                      placeholder="Deskripsi produk (opsional)"
+                      placeholder="Deskripsi produk "
                     />
                     <InputError message={errors.deskripsi as string} />
                   </div>

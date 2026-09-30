@@ -28,3 +28,4 @@ deploy.bat
 deploy.ps1
 /public/setup.php
 /public/artisan.php
+docs

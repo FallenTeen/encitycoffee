@@ -72,6 +72,7 @@ class TransaksiExport implements FromCollection, WithHeadings, WithStyles, WithT
                 'Diskon'       => $labelDiskon,
                 'Total'        => (float) ($t->total ?? 0),
                 'Status'       => $t->status ?? '-',
+                'Tipe Pembayaran' => ucfirst($t->tipe_pembayaran ?? '-'),
             ];
         });
     }
@@ -88,6 +89,7 @@ class TransaksiExport implements FromCollection, WithHeadings, WithStyles, WithT
             'Diskon',
             'Total (Rp)',
             'Status',
+            'Tipe Pembayaran',
         ];
     }
 

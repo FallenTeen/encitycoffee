@@ -67,62 +67,28 @@ class LandingController extends Controller
             'kategoriSlug' => $kategoriSlug
         ]);
     }
-    public function menupercabang(Request $request, $namaCabang = null)
+    public function menupercabang($namaCabang = null)
     {
         $cabangList = Cabang::aktif()->get();
 
         $selectedCabang = null;
-        $produkList = [];
-
         if ($namaCabang !== null) {
             $decodedNama = rawurldecode($namaCabang);
+            // Hint: if you want exact branch selection by nama, use the "nama" field here.
+            // If URL encoding or casing differs, normalize before querying.
             $selectedCabang = Cabang::whereRaw('LOWER(nama) = ?', [strtolower($decodedNama)])->aktif()->first();
 
-            if ($selectedCabang) {
-                // IMPORTANT: Query the produk table directly, not through the
-                // old $selectedCabang->produk() belongsToMany (which had its
-                // own quirks). Availability per cabang is expressed via
-                // stok_etalase: a product shows up here if it has a
-                // stok_etalase row for THIS cabang, or if it hasn't been
-                // assigned to any cabang yet (fallback while data entry
-                // catches up — see scopeUntukCabang).
-                $produkList = Produk::query()
-                    ->with('kategori')
-                    ->aktif()
-                    ->bukanBeans()
-                    ->untukCabang($selectedCabang->id)
-                    ->orderBy('nama')
-                    ->get()
-                    ->map(function ($produk) {
-                        return [
-                            'id' => $produk->id,
-                            'nama' => $produk->nama,
-                            'deskripsi' => $produk->deskripsi,
-                            'harga_jual' => $produk->harga_jual,
-                            'image_path' => $produk->image_path,
-                            'image_url' => $produk->image_path
-                                ? url('storage/' . ltrim($produk->image_path, '/'))
-                                : null,
-                            'kategori' => $produk->kategori ? [
-                                'id' => $produk->kategori->id,
-                                'nama' => $produk->kategori->nama,
-                                'slug' => $produk->kategori->slug,
-                            ] : null,
-                        ];
-                    })
-                    ->values()
-                    ->all();
-            }
+            // Tip: you can also fall back to kode or a slug field if nama is not a safe URL segment.
+            // $selectedCabang = Cabang::where(function ($query) use ($decodedNama) {
+            //     $query->whereRaw('LOWER(nama) = ?', [strtolower($decodedNama)])
+            //           ->orWhere('kode', $decodedNama);
+            // })->aktif()->first();
         }
 
-        // Category tabs are derived on the frontend from $produkList itself,
-        // so any new category added to kategori_produk shows up automatically
-        // without touching this controller.
         return Inertia::render('Landing/ListMenu', [
             'cabangList' => $cabangList,
             'selectedCabang' => $selectedCabang,
             'namaCabang' => $namaCabang,
-            'produkList' => $produkList,
         ]);
     }
 }
